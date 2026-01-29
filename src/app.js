@@ -18,12 +18,6 @@ app.use(
     })
 );
 
-// handle preflight OPTIONS requests
-app.options("*", cors({
-    origin: FRONTEND_URL,
-    credentials: true
-}))
-
 app.use(cookieParser());
 
 // Body parsing
