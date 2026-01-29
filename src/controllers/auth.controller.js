@@ -5,8 +5,8 @@ import { registerCustomer, registerTherapist, login, getCurrentUser } from "../s
  */
 const getCookieOptions = () => ({
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // HTTPS only in production
-    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none", // always true in production for cross-domain
     maxAge: 7 * 24 * 60 * 1000, // 7 days in milliseconds
     path: "/",
 });

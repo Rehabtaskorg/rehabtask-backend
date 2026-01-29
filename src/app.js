@@ -6,12 +6,23 @@ import errorHandler from "./middleware/errorHandler.js";
 
 const app = express();
 
+// CORS
+// Only allow requests from your frontend domain
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"
+
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
+        origin: FRONTEND_URL,
         credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     })
 );
+
+// handle preflight OPTIONS requests
+app.options("*", cors({
+    origin: FRONTEND_URL,
+    credentials: true
+}))
 
 app.use(cookieParser());
 
