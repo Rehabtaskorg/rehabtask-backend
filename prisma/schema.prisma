@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String   @map("password_hash") @db.Text
+  role          UserRole
+  emailVerified Boolean  @default(false) @map("email_verified")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  customerProfile  CustomerProfile?
+  therapistProfile TherapistProfile?
+  sentMessages     Message[]         @relation("SentMessages")
+  receivedMessages Message[]         @relation("ReceivedMessages")
+  auditLogs        AuditLog[]
+  configUpdates    SystemConfig[]
+
+  @@index([email])
+  @@index([role, isActive])
+  @@map("users")
+}
+
+model CustomerProfile {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  fullName         String   @map("full_name") @db.VarChar(255)
+  phone            String   @db.VarChar(20)
+  location         String   @db.Text
+  stripeCustomerId String?  @unique @map("stripe_customer_id") @db.VarChar(255)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  requests      TherapyRequest[]
+  bookings      Booking[]
+  payments      Payment[]
+
+  @@index([userId])
+  @@index([stripeCustomerId])
+  @@map("customer_profiles")
+}
+
+model TherapistProfile {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @unique @map("user_id") @db.Uuid
+  fullName           String         @map("full_name") @db.VarChar(255)
+  phone              String         @db.VarChar(20)
+  specialization     String         @db.Text
+  licenseNumber      String         @unique @map("license_number") @db.VarChar(100)
+  licenseDocumentUrl String?        @map("license_document_url") @db.Text
+  workArea           String?        @map("work_area") @db.Text
+  stripeAccountId    String?        @unique @map("stripe_account_id") @db.VarChar(255)
+  approvalStatus     ApprovalStatus @default(pending) @map("approval_status")
+  approvedBy         String?        @map("approved_by") @db.Uuid
+  approvedAt         DateTime?      @map("approved_at") @db.Timestamptz(3)
+  rejectionReason    String?        @map("rejection_reason") @db.Text
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workAreas WorkArea[]
+  offers    Offer[]
+  bookings  Booking[]
+  payments  Payment[]
+
+  @@index([userId])
+  @@index([approvalStatus, createdAt])
+  @@index([stripeAccountId])
+  @@index([licenseNumber])
+  @@map("therapist_profiles")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  customerId           String             @map("customer_id") @db.Uuid
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id") @db.VarChar(255)
+  stripeCustomerId     String             @map("stripe_customer_id") @db.VarChar(255)
+  planType             SubscriptionPlan   @map("plan_type")
+  status               SubscriptionStatus
+  currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  therapistLimit       Int                @map("therapist_limit")
+  requestLimit         Int                @map("request_limit")
+  createdAt            DateTime           @default(now()) @map("create_at") @db.Timestamptz(3)
+
+  // Relations
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
+  @@index([stripeSubscriptionId])
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+model TherapyRequest {
+  id            String        @id @default(uuid()) @db.Uuid
+  customerId    String        @map("customer_id") @db.Uuid
+  serviceType   String        @map("service_type") @db.VarChar(100)
+  description   String        @db.Text
+  preferredDate DateTime      @map("preferred_date") @db.Timestamptz(3)
+  location      String        @db.Text
+  latitude      Decimal       @db.Decimal(10, 8)
+  longitude     Decimal       @db.Decimal(11, 8)
+  status        RequestStatus
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  offers   Offer[]
+
+  @@index([customerId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([latitude, longitude])
+  @@index([serviceType, status])
+  @@map("therapy_requests")
+}
+
+model Offer {
+  id           String      @id @default(uuid()) @db.Uuid
+  requestId    String      @map("request_id") @db.Uuid
+  therapistId  String      @map("therapist_id") @db.Uuid
+  rate         Decimal     @db.Decimal(10, 2)
+  sessionType  String      @map("session_type") @db.VarChar(20)
+  proposedDate DateTime    @map("proposed_date") @db.Timestamptz(3)
+  description  String      @db.Text
+  status       OfferStatus
+  expiresAt    DateTime    @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  request   TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  booking   Booking?
+
+  @@index([requestId, status])
+  @@index([therapistId, status, createdAt])
+  @@index([status, expiresAt])
+  @@index([therapistId, requestId])
+  @@map("offers")
+}
+
+model Booking {
+  id            String        @id @default(uuid()) @db.Uuid
+  offerId       String        @unique @map("offer_id") @db.Uuid
+  customerId    String        @map("customer_id") @db.Uuid
+  therapistId   String        @map("therapist_id") @db.Uuid
+  scheduledDate DateTime      @map("scheduled_date") @db.Timestamptz(3)
+  rate          Decimal       @db.Decimal(10, 2)
+  sessionType   String        @map("session_type") @db.VarChar(20)
+  status        BookingStatus
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  offer     Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  session   Session?
+  payment   Payment?
+
+  @@index([customerId, status, scheduledDate])
+  @@index([therapistId, status, scheduledDate])
+  @@index([status, scheduledDate])
+  @@index([offerId])
+  @@map("bookings")
+}
+
+model Session {
+  id                    String        @id @default(uuid()) @db.Uuid
+  bookingId             String        @unique @map("booking_id") @db.Uuid
+  scheduledDate         DateTime      @map("scheduled_date") @db.Timestamptz(3)
+  status                SessionStatus
+  startedAt             DateTime?     @map("started_at") @db.Timestamptz(3)
+  completedAt           DateTime?     @map("completed_at") @db.Timestamptz(3)
+  confirmedByCustomerAt DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  cancellationReason    String?       @map("cancellation_reason") @db.Text
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([status, completedAt])
+  @@map("sessions")
+}
+
+model Payment {
+  id                    String        @id @default(uuid()) @db.Uuid
+  bookingId             String        @unique @map("booking_id") @db.Uuid
+  customerId            String        @map("customer_id") @db.Uuid
+  therapistId           String        @map("therapist_id") @db.Uuid
+  stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id") @db.VarChar(255)
+  stripeTransferId      String?       @unique @map("stripe_transfer_id") @db.VarChar(255)
+  amount                Decimal       @db.Decimal(10, 2)
+  platformFee           Decimal       @map("platform_fee") @db.Decimal(10, 2)
+  therapistPayout       Decimal       @map("therapist_payout") @db.Decimal(10, 2)
+  status                PaymentStatus
+  escrowedAt            DateTime?     @map("escrowed_at") @db.Timestamptz(3)
+  releasedAt            DateTime?     @map("released_at") @db.Timestamptz(3)
+  refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(3)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([stripePaymentIntentId])
+  @@index([customerId, createdAt])
+  @@index([therapistId, status, releasedAt])
+  @@index([status, escrowedAt])
+  @@map("payments")
+}
+
+model Message {
+  id          String    @id @default(uuid()) @db.Uuid
+  senderId    String    @map("sender_id") @db.Uuid
+  recepientId String    @map("recipient_id") @db.Uuid
+  content     String    @db.Text
+  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("ReceivedMessages", fields: [recepientId], references: [id], onDelete: Cascade)
+
+  @@index([recepientId, readAt, createdAt])
+  @@index([senderId, createdAt])
+  @@index([senderId, recepientId, createdAt])
+  @@map("messages")
+}
+
+model WorkArea {
+  id          String   @id @default(uuid()) @db.Uuid
+  therapistId String   @map("therapist_id") @db.Uuid
+  city        String   @db.VarChar(100)
+  state       String   @db.VarChar(50)
+  latitude    Decimal  @db.Decimal(10, 8)
+  longitude   Decimal  @db.Decimal(11, 8)
+  radiusMiles Int      @default(25) @map("radius_miles")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@index([therapistId])
+  @@index([latitude, longitude])
+  @@map("work_areas")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id") @db.Uuid
+  changes    Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Relations
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model SystemConfig {
+  key         String   @id @db.VarChar(100)
+  value       String   @db.Text
+  description String?
+  dataType    String   @map("data_type") @db.VarChar(20)
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  // Relations
+  updater User? @relation(fields: [updatedBy], references: [id])
+
+  @@index([key])
+  @@map("system_config")
+}
+
+enum UserRole {
+  customer
+  therapist
+  admin
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum SubscriptionPlan {
+  free
+  premium
+}
+
+enum SubscriptionStatus {
+  active
+  inactive
+  cancelled
+  past_due
+}
+
+enum RequestStatus {
+  created
+  offers_received
+  offers_accepted
+  completed
+  cancelled
+}
+
+enum OfferStatus {
+  pending
+  accepted
+  rejected
+  expired
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  in_progress
+  completed
+  cancelled
+}
+
+enum SessionStatus {
+  scheduled
+  completed_by_therapist
+  confirmed_by_customer
+  cancelled
+}
+
+enum PaymentStatus {
+  intent_created
+  escrowed
+  released
+  refunded
+  failed
+}
