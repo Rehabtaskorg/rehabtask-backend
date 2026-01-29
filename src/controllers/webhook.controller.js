@@ -6,32 +6,13 @@ import { prisma } from "../config/prisma.js";
  * Handle Stripe webhooks
  */
 const handleStripeWebhook = async (req, res) => {
-    console.log("=== WEBHOOK REQUEST RECEIVED ===");
-    console.log("Method:", req.method);
-    console.log("URL:", req.originalUrl);
-    console.log("Headers:", JSON.stringify(req.headers, null, 2));
-    console.log("Body type:", typeof req.body);
-    console.log("Body is Buffer:", Buffer.isBuffer(req.body));
-    console.log("Body length:", req.body?.length);
-
-
     const sig = req.headers["stripe-signature"];
-
-    console.log("Stripe signature present:", sig.substring(0, 20) + "...");
-    console.log("Webhook secret configured:", stripeConfig.webhookSecret ? "Yes" : "No");
-    console.log("Webhook secret starts with:", stripeConfig.webhookSecret?.substring(0, 10));
-
     let event;
 
     try {
         event = stripe.webhooks.constructEvent(req.body, sig, stripeConfig.webhookSecret);
-        console.log("✅ Event signature verified successfully");
-        console.log("Event type:", event.type);
-        console.log("Event ID:", event.id);
-
     } catch (error) {
-        console.error("❌ Webhook signature verification failed:", error.message);
-        console.error("Error stack:", error.stack);
+        console.error("Webhook signature verification failed:", error.message);
         return res.status(400).send(`Webhook Error: ${error.message}`);
     }
 
