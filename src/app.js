@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import webhookRoutes from "./routes/webhook.routes.js";
 import routes from "./routes/index.js";
 import errorHandler from "./middleware/errorHandler.js";
 
@@ -9,6 +10,8 @@ const app = express();
 // CORS
 // Only allow requests from your frontend domain
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"
+
+app.use("/api/webhooks", webhookRoutes);
 
 app.use(
     cors({
@@ -20,15 +23,7 @@ app.use(
 
 app.use(cookieParser());
 
-// Body parsing
-// Important: Webhook route needs raw body
-app.use((req, res, next) => {
-    if (req.originalUrl === "/api/webhooks/stripe") {
-        next();
-    } else {
-        express.json()(req, res, next);
-    }
-});
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Health check

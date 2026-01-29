@@ -16,8 +16,6 @@ const handleStripeWebhook = async (req, res) => {
         return res.status(400).send(`Webhook Error: ${error.message}`);
     }
 
-    console.log("Event type:", event.type);
-
 
     try {
         switch (event.type) {
@@ -70,8 +68,6 @@ const handlePaymentIntentSucceeded = async (paymentIntent) => {
  * Handle failed payment intent
  */
 const handlePaymentIntentFailed = async (paymentIntent) => {
-    console.log("Payment intent failed:", paymentIntent.id);
-
     try {
         const payment = await prisma.payment.findUnique({
             where: { stripePaymentIntentId: paymentIntent.id },
