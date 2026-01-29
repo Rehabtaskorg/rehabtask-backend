@@ -88,31 +88,25 @@ const registerTherapist = async ({ email, password, fullName, phone, specializat
  * Login
  */
 const login = async ({ email, password }) => {
+    const normalizedEmail = email.toLowerCase();
+
     const user = await prisma.user.findUnique({
-        where: { email },
-        include: {
-            customerProfile: true,
-            therapistProfile: true,
-        },
+        where: { email: normalizedEmail },
+        include: { customerProfile: true, therapistProfile: true },
     });
 
-    // temporary debug
-    console.log({ email, password }); // from frontend
-    console.log(user?.email, user?.passwordHash, user?.isActive);
-
-
     if (!user) {
-        throw new Error("Invalid credentials");
+        return { success: false, code: "USER_NOT_FOUND", message: "No account found with this email" };
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValidPassword) {
-        throw new Error("Invalid credentials");
+        return { success: false, code: "INVALID_PASSWORD", message: "Incorrect password" };
     }
 
     if (!user.isActive) {
-        throw new Error("Account is deactivated");
+        return { success: false, code: "ACCOUNT_DEACTIVATED", message: "Account is deactivated" };
     }
 
     const token = jwt.sign(
@@ -121,11 +115,11 @@ const login = async ({ email, password }) => {
         { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    // Remove the password from response
     const { passwordHash, ...userWithoutPassword } = user;
 
-    return { user: userWithoutPassword, token };
-}
+    return { success: true, user: userWithoutPassword, token };
+};
+
 
 /**
  * Get current user
