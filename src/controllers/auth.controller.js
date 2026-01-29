@@ -60,6 +60,14 @@ const loginController = async (req, res, next) => {
         const { email, password } = req.body;
         const result = await login({ email, password });
 
+        if (!result.success) {
+            return res.status(401).json({
+                success: false,
+                code: result.code,
+                message: result.message,
+            });
+        }
+
         res.cookie("token", result.token, getCookieOptions());
 
         res.status(200).json({
