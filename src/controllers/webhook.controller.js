@@ -16,6 +16,9 @@ const handleStripeWebhook = async (req, res) => {
         return res.status(400).send(`Webhook Error: ${error.message}`);
     }
 
+    console.log("Event type:", event.type);
+
+
     try {
         switch (event.type) {
             case "payment_intent.succeeded":
