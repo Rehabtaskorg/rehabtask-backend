@@ -96,6 +96,11 @@ const login = async ({ email, password }) => {
         },
     });
 
+    // temporary debug
+    console.log({ email, password }); // from frontend
+    console.log(user?.email, user?.passwordHash, user?.isActive);
+
+
     if (!user) {
         throw new Error("Invalid credentials");
     }
