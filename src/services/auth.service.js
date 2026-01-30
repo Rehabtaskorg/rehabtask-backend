@@ -6,7 +6,9 @@ import jwt from "jsonwebtoken";
  * Register customer
  */
 const registerCustomer = async ({ email, password, fullName, phone, location }) => {
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (existingUser) {
         throw new Error("Email already registered");
@@ -16,7 +18,7 @@ const registerCustomer = async ({ email, password, fullName, phone, location }) 
 
     const user = await prisma.user.create({
         data: {
-            email,
+            email: normalizedEmail,
             passwordHash,
             role: "customer",
             emailVerified: true, // skip email verification
@@ -39,14 +41,21 @@ const registerCustomer = async ({ email, password, fullName, phone, location }) 
         { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    return { user, token };
+    const { passwordHash: _, ...userWithoutPassword } = user;
+
+    return { user: userWithoutPassword, token };
 }
 
 /**
  * Register therapist
  */
 const registerTherapist = async ({ email, password, fullName, phone, specialization, licenseNumber }) => {
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Normalize email
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const existingUser = await prisma.user.findUnique({
+        where: { email: normalizedEmail }
+    });
 
     if (existingUser) {
         throw new Error("If an account exists for this email, you’ll receive further instructions.");
@@ -56,7 +65,7 @@ const registerTherapist = async ({ email, password, fullName, phone, specializat
 
     const user = await prisma.user.create({
         data: {
-            email,
+            email: normalizedEmail,
             passwordHash,
             role: "therapist",
             emailVerified: true,
@@ -81,14 +90,17 @@ const registerTherapist = async ({ email, password, fullName, phone, specializat
         { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    return { user, token };
+    // remove password hash before returning
+    const { passwordHash: _, ...userWithoutPassword } = user;
+
+    return { user: userWithoutPassword, token };
 }
 
 /**
  * Login
  */
 const login = async ({ email, password }) => {
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = email.toLowerCase().trim();
 
     const user = await prisma.user.findUnique({
         where: { email: normalizedEmail },
@@ -96,17 +108,17 @@ const login = async ({ email, password }) => {
     });
 
     if (!user) {
-        return { success: false, code: "USER_NOT_FOUND", message: "No account found with this email" };
+        return { success: false, code: "INVALID CREDENTIALS", message: "Invalid email or password" };
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValidPassword) {
-        return { success: false, code: "INVALID_PASSWORD", message: "Incorrect password" };
+        return { success: false, code: "INVALID_CREDENTIALS", message: "Incorrect email or password" };
     }
 
     if (!user.isActive) {
-        return { success: false, code: "ACCOUNT_DEACTIVATED", message: "Account is deactivated" };
+        return { success: false, code: "ACCOUNT_DEACTIVATED", message: "Your account has been deactivated. Please contact support" };
     }
 
     const token = jwt.sign(
