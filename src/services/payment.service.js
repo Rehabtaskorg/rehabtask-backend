@@ -187,28 +187,38 @@ const releasePayment = async (sessionId) => {
         throw new Error("Therapist has not connected Stripe account");
     }
 
-    const transfer = await stripe.transfers.create({
-        amount: Math.round(parseFloat(payment.therapistPayout) * 100),
-        currency: "usd",
-        destination: therapist.stripeAccountId,
-        metadata: {
-            paymentId: payment.id,
-            sessionId: session.id,
-            bookingId: session.bookingId,
-        },
-        description: `Payout for session ${session.id}`,
-    });
+    let transfer;
+    try {
+        transfer = await stripe.transfers.create({
+            amount: Math.round(parseFloat(payment.therapistPayout) * 100),
+            currency: "usd",
+            destination: therapist.stripeAccountId,
+            metadata: {
+                paymentId: payment.id,
+                sessionId: session.id,
+                bookingId: session.bookingId,
+            },
+            description: `Payout for session ${session.id}`,
+        });
+    } catch (stripeError) {
+        console.error(`Transfer creation failed:`, stripeError.message);
+        throw new Error(`Failed to transfer payment: ${stripeError.message}`)
+    }
 
-    const updatedPayment = await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-            status: "released",
-            stripeTransferId: transfer.id,
-            releasedAt: new Date(),
-        },
-    });
-
-    return updatedPayment;
+    try {
+        const updatedPayment = await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+                status: "released",
+                stripeTransferId: transfer.id,
+                releasedAt: new Date(),
+            },
+        });
+        return updatedPayment
+    } catch (dbError) {
+        console.error(`Critical: Transfer ${transfer.id} succeed but DB update failed`);
+        throw new Error("Transfer succeeded but database update failed");
+    }
 }
 
 /**

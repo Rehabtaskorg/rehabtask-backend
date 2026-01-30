@@ -25,7 +25,7 @@ const handleStripeWebhook = async (req, res) => {
 
     try {
         switch (event.type) {
-            // (Payment Flow)
+            // Payment Flow
             case "payment_intent.succeeded":
                 await handlePaymentIntentSucceeded(event.data.object);
                 break;
@@ -38,38 +38,41 @@ const handleStripeWebhook = async (req, res) => {
                 await handlePaymentIntentCanceled(event.data.object);
                 break;
 
-            // (Transfers / Payouts)
+            // Transfer Flow (with recovery)
+            case "transfer.created":
+                await handleTransferCreatedWithRecovery(event.data.object);
+                break;
+
             case "transfer.reversed":
                 await handleTransferReversed(event.data.object);
                 break;
 
-            case "payout.failed":
-                await handleConnectedPayoutFailed(
-                    event.data.object,
-                    event.account
-                );
+            case "transfer.updated":
+                await handleTransferUpdated(event.data.object);
                 break;
 
             // (Connected Accounts)
 
             case "account.updated":
-                await handleAccountUpdated(
-                    event.data.object,
-                    event.account);
+                await handleAccountUpdated(event.data.object, event.account);
                 break;
 
             case "account.external_account.created":
-                await handleExternalAccountCreated(
-                    event.data.object,
-                    event.account
-                );
+                await handleExternalAccountCreated(event.data.object, event.account);
                 break;
 
             case "account.external_account.deleted":
-                await handleExternalAccountDeleted(
-                    event.data.object,
-                    event.account
-                );
+                await handleExternalAccountDeleted(event.data.object, event.account);
+                break;
+
+            case "payout.paid":
+                // Send notification: "Your money arrived in bank!"
+                await handlePayoutPaid(event.data.object, event.account);
+                break;
+
+            case "payout.failed":
+                // ALert therapist: "Update your bank details"
+                await handlePayoutFailed(event.data.object, event.account);
                 break;
 
             default:
@@ -160,6 +163,37 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
     }
 }
 
+const handleTransferReversed = async (transfer) => {
+    try {
+        console.log(`Transfer reversed: ${transfer.id}`);
+        const paymentId = transfer.metadata?.paymentId;
+
+        if (paymentId) {
+            await prisma.payment.update({
+                where: { id: paymentId },
+                data: {
+                    status: "escrowed",
+                    stripeTransferId: null,
+                    releasedAt: null,
+                }
+            });
+            console.log(`Payment reverted to escrowed`);
+        }
+
+    } catch (error) {
+        console.error(`Error: ${error.message}`)
+    }
+}
+
+const handleTransferUpdated = async (transfer) => {
+    try {
+        console.log(`Transfer updated: ${transfer.id}`);
+        // Transfer updates usually just status changes - for monitoring
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+    }
+}
+
 /**
  * Handle failed transfer
  */
@@ -190,6 +224,80 @@ const handleTransferFailed = async (transfer) => {
 
 }
 
+/**
+ * Handle Transfer created - With recovery logic
+ * This webhook serves two purposes:
+ * 1. Confirmation that transfer succeeded (normal case)
+ * 2. Recovery mechanism if database update failed (edge case)
+ */
+const handleTransferCreatedWithRecovery = async (transfer) => {
+    try {
+        const paymentId = transfer.metadata?.paymentId;
+
+        if (!paymentId) {
+            console.log(`No payment metadata found for transfer: ${transfer.id}`);
+            return;
+        }
+
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: {
+                booking: {
+                    include: {
+                        therapist: true,
+                        customer: true,
+                    }
+                }
+            }
+        });
+
+        if (!payment) {
+            console.error(`Payment not found: ${paymentId}`);
+            return;
+        }
+        // NORMAL CASE: Payment already marked as released
+        if (payment.status === "escrowed" && !payment.stripeTransferId) {
+            try {
+                // Verify transfer is valid and not reversed
+                const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
+
+                if (verifiedTransfer.reversed) {
+                    console.log(`Transfer was reversed, not updating payment`);
+                    return;
+                }
+
+                // Update payment to released state
+                await prisma.payment.update({
+                    where: { id: payment.id },
+                    data: {
+                        status: "released",
+                        stripeTransferId: transfer.id,
+                        releasedAt: new Date(),
+                    }
+                });
+
+            } catch (recoveryError) {
+                console.error(`Recovery Failed: ${recoveryError.message}`);
+                console.error(`MANUAL INTERVENTION REQUIRED`);
+
+                // TODO: CRITICAL -Alert admin immediately
+                // TODO: Create support ticket
+            }
+            return;
+        }
+
+        // UNEXPECTED STATE: Payment as different status
+        if (payment.status !== "escrowed" && payment.status !== "released") {
+            console.log(`Unexpected payment status: ${payment.status}`);
+            console.log(`Payment ID: ${payment.id}`);
+            console.log(`Transfer ID: ${transfer.id}`);
+            console.log(`Manual review may be needed}`);
+        }
+
+    } catch (error) {
+        console.error(`Error handling transfer.created:`, error.message);
+    }
+}
 
 /**Connected account handlers */
 const handleAccountUpdated = async (account, accountId) => {
@@ -207,15 +315,50 @@ const handleExternalAccountCreated = async (externalAccount, accountId) => {
 }
 
 const handleExternalAccountDeleted = async (externalAccount, accountId) => {
-    await prisma.therapistProfile.findUnique({
-        where: { stripeAccountId: accountId }
-    });
+    try {
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { stripeAccountId: accountId }
+        });
+        if (therapist) {
+            console.log(`Therapist ${therapist.fullName} cannot receive payouts!`);
+        }
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+    }
 }
 
-const handleConnectedPayoutFailed = async (payout, accountId) => {
-    await prisma.therapistProfile.findUnique({
-        where: { stripeAccountId: accountId },
-    });
+const handlePayoutPaid = async (payout, accountId) => {
+    try {
+        console.log(`Payout delivered: ${accountId}`);
+        // Informational - payment already "released"
+    } catch (error) {
+        console.error(`Error:`, error.message);
+    }
+}
+
+const handlePayoutFailed = async (payout, accountId) => {
+    try {
+        console.log(`Payout failed: ${accountId}`);
+        console.log(`Reason: ${payout.failure_message}`);
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { stripeAccountId: accountId },
+        });
+
+        if (therapist) {
+            console.log(`Payout failed for therapist: ${therapist.fullName}`);
+
+            // TODO:
+            // 1. Notify therapist about failed payout
+            // 2. Request bank account verification
+            // 3. Alert admin to investigate
+
+            // NOTE: Payment status stays "released" - money is still in Stripe balance
+            // Stripe will retry the payout automatically
+
+        }
+    } catch (error) {
+        console.error(`Error handling payout failure:`, error.message);
+    }
 }
 
 export { handleStripeWebhook };
