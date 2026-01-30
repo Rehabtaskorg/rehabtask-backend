@@ -80,6 +80,12 @@ const createPaymentIntent = async (bookingId, userId) => {
         amount: Math.round(amount * 100),
         currency: "usd",
         customer: stripeCustomerId,
+        payment_method_types: ["card"],
+        payment_method_options: {
+            card: {
+                request_three_d_secure: "automatic",
+            },
+        },
         setup_future_usage: "off_session",
         metadata: {
             bookingId: booking.id,
