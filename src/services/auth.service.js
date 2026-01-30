@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 
 /**
  * Register customer
+ * 
  */
 const registerCustomer = async ({ email, password, fullName, phone, location }) => {
     const normalizedEmail = email.toLowerCase().trim();
