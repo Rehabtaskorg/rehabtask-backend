@@ -25,6 +25,7 @@
     "@react-email/render": "^2.0.4",
     "@sentry/node": "^10.36.0",
     "@supabase/supabase-js": "^2.91.0",
+    "axios": "^1.13.4",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

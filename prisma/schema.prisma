@@ -7,13 +7,14 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @db.Uuid
   email         String   @unique @db.VarChar(255)
-  passwordHash  String   @map("password_hash") @db.Text
+  passwordHash  String   @default("") @map("password_hash") @db.Text
   role          UserRole
   emailVerified Boolean  @default(false) @map("email_verified")
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   customerProfile  CustomerProfile?
@@ -29,13 +30,15 @@ model User {
 }
 
 model CustomerProfile {
-  id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @unique @map("user_id") @db.Uuid
-  fullName         String   @map("full_name") @db.VarChar(255)
-  phone            String   @db.VarChar(20)
-  location         String   @db.Text
-  stripeCustomerId String?  @unique @map("stripe_customer_id") @db.VarChar(255)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id               String       @id @default(uuid()) @db.Uuid
+  userId           String       @unique @map("user_id") @db.Uuid
+  fullName         String       @map("full_name") @db.VarChar(255)
+  phone            String       @db.VarChar(20)
+  location         String       @db.Text
+  customerType     CustomerType @map("customer_type")
+  stripeCustomerId String?      @unique @map("stripe_customer_id") @db.VarChar(255)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -64,6 +67,7 @@ model TherapistProfile {
   approvedAt         DateTime?      @map("approved_at") @db.Timestamptz(3)
   rejectionReason    String?        @map("rejection_reason") @db.Text
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -90,7 +94,8 @@ model Subscription {
   currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
   therapistLimit       Int                @map("therapist_limit")
   requestLimit         Int                @map("request_limit")
-  createdAt            DateTime           @default(now()) @map("create_at") @db.Timestamptz(3)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -112,6 +117,7 @@ model TherapyRequest {
   longitude     Decimal       @db.Decimal(11, 8)
   status        RequestStatus
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -135,6 +141,7 @@ model Offer {
   status       OfferStatus
   expiresAt    DateTime    @map("expires_at") @db.Timestamptz(3)
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   request   TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
@@ -158,6 +165,7 @@ model Booking {
   sessionType   String        @map("session_type") @db.VarChar(20)
   status        BookingStatus
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   offer     Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
@@ -183,6 +191,7 @@ model Session {
   confirmedByCustomerAt DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
   cancellationReason    String?       @map("cancellation_reason") @db.Text
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -207,6 +216,7 @@ model Payment {
   releasedAt            DateTime?     @map("released_at") @db.Timestamptz(3)
   refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(3)
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -224,18 +234,19 @@ model Payment {
 model Message {
   id          String    @id @default(uuid()) @db.Uuid
   senderId    String    @map("sender_id") @db.Uuid
-  recepientId String    @map("recipient_id") @db.Uuid
+  recipientId String    @map("recipient_id") @db.Uuid
   content     String    @db.Text
   readAt      DateTime? @map("read_at") @db.Timestamptz(3)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User @relation("ReceivedMessages", fields: [recepientId], references: [id], onDelete: Cascade)
+  recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
 
-  @@index([recepientId, readAt, createdAt])
+  @@index([recipientId, readAt, createdAt])
   @@index([senderId, createdAt])
-  @@index([senderId, recepientId, createdAt])
+  @@index([senderId, recipientId, createdAt])
   @@map("messages")
 }
 
@@ -248,6 +259,7 @@ model WorkArea {
   longitude   Decimal  @db.Decimal(11, 8)
   radiusMiles Int      @default(25) @map("radius_miles")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
   therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
@@ -294,6 +306,11 @@ enum UserRole {
   customer
   therapist
   admin
+}
+
+enum CustomerType {
+  individual
+  agency
 }
 
 enum ApprovalStatus {
