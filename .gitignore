@@ -5,7 +5,7 @@ node_modules
 
 logs/
 
-.test.jsx
+test.jsx
 notes.jsx
 test.sql
 /generated/prisma
