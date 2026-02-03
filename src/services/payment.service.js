@@ -413,6 +413,36 @@ const getConnectAccountStatus = async (therapistId) => {
     };
 };
 
+/**
+ * Create Stripe Express Dashboard login link
+ */
+const createDashboardLink = async (therapistId, userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { id: therapistId },
+    });
+
+    if (!therapist) {
+        throw new Error("Therapist not found");
+    }
+
+    if (therapist.userId !== userId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (!therapist.stripeAccountId) {
+        throw new Error("No Stripe account connected");
+    }
+
+    // Create a login link for the Express Dashboard
+    const loginLink = await stripe.accounts.createLoginLink(
+        therapist.stripeAccountId
+    );
+
+    return {
+        url: loginLink.url
+    };
+}
+
 export {
     createPaymentIntent,
     handlePaymentSuccess,
@@ -422,4 +452,5 @@ export {
     getTherapistPayoutHistory,
     createConnectAccountLink,
     getConnectAccountStatus,
+    createDashboardLink
 }

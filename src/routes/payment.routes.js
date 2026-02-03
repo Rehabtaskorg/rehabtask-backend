@@ -3,7 +3,7 @@ import {
     createConnectAccountController, createPaymentIntentController,
     getConnectAccountStatusController, getPaymentHistoryController,
     getPayoutHistoryController, processRefundController,
-    releasePaymentController
+    releasePaymentController, createDashboardLinkController
 } from "../controllers/payment.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -18,6 +18,7 @@ router.post("/refund", authenticate, authorize(["customer"]), processRefundContr
 router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);
 router.get("/connect/status", authenticate, authorize(["therapist"]), getConnectAccountStatusController);
 router.get("/payouts", authenticate, authorize(["therapist"]), getPayoutHistoryController);
+router.post("/dashboard/create", authenticate, authorize(["therapist"]), createDashboardLinkController);
 
 // Admin/System Route
 router.post("/release", authenticate, releasePaymentController);
