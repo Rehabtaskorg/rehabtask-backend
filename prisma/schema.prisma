@@ -33,8 +33,9 @@ model CustomerProfile {
   id               String       @id @default(uuid()) @db.Uuid
   userId           String       @unique @map("user_id") @db.Uuid
   fullName         String       @map("full_name") @db.VarChar(255)
+  agencyName       String?      @map("agency_name") @db.VarChar(255)
   phone            String       @db.VarChar(20)
-  location         String       @db.Text
+  location         String?       @db.Text
   customerType     CustomerType @map("customer_type")
   stripeCustomerId String?      @unique @map("stripe_customer_id") @db.VarChar(255)
   createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -57,8 +58,8 @@ model TherapistProfile {
   userId             String         @unique @map("user_id") @db.Uuid
   fullName           String         @map("full_name") @db.VarChar(255)
   phone              String         @db.VarChar(20)
-  specialization     String         @db.Text
-  licenseNumber      String         @unique @map("license_number") @db.VarChar(100)
+  specialization     String?         @db.Text
+  licenseNumber      String?        @unique @map("license_number") @db.VarChar(100)
   licenseDocumentUrl String?        @map("license_document_url") @db.Text
   workArea           String?        @map("work_area") @db.Text
   stripeAccountId    String?        @unique @map("stripe_account_id") @db.VarChar(255)

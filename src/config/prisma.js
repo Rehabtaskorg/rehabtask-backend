@@ -115,5 +115,7 @@ export async function withRLS(user, fn) {
  * @returns {Promise<any>} Result of the operation
  */
 export async function withAdminAccess(fn) {
-    return fn(prisma);
+    return prisma.$transaction(async (tx) => {
+        return fn(tx);
+    });
 }

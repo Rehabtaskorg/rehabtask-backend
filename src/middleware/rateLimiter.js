@@ -8,10 +8,11 @@ import rateLimit from "express-rate-limit";
 const createRateLimiter = (options = {}) => {
     const defaultOptions = {
         windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 100, // Limit each IP to 100 requests per windowMs
+        max: 100,
         message: "Too many requests from this IP, please try again later",
-        standardHeaders: true, // return rate-limit info in the `RateLimit-*` headers
-        legacyHeaders: false, // disable the `X-RateLimit-*` headers
+        standardHeaders: true,
+        legacyHeaders: false,
+        validate: { xForwardedForHeader: false },
         handler: (req, res) => {
             res.status(429).json({
                 success: false,
@@ -20,12 +21,7 @@ const createRateLimiter = (options = {}) => {
             });
         },
         skip: (req) => {
-            // Skip rate-limiting for health checks
             return req.path === "/health";
-        },
-        keyGenerator: (req) => {
-            // Use IP address as key
-            return req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress;
         },
     };
 
@@ -38,7 +34,7 @@ const createRateLimiter = (options = {}) => {
  */
 export const registrationRateLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 3, // 3 registrations per hour,
+    max: 15, // 15 registrations per hour,
     message: "Too many registration attempts, please try again later",
 });
 
@@ -47,7 +43,7 @@ export const registrationRateLimiter = createRateLimiter({
  */
 export const passwordResetLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 3, // 3 password reset requests per hour,
+    max: 15, // 3 password reset requests per hour,
     message: "Too many password reset attempts, please try again later",
 });
 

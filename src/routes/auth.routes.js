@@ -1,18 +1,36 @@
 import express from "express";
 import {
-    registerCustomerController, registerTherapistController, loginController,
-    logoutController, getCurrentUserController, requestPasswordResetController,
-    resetPasswordController, changePasswordController, verifyEmailController,
-    resendVerificationEmailController, oauthCallbackController, completeOAuthOnboardingController,
+    registerCustomerController,
+    registerTherapistController,
+    loginController,
+    logoutController,
+    getCurrentUserController,
+    requestPasswordResetController,
+    resetPasswordController,
+    changePasswordController,
+    resendVerificationEmailController,
+    oauthCallbackController,
+    completeOAuthOnboardingController,
     refreshTokenController
 } from "../controllers/auth.controller.js";
-import { authenticate, optionalAuthenticate } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
-    registerCustomerSchema, registerTherapistSchema, loginSchema,
-    requestPasswordResetSchema, resetPasswordSchema, changePasswordSchema,
-    verifyEmailSchema, resendVerificationSchema, oauthCallbackSchema
+    registerCustomerSchema,
+    registerTherapistSchema,
+    loginSchema,
+    requestPasswordResetSchema,
+    resetPasswordSchema,
+    changePasswordSchema,
+    resendVerificationSchema
 } from "../validators/auth.schema.js";
+import {
+    registrationRateLimiter,
+    passwordResetLimiter,
+    emailVerificationRateLimiter,
+    sensitiveOperationRateLimiter
+} from "../middleware/rateLimiter.js";
+
 
 const router = express.Router();
 
@@ -20,27 +38,57 @@ const router = express.Router();
  * Public routes (no authentication required)
  */
 
-// Registration
-router.post("/register/customer", validate(registerCustomerSchema), registerCustomerController);
-router.post("/register/therapist", validate(registerTherapistSchema), registerTherapistController);
+// Registration routes
+router.post(
+    "/register/customer",
+    registrationRateLimiter,
+    validate(registerCustomerSchema),
+    registerCustomerController
+);
+
+router.post(
+    "/register/therapist",
+    registrationRateLimiter,
+    validate(registerTherapistSchema),
+    registerTherapistController
+);
 
 // Login
-router.post("/login", validate(loginSchema), loginController);
+router.post(
+    "/login", // brute force protection
+    sensitiveOperationRateLimiter,
+    validate(loginSchema),
+    loginController
+);
 
-// Password reset request
-router.post("/password/forgot", validate(requestPasswordResetSchema), requestPasswordResetController);
+// Password reset
+router.post(
+    "/password/forgot",
+    passwordResetLimiter,
+    validate(requestPasswordResetSchema),
+    requestPasswordResetController
+);
 
-// Reset password with token
-router.post("/password/reset", validate(resetPasswordSchema), resetPasswordController);
-
-// Email verification
-router.post("/email/verify", validate(verifyEmailSchema), verifyEmailController);
+router.post(
+    "/password/reset",
+    passwordResetLimiter,
+    validate(resetPasswordSchema),
+    resetPasswordController
+);
 
 // Resend verification email
-router.post("/email/resend", validate(resendVerificationSchema), resendVerificationEmailController);
+router.post(
+    "/email/resend",
+    emailVerificationRateLimiter, // prevents
+    validate(resendVerificationSchema),
+    resendVerificationEmailController
+);
 
-// OAuth callbacks
-router.get("/oauth/callback", oauthCallbackController);
+
+// OAuth routes
+router.post("/oauth/callback", oauthCallbackController)
+router.post("/oauth/onboarding", authenticate, completeOAuthOnboardingController);
+
 
 // Refresh token
 router.post("/token/refresh", refreshTokenController);
@@ -55,10 +103,11 @@ router.post("/logout", authenticate, logoutController);
 // Get current user
 router.get("/me", authenticate, getCurrentUserController);
 
-// Change password (for authenticated users)
-router.post("/password/change", authenticate, validate(changePasswordSchema), changePasswordController);
-
-// Complete OAuth onboarding
-router.post("/oauth/onboarding", authenticate, completeOAuthOnboardingController);
+// Change password
+router.post(
+    "/password/change",
+    authenticate,
+    validate(changePasswordSchema),
+    changePasswordController);
 
 export default router;

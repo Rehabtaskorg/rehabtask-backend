@@ -1,6 +1,7 @@
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
-    resetPassword, changePassword, verifyEmail, resendVerificationEmail, handleOAuthCallback, completeOAuthOnboarding,
+    resetPassword, changePassword, resendVerificationEmail, completeOAuthOnboarding,
+    handleOAuth,
 } from "../services/auth.service.js";
 import { verifyRecaptcha } from "../utils/recaptcha.js";
 
@@ -29,29 +30,45 @@ const getRefreshTokenCookieOptions = () => ({
  */
 export const registerCustomerController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, location, customerType, agencyName, recaptchaToken } = req.body;
+        const { email, password, fullName, phone, customerType, agencyName, recaptchaToken } = req.body;
 
-        if (recaptchaToken) {
-            const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
+        // if (recaptchaToken) {
+        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
 
-            if (!recaptchaResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    code: "RECAPTCHA_FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
-                });
+        //     if (!recaptchaResult.success) {
+        //         return res.status(400).json({
+        //             success: false,
+        //             code: "RECAPTCHA_FAILED",
+        //             message: "reCAPTCHA verification failed. Please try again."
+        //         });
+        //     }
+        // }
+
+        const result = await registerCustomer({ email, password, fullName, phone, customerType, agencyName })
+
+        const response = {
+            success: true,
+            message: result.message
+        };
+
+        /**
+         * If the user was successfully created (result.user.exists)
+         * we include the non-sensitive user data in the response
+         * If result.user is null (email already exists), we omit the data
+         * block to prevent information leaking, but still return 201
+         */
+        if (result.user) {
+            response.data = {
+                user: {
+                    id: result.user.id,
+                    email: result.user.email,
+                    role: result.user.role,
+                    emailVerified: result.user.emailVerified
+                }
             }
         }
 
-        const result = await registerCustomer({ email, password, fullName, phone, location, customerType, agencyName })
-
-        res.status(201).json({
-            success: true,
-            message: result.message,
-            data: {
-                user: result.user,
-            },
-        });
+        return res.status(201).json(response);
     } catch (error) {
         next(error);
     }
@@ -62,29 +79,40 @@ export const registerCustomerController = async (req, res, next) => {
  */
 export const registerTherapistController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, specialization, licenseNumber, recaptchaToken } = req.body;
+        const { email, password, fullName, phone, recaptchaToken } = req.body;
 
-        if (recaptchaToken) {
-            const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
+        // if (recaptchaToken) {
+        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
 
-            if (!recaptchaResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    code: "RECAPTCHA_FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
-                });
-            }
-        }
+        //     if (!recaptchaResult.success) {
+        //         return res.status(400).json({
+        //             success: false,
+        //             code: "RECAPTCHA_FAILED",
+        //             message: "reCAPTCHA verification failed. Please try again."
+        //         });
+        //     }
+        // }
 
-        const result = await registerTherapist({ email, password, fullName, phone, specialization, licenseNumber });
+        const result = await registerTherapist({ email, password, fullName, phone });
 
-        res.status(201).json({
+        const response = {
             success: true,
             message: result.message,
-            data: {
-                user: result.user
-            }
-        });
+        };
+
+        if (result.user) {
+            response.data = {
+                user: {
+                    id: result.user.id,
+                    email: result.user.email,
+                    role: result.user.role,
+                    emailVerified: result.user.emailVerified,
+                    approvalStatus: result.user.therapistProfile?.approvalStatus
+                }
+            };
+        }
+
+        return res.status(201).json(response);
     } catch (error) {
         next(error);
     }
@@ -97,17 +125,17 @@ export const loginController = async (req, res, next) => {
     try {
         const { email, password, recaptchaToken } = req.body;
 
-        if (recaptchaToken) {
-            const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
+        // if (recaptchaToken) {
+        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
 
-            if (!recaptchaResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    code: "RECAPTCHA_FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
-                });
-            }
-        }
+        //     if (!recaptchaResult.success) {
+        //         return res.status(400).json({
+        //             success: false,
+        //             code: "RECAPTCHA_FAILED",
+        //             message: "reCAPTCHA verification failed. Please try again."
+        //         });
+        //     }
+        // }
 
         const result = await login({ email, password });
 
@@ -172,17 +200,17 @@ export const requestPasswordResetController = async (req, res, next) => {
     try {
         const { email, recaptchaToken } = req.body;
 
-        if (recaptchaToken) {
-            const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
+        // if (recaptchaToken) {
+        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
 
-            if (!recaptchaResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    code: "RECAPTCHA_FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
-                });
-            }
-        }
+        //     if (!recaptchaResult.success) {
+        //         return res.status(400).json({
+        //             success: false,
+        //             code: "RECAPTCHA_FAILED",
+        //             message: "reCAPTCHA verification failed. Please try again."
+        //         });
+        //     }
+        // }
 
         const result = await requestPasswordReset({ email });
 
@@ -248,20 +276,33 @@ export const changePasswordController = async (req, res, next) => {
 }
 
 /**
- * Verify email controller
+ * OAuth callback controller
  */
-export const verifyEmailController = async (req, res, next) => {
+export const oauthCallbackController = async (req, res, next) => {
     try {
-        const { token, type } = req.body;
+        const { code, provider } = req.query;
 
-        const result = await verifyEmail({ token, type });
+        if (!code && !provider) {
+            return res.redirect(
+                `${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent('Missing OAuth parameters')}`
+            );
+        }
 
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
+        const result = await handleOAuth({ code, provider });
+
+        res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
+        res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
+
+        const redirectUrl = result.user.needsOnboarding
+            ? `${process.env.FRONTEND_URL}/auth/onboarding`
+            : `${process.env.FRONTEND_URL}/dashboard`;
+
+        res.redirect(redirectUrl);
     } catch (error) {
-        next(error);
+        console.error("OAuth callback error:", error);
+        res.redirect(
+            `${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent(error.message || 'OAuth authentication failed')}`
+        );
     }
 }
 
@@ -272,17 +313,17 @@ export const resendVerificationEmailController = async (req, res, next) => {
     try {
         const { email, recaptchaToken } = req.body;
 
-        if (recaptchaToken) {
-            const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
+        // if (recaptchaToken) {
+        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
 
-            if (!recaptchaResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    code: "RECAPTCHA_FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
-                });
-            }
-        }
+        //     if (!recaptchaResult.success) {
+        //         return res.status(400).json({
+        //             success: false,
+        //             code: "RECAPTCHA_FAILED",
+        //             message: "reCAPTCHA verification failed. Please try again."
+        //         });
+        //     }
+        // }
 
         const result = await resendVerificationEmail({ email });
 
@@ -292,40 +333,6 @@ export const resendVerificationEmailController = async (req, res, next) => {
         });
     } catch (error) {
         next(error);
-    }
-}
-
-/**
- * OAuth callback controller
- * Handles Google and Facebook OAuth callbacks
- */
-export const oauthCallbackController = async (req, res, next) => {
-    try {
-        const { code, provider } = req.query;
-
-        if (!code || !provider) {
-            return res.status(400).json({
-                success: false,
-                code: "INVALID_REQUEST",
-                message: "Missing coe or provider parameter"
-            });
-        }
-
-        const result = await handleOAuthCallback({ code, provider });
-
-        // Set session tokens
-        res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
-        res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
-
-        // Redirect based on whether onboarding is needed
-        const redirectUrl = result.user.needsOnboarding
-            ? `${process.env.FRONTEND_URL}/auth/onboarding`
-            : `${process.env.FRONTEND_URL}/dashboard`;
-
-        res.redirect(redirectUrl);
-    } catch (error) {
-        // Redirect to error page on failure
-        res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent(error.message)}`);
     }
 }
 
@@ -390,7 +397,7 @@ export const refreshTokenController = async (req, res, next) => {
 function extractTokenFromHeader(req) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
-        return authHeader.subString(7);
+        return authHeader.substring(7);
     }
     return null;
 }

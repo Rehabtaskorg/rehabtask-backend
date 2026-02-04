@@ -1,4 +1,4 @@
-import { email, z } from "zod";
+import { z } from "zod";
 
 /**
  * Password validation rules
@@ -39,7 +39,7 @@ const fullNameSchema = z
     .string()
     .min(2, "Name must be atleast 2 characters")
     .max(255, "Name must not exceed 255 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes')
+    .regex(/^[a-zA-Z\s'.-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes')
     .trim();
 
 /**
@@ -50,14 +50,6 @@ const licenseNumberSchema = z
     .min(3, 'License number must be at least 3 characters')
     .max(100, 'License number must not exceed 100 characters')
     .trim();
-
-/**
- * Therapist specialization enum
- */
-const therapistSpecializationSchema = z.enum(["Physical Therapist", "Occupation Therapist", "SLP"], {
-    errorMap: () => ({ message: "Specialization must be Physical Therapist, Occupational Therapist, or SLP" }),
-}
-);
 
 /**
  * Customer type enum
@@ -74,13 +66,12 @@ export const registerCustomerSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
-    location: z.string().min(1, "Location is required").trim(),
+    location: z.string().trim().optional(),
     customerType: customerTypeSchema,
     agencyName: z.string().min(2).max(255).trim().optional(),
     recaptchaToken: z.string().optional(),
 }).refine(
     (data) => {
-        // If customerType is "Home Health Agency", agencyName is required
         if (data.customerType === "agency") {
             return !!data.agencyName && data.agencyName.length >= 2;
         }
@@ -99,8 +90,6 @@ export const registerTherapistSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
-    specialization: therapistSpecializationSchema,
-    licenseNumber: licenseNumberSchema,
     recaptchaToken: z.string().optional()
 });
 
@@ -148,27 +137,11 @@ export const changePasswordSchema = z.object({
 });
 
 /**
- * Verify email schema
- */
-export const verifyEmailSchema = z.object({
-    token: z.string().min(1, "Verification token is required"),
-    type: z.enum(["signup", "email_change"]).optional(),
-});
-
-/**
  * Resend verification email schema
  */
 export const resendVerificationSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
-});
-
-/**
- * OAuth callback schema
- */
-export const oauthCallbackSchema = z.object({
-    code: z.string().min(1, "Authorization code is required"),
-    provider: z.enum(["google", "facebook"]),
 });
 
 /**

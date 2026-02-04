@@ -11,18 +11,12 @@ export const validate = (schema, source = "body") => {
     return async (req, res, next) => {
         try {
             const dataToValidate = req[source];
-
-            // Parse and validate data
             const validatedData = await schema.parseAsync(dataToValidate);
-
-            // Replace request data with validated (and potentially transformed) data
             req[source] = validatedData;
-
             next();
         } catch (error) {
-            if (error.name === "ZodError") {
-                // Format Zod errors for better readability
-                const formattedErrors = error.error.map((err) => ({
+            if (error.issues || error.name === "ZodError") {
+                const formattedErrors = error.issues.map((err) => ({
                     field: err.path.join("."),
                     message: err.message,
                 }));
@@ -44,27 +38,23 @@ export const validate = (schema, source = "body") => {
 export const validateMultiple = (schemas) => {
     return async (req, res, next) => {
         try {
-            const validatedData = {};
-
             for (const [source, schema] of Object.entries(schemas)) {
                 if (req[source]) {
-                    validatedData[source] = await schema.parseAsync(req[source]);
-                    req[source] = validatedData[source];
+                    req[source] = await schema.parseAsync(req[source]);
                 }
             }
-
             next();
         } catch (error) {
-            if (error.name === "ZodError") {
-                const formattedErrors = error.errors.map((err) => ({
+            if (error.issues || error.name === "ZodError") {
+                const formattedErrors = (error.errors || []).map((err) => ({
                     field: err.path.join("."),
                     message: err.message,
                 }));
 
-                next(new ValidationError("Validation failed", formattedErrors));
-            } else {
-                next(error);
+                console.error("Validation Details:", formattedErrors);
+                return next(new ValidationError("Validation failed", formattedErrors));
             }
+            next(error);
         }
-    }
-}
+    };
+};

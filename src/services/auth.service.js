@@ -4,53 +4,45 @@ import { AuthenticationError, ConflictError, ValidationError, BadRequestError, N
 
 /**
  * Register a new customer
- * Creates both Supabase auth user and application user record
+ * Creates Supabase auth user (with email confirmation)
  */
-export const registerCustomer = async ({ email, password, fullName, phone, location, customerType, agencyName }) => {
+export const registerCustomer = async ({ email, password, fullName, phone, customerType, agencyName }) => {
     const normalizedEmail = email.toLowerCase().trim();
-
-    const existingUser = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-    });
-
-    if (existingUser) {
-        return {
-            message: "Registration successful. Please check your email for verification.",
-            isNew: false
-        };
-    }
-
-    // Create user in Supabase Auth
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: normalizedEmail,
-        password,
-        email_confirm: false, // require email verification
-        user_metadata: {
-            full_name: fullName,
-            role: "customer",
-            customer_type: customerType
-        },
-    });
-
-    if (authError) {
-        console.error("Supabase auth error:", authError);
-
-        if (authError.message.includes("already registered")) {
-            return {
-                message: "Registration successful. Please check your email for verification.",
-                isNew: false
-            }
-        }
-
-        throw new BadRequestError("Failed to process registration");
-    }
+    let authData;
 
     try {
+        const { data, error } = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+                data: {
+                    full_name: fullName,
+                    role: "customer",
+                    customer_type: customerType
+                },
+                emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+            }
+        })
+
+        if (error) {
+            if (error.message.includes("already registered") || error.status === 422) {
+                return {
+                    message: "Registration successful. Please check your email for verification.",
+                    user: null
+                }
+            }
+
+            console.error("Supabase signup error:", error);
+            throw new BadRequestError("Failed to process registration.");
+        }
+
+        authData = data.user;
+
         // Create user record in our DB using admin access
         const user = await withAdminAccess(async (db) => {
             return db.user.create({
                 data: {
-                    id: authData.user.id,
+                    id: authData.id,
                     email: normalizedEmail,
                     passwordHash: "", // Supabase manages passwords
                     role: "customer",
@@ -60,12 +52,8 @@ export const registerCustomer = async ({ email, password, fullName, phone, locat
                         create: {
                             fullName,
                             phone,
-                            location,
-                            ...(customerType === "agency" && agencyName && {
-                                // Store agency name in a JSON field or add to schema
-                                // for now, we'll use fullName for agency
-                                fullName: agencyName,
-                            }),
+                            customerType,
+                            agencyName: customerType === "agency" ? agencyName : null,
                         },
                     },
                 },
@@ -87,8 +75,11 @@ export const registerCustomer = async ({ email, password, fullName, phone, locat
         };
     } catch (error) {
         // Rollback: Delete the Supabase user if database creation fails
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-        throw error;
+        if (authData?.id) {
+            await supabaseAdmin.auth.admin.deleteUser(authData.id);
+        }
+        console.error("Registration failed:", error);
+        throw new BadRequestError("Failed to process registration. Please try again.");
     }
 
 };
@@ -97,59 +88,41 @@ export const registerCustomer = async ({ email, password, fullName, phone, locat
  * Register a new therapist
  * Creates both Supabase auth user and application user record
  */
-export const registerTherapist = async ({ email, password, fullName, phone, specialization, licenseNumber }) => {
+export const registerTherapist = async ({ email, password, fullName, phone }) => {
     const normalizedEmail = email.toLowerCase().trim();
-
-    const existingUser = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-    });
-
-    if (existingUser) {
-        return {
-            message: "Registration successful. Please check your email for verification.",
-            isNew: false
-        };
-    }
-
-    const existingLicense = await prisma.therapistProfile.findUnique({
-        where: { licenseNumber },
-    });
-
-    if (existingLicense) {
-        throw new ConflictError("This license number is already registered");
-    }
-
-    // Create user in Supabase Auth
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: normalizedEmail,
-        password,
-        email_confirm: false,
-        user_metadata: {
-            full_name: fullName,
-            role: "therapist",
-            specialization,
-        },
-    });
-
-    if (authError) {
-        console.error("Supabase auth error:", authError);
-
-        if (authError.message.includes("already registered")) {
-            return {
-                message: "Registration successful. Please check your email for verification.",
-                isNew: false
-            }
-        }
-
-        throw new BadRequestError("Failed to process registration");
-    }
+    let authUser;
 
     try {
+
+        const { data, error } = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+                data: {
+                    full_name: fullName,
+                    role: "therapist"
+                },
+                emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+            }
+        });
+
+        if (error) {
+            if (error.status === 422 || error.message.includes("already registered")) {
+                return {
+                    message: "Registration successful. Please check your email and wait for admin approval.",
+                    user: null
+                };
+            }
+            throw error;
+        }
+
+        authUser = data.user;
+
         // Create user record in DB
         const user = await withAdminAccess(async (db) => {
             return db.user.create({
                 data: {
-                    id: authData.user.id,
+                    id: authUser.id,
                     email: normalizedEmail,
                     passwordHash: "",
                     role: "therapist",
@@ -159,8 +132,6 @@ export const registerTherapist = async ({ email, password, fullName, phone, spec
                         create: {
                             fullName,
                             phone,
-                            specialization,
-                            licenseNumber,
                             approvalStatus: "pending", // requires admin approval
                         },
                     },
@@ -179,13 +150,17 @@ export const registerTherapist = async ({ email, password, fullName, phone, spec
                 emailVerified: user.emailVerified,
                 therapistProfile: user.therapistProfile,
             },
-            message: 'Registration successfuly. Please verify your email and wait for admin approval.'
-        }
+            message: 'Registration successfuly. Please verify your email and wait for admin approval.',
+            isNew: true,
+        };
 
     } catch (error) {
-        // rollback: Delete the Supabase user
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-        throw error;
+        if (authUser?.id) {
+            await supabaseAdmin.auth.admin.deleteUser(authUser.id);
+        }
+
+        console.error("Registration failed:", error);
+        throw new BadRequestError("Failed to process registration. Please try again.");
     }
 
 };
@@ -218,21 +193,6 @@ export const login = async ({ email, password }) => {
     if (!user || !user.isActive) {
         await supabase.auth.signOut();
         throw new NotFoundError("User account not found", "USER_NOT_FOUND");
-    }
-
-    // Check if email is verified
-    if (!user.emailVerified && !data.user.email_confirmed_at) {
-        throw new AuthenticationError("Please verify your email before logging in.", "EMAIL_NOT_VERIFIED");
-    }
-
-    // Role specific logic (Therapists)
-    if (user.role === "therapist" && user.therapistProfile.approvalStatus !== "approved") {
-        await supabase.auth.signOut();
-        const status = user.therapistProfile?.approvalStatus;
-        throw new AuthenticationError(
-            status === "pending" ? "Account pending approval." : "Account rejected",
-            status === "pending" ? "ACCOUNT_PENDING" : "ACCOUNT_REJECTED"
-        );
     }
 
     // Update emailVerified status if it changed in Supabase
@@ -294,6 +254,7 @@ export const getCurrentUser = async (userId) => {
             customerProfile: {
                 select: {
                     fullName: true,
+                    agencyName: true,
                     phone: true,
                     location: true,
                     customerType: true
@@ -346,6 +307,16 @@ export const requestPasswordReset = async ({ email }) => {
  */
 export const resetPassword = async ({ password, accessToken }) => {
     if (!accessToken) {
+        throw new BadRequestError("Invalid or expired reset token");
+    }
+
+    const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: "", // not required for reset flows
+    });
+
+    if (sessionError) {
+        console.error("Session set error:", sessionError);
         throw new BadRequestError("Invalid or expired reset token");
     }
 
@@ -439,7 +410,10 @@ export const resendVerificationEmail = async ({ email }) => {
 
     const { error } = await supabase.auth.resend({
         type: "signup",
-        email: normalizedEmail
+        email: normalizedEmail,
+        options: {
+            emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+        }
     });
 
     if (error) {
@@ -455,12 +429,12 @@ export const resendVerificationEmail = async ({ email }) => {
 /**
  * Handle OAuth callback (Google, Facebook)
  */
-export const handleOAuthCallback = async ({ code, provider }) => {
+export const handleOAuth = async ({ code, provider }) => {
     // Exchange code for session
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-        console.error("OAuth callback error:", error);
+        console.error("OAuth error:", error);
         throw new AuthenticationError("OAuth authentication failed");
     }
 
@@ -503,7 +477,6 @@ export const handleOAuthCallback = async ({ code, provider }) => {
         };
     }
 
-    // Check if profile is complete
     const needsOnboarding = user.role === "customer"
         ? !user.customerProfile
         : !user.therapistProfile;
@@ -515,9 +488,10 @@ export const handleOAuthCallback = async ({ code, provider }) => {
             role: user.role,
             emailVerified: user.emailVerified,
             isActive: user.isActive,
-            customerProfile: user.customerProfile,
-            therapistProfile: user.therapistProfile,
-            needsOnboarding,
+            needsOnboarding: true,
+            customerProfile: user.customerProfile || null,
+            therapistProfile: user.therapistProfile || null,
+            needsOnboarding
         },
         session: data.session,
         supabaseUser,
