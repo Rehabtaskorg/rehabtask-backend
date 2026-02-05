@@ -63,7 +63,8 @@ export const registerCustomerController = async (req, res, next) => {
                     id: result.user.id,
                     email: result.user.email,
                     role: result.user.role,
-                    emailVerified: result.user.emailVerified
+                    emailVerified: result.user.emailVerified,
+                    // linkedToAgency: result.user.
                 }
             }
         }

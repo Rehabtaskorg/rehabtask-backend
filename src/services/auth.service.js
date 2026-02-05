@@ -38,6 +38,23 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         authData = data.user;
 
+        // CHECK: is this email already registered as a patient under an agency?
+        const existingPatient = await prisma.patient.findFirst({
+            where: {
+                email: normalizedEmail,
+                userId: null // only link if not already linked
+            },
+            include: {
+                agency: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        agencyName: true
+                    }
+                }
+            }
+        });
+
         // Create user record in our DB using admin access
         const user = await withAdminAccess(async (db) => {
             return db.user.create({
@@ -56,12 +73,28 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                             agencyName: customerType === "agency" ? agencyName : null,
                         },
                     },
+                    ...(existingPatient && {
+                        patientProfile: {
+                            connect: {
+                                id: existingPatient.id
+                            }
+                        }
+                    })
                 },
                 include: {
                     customerProfile: true,
+                    patientProfile: existingPatient
+                        ? { include: { agency: { select: { fullName: true, agencyName: true } } } }
+                        : false
                 },
             });
         });
+
+        const message = "Registration successful. Please check your email to verify your account."
+
+        if (existingPatient) {
+            message += ` Your account has been linked to ${existingPatient.agency.agencyName || 'an agency'}. You can now manage your own requests while viewing agency bookings.`;
+        }
 
         return {
             user: {
@@ -69,9 +102,10 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                 email: user.email,
                 role: user.role,
                 emailVerified: user.emailVerified,
-                customerProfile: user.customerProfile,
+                needsEmailVerification: true,
+                hasLinkedRecords: !!existingPatient
             },
-            message: "Registration successful. Please check your email to verify your account.",
+            message
         };
     } catch (error) {
         // Rollback: Delete the Supabase user if database creation fails
@@ -148,7 +182,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
                 email: user.email,
                 role: user.role,
                 emailVerified: user.emailVerified,
-                therapistProfile: user.therapistProfile,
+                needsEmailVerification: true
             },
             message: 'Registration successfuly. Please verify your email and wait for admin approval.',
             isNew: true,
@@ -213,11 +247,12 @@ export const login = async ({ email, password }) => {
             role: user.role,
             emailVerified: user.emailVerified,
             isActive: user.isActive,
-            customerProfile: user.customerProfile,
-            therapistProfile: user.therapistProfile,
         },
-        session: data.session,
-        supabaseUser: data.user
+        session: {
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            expiresAt: data.session.expires_at
+        },
     };
 };
 
@@ -265,9 +300,7 @@ export const getCurrentUser = async (userId) => {
                     fullName: true,
                     phone: true,
                     specialization: true,
-                    licenseNumber: true,
                     approvalStatus: true,
-                    rejectionReason: true,
                     workArea: true
                 }
             }
@@ -397,8 +430,7 @@ export const verifyEmail = async ({ token, type = "signup" }) => {
     }
 
     return {
-        message: "Email verified successfully. You can now log in.",
-        user: data.user,
+        message: "Email verified successfully. You can now log in."
     };
 };
 
@@ -488,13 +520,13 @@ export const handleOAuth = async ({ code, provider }) => {
             role: user.role,
             emailVerified: user.emailVerified,
             isActive: user.isActive,
-            needsOnboarding: true,
-            customerProfile: user.customerProfile || null,
-            therapistProfile: user.therapistProfile || null,
             needsOnboarding
         },
-        session: data.session,
-        supabaseUser,
+        session: {
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            expiresAt: data.session.expires_at
+        }
     };
 };
 
@@ -557,8 +589,7 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
             email: updatedUser.email,
             role: updatedUser.role,
             emailVerified: updatedUser.emailVerified,
-            customerProfile: updatedUser.customerProfile,
-            therapistProfile: updatedUser.therapistProfile,
+            onboardingComplete: true
         },
         message: "Profile completed successfully",
     };
