@@ -2,6 +2,7 @@ import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
     resetPassword, changePassword, resendVerificationEmail, completeOAuthOnboarding,
     handleOAuth,
+    markEmailVerified,
 } from "../services/auth.service.js";
 import { verifyRecaptcha } from "../utils/recaptcha.js";
 
@@ -23,7 +24,6 @@ const getRefreshTokenCookieOptions = () => ({
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/",
 });
-
 
 /**
  * Register customer controller
@@ -188,6 +188,31 @@ export const getCurrentUserController = async (req, res, next) => {
             data: {
                 user
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Handle email verification callback from frontend
+ */
+export const verifyEmailController = async (req, res, next) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing userId"
+            });
+        }
+
+        const result = await markEmailVerified({ userId });
+
+        res.status(200).json({
+            success: true,
+            message: result.message
         });
     } catch (error) {
         next(error);

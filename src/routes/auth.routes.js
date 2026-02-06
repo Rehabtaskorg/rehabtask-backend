@@ -11,7 +11,8 @@ import {
     resendVerificationEmailController,
     oauthCallbackController,
     completeOAuthOnboardingController,
-    refreshTokenController
+    refreshTokenController,
+    verifyEmailController
 } from "../controllers/auth.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -60,6 +61,9 @@ router.post(
     validate(loginSchema),
     loginController
 );
+
+// Verify email in DB (called by frontend after magic link)
+router.post("/verify-email", verifyEmailController);
 
 // Password reset
 router.post(

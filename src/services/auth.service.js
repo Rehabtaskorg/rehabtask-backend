@@ -20,7 +20,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                     role: "customer",
                     customer_type: customerType
                 },
-                emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+                emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
             }
         })
 
@@ -136,7 +136,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
                     full_name: fullName,
                     role: "therapist"
                 },
-                emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+                emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
             }
         });
 
@@ -315,6 +315,28 @@ export const getCurrentUser = async (userId) => {
 };
 
 /**
+ * Mark a user as emai verified in your database
+ * Called by the frontend after Supabase session exists
+ */
+export const markEmailVerified = async ({ userId }) => {
+    if (!userId) throw new BadRequestError("User ID is required");
+
+    try {
+        await withAdminAccess(async (db) => {
+            await db.user.update({
+                where: { id: userId },
+                data: { emailVerified: true }
+            });
+        });
+
+        return { message: "Email verified in database" };
+    } catch (error) {
+        console.error("Error updating emailVerified in DB:", error);
+        throw new BadRequestError("Failed to update user email verification");
+    }
+}
+
+/**
  * Request password reset
  */
 export const requestPasswordReset = async ({ email }) => {
@@ -400,37 +422,6 @@ export const changePassword = async ({ userId, currentPassword, newPassword }) =
 
     return {
         message: "Password changed successfully",
-    };
-};
-
-/**
- * Verify email with token
- */
-export const verifyEmail = async ({ token, type = "signup" }) => {
-    // Supabase handles email verification through magic links
-    // This endpoint is called after user clicks the verification link
-    const { data, error } = await supabase.auth.verifyOtp({
-        token_hash: token,
-        type: type
-    });
-
-    if (error) {
-        console.error("Email verification error:", error);
-        throw new BadRequestError("Invalid or expired verification token");
-    }
-
-    // Update our database
-    if (data.user) {
-        await withAdminAccess(async (db) => {
-            await db.user.update({
-                where: { id: data.user.id },
-                data: { emailVerified: true },
-            });
-        });
-    }
-
-    return {
-        message: "Email verified successfully. You can now log in."
     };
 };
 
