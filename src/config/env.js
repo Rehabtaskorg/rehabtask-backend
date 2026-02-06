@@ -22,7 +22,10 @@ const envSchema = z.object({
 
     // reCAPTCHA (optional)
     RECAPTCHA_SECRET_KEY: z.string().optional(),
-    RECAPTCHA_MIN_SCORE: z.string().default('0.5'),
+    RECAPTCHA_MIN_SCORE: z.preprocess(
+        (val) => (val === "" || val == null ? "0.5" : val),
+        z.string()
+    ),
 
     // Stripe
     STRIPE_SECRET_KEY: z.string(),
