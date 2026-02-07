@@ -14,16 +14,6 @@ const app = express();
 // Trust proxy (important for rate limiting and IP detection)
 app.set("trust proxy", 1);
 
-// Security headers
-app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-
-// Compression
-app.use(compression());
-
-app.use("/api/webhooks", webhookRoutes);
-
 // CORS configuration
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"
 
@@ -37,6 +27,16 @@ app.use(
         maxAge: 86400, // 24hrs
     })
 );
+
+// Security headers
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Compression
+app.use(compression());
+
+app.use("/api/webhooks", webhookRoutes);
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
