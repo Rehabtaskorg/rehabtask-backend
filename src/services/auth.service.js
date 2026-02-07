@@ -8,7 +8,7 @@ import { AuthenticationError, ConflictError, ValidationError, BadRequestError, N
  */
 export const registerCustomer = async ({ email, password, fullName, phone, customerType, agencyName }) => {
     const normalizedEmail = email.toLowerCase().trim();
-    let authData;
+    let authUser;
 
     try {
         const { data, error } = await supabase.auth.signUp({
@@ -25,18 +25,21 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
         })
 
         if (error) {
-            if (error.message.includes("already registered") || error.status === 422) {
+            if (error.status === 422 || error.message?.toLowerCase().includes("already registered")) {
                 return {
                     message: "Registration successful. Please check your email for verification.",
                     user: null
-                }
+                };
             }
 
-            console.error("Supabase signup error:", error);
-            throw new BadRequestError("Failed to process registration.");
+            throw error;
         }
 
-        authData = data.user;
+        authUser = data?.user;
+
+        if (!authUser?.id) {
+            throw new Error("Supabase user creation failed");
+        }
 
         // CHECK: is this email already registered as a patient under an agency?
         const existingPatient = await prisma.patient.findFirst({
@@ -59,7 +62,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
         const user = await withAdminAccess(async (db) => {
             return db.user.create({
                 data: {
-                    id: authData.id,
+                    id: authUser.id,
                     email: normalizedEmail,
                     passwordHash: "", // Supabase manages passwords
                     role: "customer",
@@ -75,25 +78,18 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                     },
                     ...(existingPatient && {
                         patientProfile: {
-                            connect: {
-                                id: existingPatient.id
-                            }
+                            connect: { id: existingPatient.id }
                         }
                     })
-                },
-                include: {
-                    customerProfile: true,
-                    patientProfile: existingPatient
-                        ? { include: { agency: { select: { fullName: true, agencyName: true } } } }
-                        : false
-                },
+                }
             });
         });
 
-        const message = "Registration successful. Please check your email to verify your account."
+        let message = "Registration successful. Please check your email to verify your account."
 
         if (existingPatient) {
-            message += ` Your account has been linked to ${existingPatient.agency.agencyName || 'an agency'}. You can now manage your own requests while viewing agency bookings.`;
+            message += ` Your account has been linked to ${existingPatient.agency.agencyName || "an agency"
+                }.`;
         }
 
         return {
@@ -103,16 +99,36 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                 role: user.role,
                 emailVerified: user.emailVerified,
                 needsEmailVerification: true,
-                hasLinkedRecords: !!existingPatient
+                hasLinkedRecords: Boolean(existingPatient)
             },
             message
         };
     } catch (error) {
-        // Rollback: Delete the Supabase user if database creation fails
-        if (authData?.id) {
-            await supabaseAdmin.auth.admin.deleteUser(authData.id);
+        console.log("Error object:", error);
+
+        /**
+         * Handle Prisma uniqueness safely
+         * Treat duplicate DB records as idempotent success
+         */
+        if (error?.code === "P2002" && error?.meta?.modelName === "User") {
+            return {
+                message: "Registration successful. Please check your email for verification.",
+                user: null
+            }
         }
-        console.error("Registration failed:", error);
+
+        /**
+         * Rollback supabase user ONLY if we created it
+         */
+        if (authUser?.id) {
+            try {
+                await supabaseAdmin.auth.admin.deleteUser(authUser.id);
+            } catch (error) {
+                // Intentionally ignored - avoid cascading failures
+            }
+        }
+
+
         throw new BadRequestError("Failed to process registration. Please try again.");
     }
 
@@ -213,6 +229,16 @@ export const login = async ({ email, password }) => {
 
     if (error) {
         console.error("Login error:", error);
+
+        // Check if it's specifically an email not confirmed error using the error code
+        if (error.code === "email_not_confirmed") {
+            throw new AuthenticationError(
+                "Please verify your email address before logging in. Check your inbox for the verification link.",
+                "EMAIL_NOT_VERIFIED"
+            );
+        }
+
+        // Generic error for invalid credentials (prevents email enumeration)
         throw new AuthenticationError("Invalid email or password", "INVALID_CREDENTIALS");
     }
 
@@ -227,6 +253,15 @@ export const login = async ({ email, password }) => {
     if (!user || !user.isActive) {
         await supabase.auth.signOut();
         throw new NotFoundError("User account not found", "USER_NOT_FOUND");
+    }
+
+    // Double check email verification from Supabase
+    if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        throw new AuthenticationError(
+            "Please verify your email address before logging in. Check your inbox for the verification link.",
+            "EMAIL_NOT_VERIFIED"
+        );
     }
 
     // Update emailVerified status if it changed in Supabase
@@ -289,7 +324,6 @@ export const getCurrentUser = async (userId) => {
             customerProfile: {
                 select: {
                     fullName: true,
-                    agencyName: true,
                     phone: true,
                     location: true,
                     customerType: true
@@ -301,7 +335,6 @@ export const getCurrentUser = async (userId) => {
                     phone: true,
                     specialization: true,
                     approvalStatus: true,
-                    workArea: true
                 }
             }
         }
@@ -344,7 +377,7 @@ export const requestPasswordReset = async ({ email }) => {
 
     // Use supabase's password reset flow
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${process.env.FRONTEND_URL}/auth/reset-password`
+        redirectTo: `${process.env.FRONTEND_URL}/reset-password`
     });
 
     if (error) {
@@ -354,37 +387,6 @@ export const requestPasswordReset = async ({ email }) => {
 
     return {
         message: "If an account exists with this email, you will receive password reset instructions.",
-    };
-};
-
-/**
- * Reset password with token
- */
-export const resetPassword = async ({ password, accessToken }) => {
-    if (!accessToken) {
-        throw new BadRequestError("Invalid or expired reset token");
-    }
-
-    const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: "", // not required for reset flows
-    });
-
-    if (sessionError) {
-        console.error("Session set error:", sessionError);
-        throw new BadRequestError("Invalid or expired reset token");
-    }
-
-    // Verify and update password using Supabase
-    const { data, error } = await supabase.auth.updateUser({ password });
-
-    if (error) {
-        console.error("Password reset error:", error);
-        throw new BadRequestError("Failed to reset password. Token may be invalid or expired.");
-    }
-
-    return {
-        message: "Password has been reset successfully. You can now log in with your new password.",
     };
 };
 
@@ -435,7 +437,7 @@ export const resendVerificationEmail = async ({ email }) => {
         type: "signup",
         email: normalizedEmail,
         options: {
-            emailRedirectTo: `${process.env.FRONTEND_URL}/auth/verify-callback`
+            emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
         }
     });
 

@@ -28,6 +28,7 @@
     "@supabase/supabase-js": "^2.91.0",
     "axios": "^1.13.4",
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",

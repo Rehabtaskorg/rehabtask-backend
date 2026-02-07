@@ -1,10 +1,9 @@
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
-    resetPassword, changePassword, resendVerificationEmail, completeOAuthOnboarding,
+    changePassword, resendVerificationEmail, completeOAuthOnboarding,
     handleOAuth,
     markEmailVerified,
 } from "../services/auth.service.js";
-import { verifyRecaptcha } from "../utils/recaptcha.js";
 
 /**
  * Cookie options for Supabase tokens
@@ -30,19 +29,7 @@ const getRefreshTokenCookieOptions = () => ({
  */
 export const registerCustomerController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, customerType, agencyName, recaptchaToken } = req.body;
-
-        // if (recaptchaToken) {
-        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
-
-        //     if (!recaptchaResult.success) {
-        //         return res.status(400).json({
-        //             success: false,
-        //             code: "RECAPTCHA_FAILED",
-        //             message: "reCAPTCHA verification failed. Please try again."
-        //         });
-        //     }
-        // }
+        const { email, password, fullName, phone, customerType, agencyName } = req.body;
 
         const result = await registerCustomer({ email, password, fullName, phone, customerType, agencyName })
 
@@ -64,9 +51,9 @@ export const registerCustomerController = async (req, res, next) => {
                     email: result.user.email,
                     role: result.user.role,
                     emailVerified: result.user.emailVerified,
-                    // linkedToAgency: result.user.
+                    hasLinkedRecords: result.user.hasLinkedRecords
                 }
-            }
+            };
         }
 
         return res.status(201).json(response);
@@ -80,19 +67,7 @@ export const registerCustomerController = async (req, res, next) => {
  */
 export const registerTherapistController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, recaptchaToken } = req.body;
-
-        // if (recaptchaToken) {
-        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
-
-        //     if (!recaptchaResult.success) {
-        //         return res.status(400).json({
-        //             success: false,
-        //             code: "RECAPTCHA_FAILED",
-        //             message: "reCAPTCHA verification failed. Please try again."
-        //         });
-        //     }
-        // }
+        const { email, password, fullName, phone } = req.body;
 
         const result = await registerTherapist({ email, password, fullName, phone });
 
@@ -108,7 +83,6 @@ export const registerTherapistController = async (req, res, next) => {
                     email: result.user.email,
                     role: result.user.role,
                     emailVerified: result.user.emailVerified,
-                    approvalStatus: result.user.therapistProfile?.approvalStatus
                 }
             };
         }
@@ -124,25 +98,13 @@ export const registerTherapistController = async (req, res, next) => {
  */
 export const loginController = async (req, res, next) => {
     try {
-        const { email, password, recaptchaToken } = req.body;
-
-        // if (recaptchaToken) {
-        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
-
-        //     if (!recaptchaResult.success) {
-        //         return res.status(400).json({
-        //             success: false,
-        //             code: "RECAPTCHA_FAILED",
-        //             message: "reCAPTCHA verification failed. Please try again."
-        //         });
-        //     }
-        // }
+        const { email, password } = req.body;
 
         const result = await login({ email, password });
 
         // Set Supabase session tokens in httpOnly cookies
-        res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
-        res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
+        res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
+        res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
 
         res.status(200).json({
             success: true,
@@ -164,8 +126,8 @@ export const logoutController = async (req, res, next) => {
         await logout(req.accessToken);
 
         // Clear all auth cookies
-        res.clearCookie("sb_access_token", getAccessTokenCookieOptions());
-        res.clearCookie("sb_refresh_token", getRefreshTokenCookieOptions());
+        res.clearCookie("sb_access_token", { path: "/" });
+        res.clearCookie("sb_refresh_token", { path: "/" });
 
         res.status(200).json({
             success: true,
@@ -224,51 +186,9 @@ export const verifyEmailController = async (req, res, next) => {
  */
 export const requestPasswordResetController = async (req, res, next) => {
     try {
-        const { email, recaptchaToken } = req.body;
-
-        // if (recaptchaToken) {
-        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
-
-        //     if (!recaptchaResult.success) {
-        //         return res.status(400).json({
-        //             success: false,
-        //             code: "RECAPTCHA_FAILED",
-        //             message: "reCAPTCHA verification failed. Please try again."
-        //         });
-        //     }
-        // }
+        const { email } = req.body;
 
         const result = await requestPasswordReset({ email });
-
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Reset password controller
- * Called when user clicks reset link and submits new password
- */
-export const resetPasswordController = async (req, res, next) => {
-    try {
-        const { password } = req.body;
-
-        // Access token from reset link should be in cookies or header
-        const accessToken = req.accessToken || extractTokenFromHeader(req);
-
-        if (!accessToken) {
-            return res.status(400).json({
-                success: false,
-                code: "INVALID_TOKEN",
-                message: "Invalid or expired reset token",
-            });
-        }
-
-        const result = await resetPassword({ password, accessToken });
 
         res.status(200).json({
             success: true,
@@ -316,8 +236,8 @@ export const oauthCallbackController = async (req, res, next) => {
 
         const result = await handleOAuth({ code, provider });
 
-        res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
-        res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
+        res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
+        res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
 
         const redirectUrl = result.user.needsOnboarding
             ? `${process.env.FRONTEND_URL}/auth/onboarding`
@@ -337,19 +257,7 @@ export const oauthCallbackController = async (req, res, next) => {
  */
 export const resendVerificationEmailController = async (req, res, next) => {
     try {
-        const { email, recaptchaToken } = req.body;
-
-        // if (recaptchaToken) {
-        //     const recaptchaResult = await verifyRecaptcha(recaptchaToken, req.ip || req.headers["x-forwared-for"]);
-
-        //     if (!recaptchaResult.success) {
-        //         return res.status(400).json({
-        //             success: false,
-        //             code: "RECAPTCHA_FAILED",
-        //             message: "reCAPTCHA verification failed. Please try again."
-        //         });
-        //     }
-        // }
+        const { email } = req.body;
 
         const result = await resendVerificationEmail({ email });
 
@@ -415,15 +323,4 @@ export const refreshTokenController = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-}
-
-/**
- * Helper to extract token from Authorization header
- */
-function extractTokenFromHeader(req) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-        return authHeader.substring(7);
-    }
-    return null;
 }

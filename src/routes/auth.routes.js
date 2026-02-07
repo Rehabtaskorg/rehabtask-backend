@@ -6,7 +6,6 @@ import {
     logoutController,
     getCurrentUserController,
     requestPasswordResetController,
-    resetPasswordController,
     changePasswordController,
     resendVerificationEmailController,
     oauthCallbackController,
@@ -15,13 +14,13 @@ import {
     verifyEmailController
 } from "../controllers/auth.controller.js";
 import { authenticate } from "../middleware/auth.js";
+import { recaptchaMiddleware } from "../middleware/recaptcha.js";
 import { validate } from "../middleware/validate.js";
 import {
     registerCustomerSchema,
     registerTherapistSchema,
     loginSchema,
     requestPasswordResetSchema,
-    resetPasswordSchema,
     changePasswordSchema,
     resendVerificationSchema
 } from "../validators/auth.schema.js";
@@ -42,6 +41,7 @@ const router = express.Router();
 // Registration routes
 router.post(
     "/register/customer",
+    recaptchaMiddleware,
     registrationRateLimiter,
     validate(registerCustomerSchema),
     registerCustomerController
@@ -49,6 +49,7 @@ router.post(
 
 router.post(
     "/register/therapist",
+    recaptchaMiddleware,
     registrationRateLimiter,
     validate(registerTherapistSchema),
     registerTherapistController
@@ -56,7 +57,8 @@ router.post(
 
 // Login
 router.post(
-    "/login", // brute force protection
+    "/login",
+    recaptchaMiddleware,
     sensitiveOperationRateLimiter,
     validate(loginSchema),
     loginController
@@ -68,22 +70,17 @@ router.post("/verify-email", verifyEmailController);
 // Password reset
 router.post(
     "/password/forgot",
+    recaptchaMiddleware,
     passwordResetLimiter,
     validate(requestPasswordResetSchema),
     requestPasswordResetController
 );
 
-router.post(
-    "/password/reset",
-    passwordResetLimiter,
-    validate(resetPasswordSchema),
-    resetPasswordController
-);
-
 // Resend verification email
 router.post(
     "/email/resend",
-    emailVerificationRateLimiter, // prevents
+    recaptchaMiddleware,
+    emailVerificationRateLimiter,
     validate(resendVerificationSchema),
     resendVerificationEmailController
 );

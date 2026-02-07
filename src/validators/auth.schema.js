@@ -29,8 +29,11 @@ const emailSchema = z
  */
 const phoneSchema = z
     .string()
-    .regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format. Use international format (e.g, +1234567890)")
-    .trim()
+    .regex(
+        /^\+1\d{10}$/,
+        "Invalid US phone number format. Use +1XXXXXXXXXX"
+    );
+
 
 /**
  * Full name validation
@@ -90,7 +93,7 @@ export const registerTherapistSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
-    recaptchaToken: z.string().optional()
+    recaptchaToken: z.string().optional(),
 });
 
 /**
@@ -108,17 +111,6 @@ export const loginSchema = z.object({
 export const requestPasswordResetSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
-});
-
-/**
- * Reset password schema
- */
-export const resetPasswordSchema = z.object({
-    password: passwordSchema,
-    confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-    error: "Passwords do not match",
-    path: ["confirmPassword"],
 });
 
 /**

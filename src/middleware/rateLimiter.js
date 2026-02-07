@@ -12,7 +12,6 @@ const createRateLimiter = (options = {}) => {
         message: "Too many requests from this IP, please try again later",
         standardHeaders: true,
         legacyHeaders: false,
-        validate: { xForwardedForHeader: false },
         handler: (req, res) => {
             res.status(429).json({
                 success: false,
@@ -61,8 +60,9 @@ export const emailVerificationRateLimiter = createRateLimiter({
  */
 export const apiRateLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 15, // 100 requests per 15 minutes,
+    max: 200, // 200 requests per 15 minutes,
     message: "Too many requests, please try again later",
+    validate: { xForwardedForHeader: true }
 });
 
 /**

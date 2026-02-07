@@ -27,7 +27,7 @@ export async function verifyRecaptcha(token, remoteIp = null) {
         const params = new URLSearchParams({
             secret: recaptchaSecret,
             response: token,
-            ...(remoteIp && { remoteIp }),
+            ...(remoteIp && { remoteip: remoteIp }),
         });
 
         const response = await axios.post(
@@ -93,6 +93,7 @@ export function recaptchaMiddleware(req, res, next) {
     const { recaptchaToken } = req.body;
 
     if (!process.env.RECAPTCHA_SECRET_KEY && process.env.NODE_ENV === "development") {
+        console.warn("reCAPTCHA bypassed in development mode");
         return next();
     }
 
@@ -112,11 +113,17 @@ export function recaptchaMiddleware(req, res, next) {
                 return res.status(400).json({
                     success: false,
                     code: "RECAPTCHA FAILED",
-                    message: "reCAPTCHA verification failed. Please try again."
+                    message: "reCAPTCHA verification failed. Please try again.",
+                    ...(process.env.NODE_ENV === "development" && {
+                        debug: {
+                            score: result.score,
+                            errors: result.errors
+                        }
+                    })
                 });
             }
 
-            // store verification result for potential logging
+            // store verification result for potential logging/analytics
             req.recaptchaResult = result;
             next();
         })

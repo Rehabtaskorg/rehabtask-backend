@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import compression from "compression";
 import { env } from "./config/env.js"
 import webhookRoutes from "./routes/webhook.routes.js";
 import routes from "./routes/index.js";
@@ -11,6 +13,14 @@ const app = express();
 
 // Trust proxy (important for rate limiting and IP detection)
 app.set("trust proxy", 1);
+
+// Security headers
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Compression
+app.use(compression());
 
 app.use("/api/webhooks", webhookRoutes);
 
@@ -29,8 +39,8 @@ app.use(
 );
 
 // Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Cookie Parser
 app.use(cookieParser());

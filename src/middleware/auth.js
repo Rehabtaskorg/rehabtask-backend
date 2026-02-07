@@ -64,18 +64,8 @@ export const authenticate = async (req, res, next) => {
     } catch (error) {
         // Clear invalid cookies
         if (error instanceof AuthenticationError) {
-            res.clearCookie("sb_access_token", {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                path: "/",
-            });
-            res.clearCookie("sb_refresh_token", {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                path: "/",
-            });
+            res.clearCookie("sb_access_token", { path: "/", });
+            res.clearCookie("sb_refresh_token", { path: "/", });
         }
         next(error);
     }
@@ -222,14 +212,14 @@ export const autoRefreshToken = async (req, res, next) => {
                 res.cookie("sb_access_token", data.session.access_token, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === "production",
-                    sameSite: process.env.NODE_END === "production" ? "none" : "lax",
+                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
                     maxAge: 60 * 60 * 1000, // 1hour
                     path: "/",
                 });
                 res.cookie("sb_refresh_token", data.session.refresh_token, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === "production",
-                    sameSite: process.env.NODE_END === "production" ? "none" : "lax",
+                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
                     maxAge: 60 * 60 * 1000, // 1hour
                     path: "/",
                 });
