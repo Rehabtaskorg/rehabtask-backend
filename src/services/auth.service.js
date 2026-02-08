@@ -14,12 +14,12 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
         const { data, error } = await supabase.auth.signUp({
             email: normalizedEmail,
             password,
+            phone: phone,
             options: {
                 data: {
                     full_name: fullName,
                     role: "customer",
                     customer_type: customerType,
-                    phone: phone,
                 },
                 emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
             }
@@ -148,11 +148,11 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
         const { data, error } = await supabase.auth.signUp({
             email: normalizedEmail,
             password,
+            phone: phone,
             options: {
                 data: {
                     full_name: fullName,
                     role: "therapist",
-                    phone: phone
                 },
                 emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
             }
