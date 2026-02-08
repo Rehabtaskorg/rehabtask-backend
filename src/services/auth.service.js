@@ -454,88 +454,46 @@ export const resendVerificationEmail = async ({ email }) => {
 };
 
 /**
- * Handle OAuth callback (Google, Facebook)
- */
-export const handleOAuth = async ({ code, provider }) => {
-    // Exchange code for session
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (error) {
-        console.error("OAuth error:", error);
-        throw new AuthenticationError("OAuth authentication failed");
-    }
-
-    const supabaseUser = data.user;
-
-    let user = await prisma.user.findUnique({
-        where: { id: supabaseUser.id },
-        include: {
-            customerProfile: true,
-            therapistProfile: true,
-        },
-    });
-
-    // if user doesn't exist, create them (first time OAuth login)
-    if (!user) {
-        user = await withAdminAccess(async (db) => {
-            return db.user.create({
-                data: {
-                    id: supabaseUser.id,
-                    email: supabaseUser.email,
-                    passwordHash: "",
-                    role: "customer", // Default role for OAuth users
-                    emailVerified: true,
-                    isActive: true
-                },
-            });
-        });
-
-        // return user with needsOnboarding flag
-        return {
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                emailVerified: user.emailVerified,
-                needsOnboarding: true,
-            },
-            session: data.session,
-            supabaseUser,
-        };
-    }
-
-    const needsOnboarding = user.role === "customer"
-        ? !user.customerProfile
-        : !user.therapistProfile;
-
-    return {
-        user: {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            emailVerified: user.emailVerified,
-            isActive: user.isActive,
-            needsOnboarding
-        },
-        session: {
-            accessToken: data.session.access_token,
-            refreshToken: data.session.refresh_token,
-            expiresAt: data.session.expires_at
-        }
-    };
-};
-
-/**
  * Complete OAuth onboarding
  */
 export const completeOAuthOnboarding = async ({ userId, role, profileData }) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
+        include: {
+            customerProfile: true,
+            therapistProfile: true
+        }
     });
 
     if (!user) {
         throw new NotFoundError("User not found");
     }
+
+    // Prevent re-onboarding if profile already exists
+    if (role === "customer" && user.customerProfile) {
+        throw new ConflictError("Customer profile already exists");
+    }
+
+    if (role === "therapist" && user.therapistProfile) {
+        throw new ConflictError("Therapist profile already exists");
+    }
+
+    // Check if email was registered as a patient
+    const existingPatient = await prisma.patient.findFirst({
+        where: {
+            email: user.email,
+            userId: null
+        },
+        include: {
+            agency: {
+                select: {
+                    id: true,
+                    fullName: true,
+                    agencyName: true
+                }
+            }
+        }
+    });
 
     // Update user role if needed
     const updatedUser = await withAdminAccess(async (db) => {
@@ -547,10 +505,17 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     customerProfile: {
                         create: {
                             fullName: profileData.fullName,
-                            phone: profileData.phone,
-                            location: profileData.location,
+                            phone: profileData.phone || "",
+                            customerType: profileData.customerType || "individual",
+                            agencyName: profileData.customerType === "agency" ? profileData.agencyName : null,
+                            location: profileData.location || null,
                         },
                     },
+                    ...(existingPatient && {
+                        patientProfile: {
+                            connect: { id: existingPatient.id }
+                        }
+                    })
                 },
                 include: {
                     customerProfile: true,
@@ -564,10 +529,11 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     therapistProfile: {
                         create: {
                             fullName: profileData.fullName,
-                            phone: profileData.phone,
-                            specialization: profileData.specialization,
-                            licenseNumber: profileData.licenseNumber,
-                            approvalStatus: "pending",
+                            phone: profileData.phone || "",
+                            specialization: profileData.specialization || null,
+                            licenseNumber: profileData.licenseNumber || null,
+                            workArea: profileData.workArea || null,
+                            approvalStatus: "pending", // Requires admin approval
                         },
                     },
                 },
@@ -578,15 +544,26 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
         }
     });
 
+    let message = "Profile completed successfully";
+
+    if (role === "customer" && existingPatient) {
+        message += `. Your account has been linked to ${existingPatient.agency.agencyName || "an agency"}.`;
+    }
+
+    if (role === "therapist") {
+        message += ". Your account is pending admin approval.";
+    }
+
     return {
         user: {
             id: updatedUser.id,
             email: updatedUser.email,
             role: updatedUser.role,
             emailVerified: updatedUser.emailVerified,
-            onboardingComplete: true
+            onboardingComplete: true,
+            hasLinkedRecords: Boolean(existingPatient)
         },
-        message: "Profile completed successfully",
+        message,
     };
 };
 

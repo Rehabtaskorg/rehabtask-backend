@@ -8,7 +8,7 @@ import {
     requestPasswordResetController,
     changePasswordController,
     resendVerificationEmailController,
-    oauthCallbackController,
+    processOAuthController,
     completeOAuthOnboardingController,
     refreshTokenController,
     verifyEmailController
@@ -22,7 +22,8 @@ import {
     loginSchema,
     requestPasswordResetSchema,
     changePasswordSchema,
-    resendVerificationSchema
+    resendVerificationSchema,
+    completeOAuthOnboardingSchema
 } from "../validators/auth.schema.js";
 import {
     registrationRateLimiter,
@@ -85,10 +86,19 @@ router.post(
     resendVerificationEmailController
 );
 
+/**
+ * OAuth routes
+ * Process OAuth token from frontend
+ */
+router.post("/oauth/process", processOAuthController);
 
-// OAuth routes
-router.post("/oauth/callback", oauthCallbackController)
-router.post("/oauth/onboarding", authenticate, completeOAuthOnboardingController);
+// POST endpoint for completing OAuth with role selection
+router.post(
+    "/oauth/onboarding",
+    authenticate,
+    validate(completeOAuthOnboardingSchema),
+    completeOAuthOnboardingController
+);
 
 
 // Refresh token

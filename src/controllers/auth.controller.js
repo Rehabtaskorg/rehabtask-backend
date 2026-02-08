@@ -1,8 +1,8 @@
+import { prisma, withAdminAccess } from "../config/prisma.js";
+import { supabase } from "../config/supabase.js";
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
-    changePassword, resendVerificationEmail, completeOAuthOnboarding,
-    handleOAuth,
-    markEmailVerified,
+    changePassword, resendVerificationEmail, completeOAuthOnboarding, markEmailVerified,
 } from "../services/auth.service.js";
 
 /**
@@ -222,33 +222,169 @@ export const changePasswordController = async (req, res, next) => {
 }
 
 /**
- * OAuth callback controller
+ * Complete OAuth onboarding controller
  */
-export const oauthCallbackController = async (req, res, next) => {
+export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
-        const { code, provider } = req.query;
+        const { role, fullName, phone, customerType, agencyName, location, specialization, licenseNumber, workArea } = req.body;
 
-        if (!code && !provider) {
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent('Missing OAuth parameters')}`
-            );
+        // Build profile data object based on role
+        const profileData = {
+            fullName,
+            phone,
+            ...(role === "customer" && {
+                customerType,
+                agencyName,
+                location
+            }),
+            ...(role === "therapist" && {
+                specialization,
+                licenseNumber,
+                workArea
+            })
+        };
+
+        const result = await completeOAuthOnboarding({
+            userId: req.user.id,
+            role,
+            profileData
+        });
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: {
+                user: result.user,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+/**
+ * Process OAuth session from frontend
+ * Called after frontend receives tokens from Supabase
+ */
+export const processOAuthController = async (req, res, next) => {
+    try {
+        const { accessToken, refreshToken } = req.body;
+
+        if (!accessToken || !refreshToken) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing OAuth tokens"
+            });
         }
 
-        const result = await handleOAuth({ code, provider });
+        // Verify the session with Supabase and get user
+        const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser(accessToken);
 
-        res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
-        res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
+        if (userError || !supabaseUser) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid OAuth session"
+            });
+        }
 
-        const redirectUrl = result.user.needsOnboarding
-            ? `${process.env.FRONTEND_URL}/auth/onboarding`
-            : `${process.env.FRONTEND_URL}/dashboard`;
+        // Check if user exists in our database
+        let user = await prisma.user.findUnique({
+            where: { id: supabaseUser.id },
+            include: {
+                customerProfile: true,
+                therapistProfile: true,
+            },
+        });
 
-        res.redirect(redirectUrl);
+        // If user doesn't exists, create a minimal user record
+        if (!user) {
+            // Check if this email was already registered as a patient
+            const existingPatient = await prisma.patient.findFirst({
+                where: {
+                    email: supabaseUser.email.toLowerCase().trim(),
+                    userId: null
+                },
+                include: {
+                    agency: {
+                        select: {
+                            id: true,
+                            fullName: true,
+                            agencyName: true
+                        }
+                    }
+                }
+            });
+
+            user = await withAdminAccess(async (db) => {
+                return db.user.create({
+                    data: {
+                        id: supabaseUser.id,
+                        email: supabaseUser.email.toLowerCase().trim(),
+                        passwordHash: "",
+                        role: "customer",
+                        emailVerified: true,
+                        isActive: true,
+                        ...(existingPatient && {
+                            patientProfile: {
+                                connect: { id: existingPatient.id }
+                            }
+                        })
+                    },
+                    include: {
+                        customerProfile: true,
+                        therapistProfile: true,
+                    }
+                });
+            });
+
+            // Set session cookies
+            res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
+            res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
+
+            return res.status(200).json({
+                success: true,
+                message: "OAuth authentication successful",
+                data: {
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        role: user.role,
+                        emailVerified: user.emailVerified,
+                        needsOnboarding: true,
+                        hasLinkedRecords: Boolean(existingPatient)
+                    }
+                }
+            });
+        }
+
+        // Existing user - check if they need onboarding
+        const needsOnboarding = user.role === "customer"
+            ? !user.customerProfile
+            : user.role === "therapist"
+                ? !user.therapistProfile
+                : false;
+
+        // Set session cookies
+        res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
+        res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
+
+        res.status(200).json({
+            success: true,
+            message: "OAuth authentication successful",
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    emailVerified: user.emailVerified,
+                    isActive: user.isActive,
+                    needsOnboarding
+                }
+            }
+        });
+
     } catch (error) {
-        console.error("OAuth callback error:", error);
-        res.redirect(
-            `${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent(error.message || 'OAuth authentication failed')}`
-        );
+        console.error("Process OAuth error:", error);
+        next(error);
     }
 }
 
@@ -264,31 +400,6 @@ export const resendVerificationEmailController = async (req, res, next) => {
         res.status(200).json({
             success: true,
             message: result.message
-        });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Complete OAuth onboarding controller
- */
-export const completeOAuthOnboardingController = async (req, res, next) => {
-    try {
-        const { role, ...profileData } = req.body;
-
-        const result = await completeOAuthOnboarding({
-            userId: req.user.id,
-            role,
-            profileData
-        });
-
-        res.status(200).json({
-            success: true,
-            message: result.message,
-            data: {
-                user: result.user,
-            }
         });
     } catch (error) {
         next(error);

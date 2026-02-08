@@ -129,6 +129,71 @@ export const changePasswordSchema = z.object({
 });
 
 /**
+ * OAuth onboarding validation schema
+ */
+export const completeOAuthOnboardingSchema = z.object({
+    role: z.enum(["customer", "therapist"], {
+        required_error: "Role is required",
+        invalid_type_error: "Role must be either 'customer' or 'therapist'"
+    }),
+
+    fullName: z.string()
+        .min(2, "Full name must be at least 2 characters")
+        .max(255, "Full name must not exceed 255 characters"),
+
+    phone: phoneSchema,
+
+    // Customer fields
+    customerType: z.enum(["individual", "agency"]).optional(),
+    agencyName: z.string()
+        .min(2, "Agency name must be at least 2 characters")
+        .max(255, "Agency name must not exceed 255 characters")
+        .optional(),
+    location: z.string()
+        .max(500, "Location must not exceed 500 characters")
+        .optional(),
+
+    // Therapist fields
+    specialization: z.string()
+        .max(1000, "Specialization must not exceed 1000 characters")
+        .optional(),
+
+    licenseNumber: licenseNumberSchema.optional(),
+
+    workArea: z.string()
+        .max(500, "Work area must not exceed 500 characters")
+        .optional()
+})
+    .refine(data => {
+        if (data.role === "customer") {
+            return !!data.customerType;
+        }
+        return true;
+    }, {
+        message: "Customer type is required for customers",
+        path: ["customerType"]
+    })
+    .refine(data => {
+        if (data.role === "customer" && data.customerType === "agency") {
+            return !!data.agencyName?.trim();
+        }
+        return true;
+    }, {
+        message: "Agency name is required for agency customers",
+        path: ["agencyName"]
+    })
+    .refine(data => {
+        if (data.role === "therapist") {
+            return !!data.licenseNumber?.trim();
+        }
+        return true;
+    }, {
+        message: "License number is required for therapists",
+        path: ["licenseNumber"]
+    });
+
+
+/**
  * Resend verification email schema
  */
 export const resendVerificationSchema = z.object({
