@@ -2,7 +2,8 @@ import {
     createPaymentIntent, getCustomerPaymentHistory,
     getTherapistPayoutHistory, createConnectAccountLink,
     getConnectAccountStatus, releasePayment,
-    processRefund
+    processRefund,
+    createDashboardLink
 } from "../services/payment.service.js";
 
 /**
@@ -111,6 +112,21 @@ const processRefundController = async (req, res, next) => {
     }
 }
 
+/**
+ * Create Stripe Dashboard login link
+ */
+const createDashboardLinkController = async (req, res, next) => {
+    try {
+        const therapistId = req.user.therapistProfile.id;
+        const userId = req.user.id;
+        const result = await createDashboardLink(therapistId, userId);
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export {
     createPaymentIntentController,
     getPaymentHistoryController,
@@ -119,4 +135,5 @@ export {
     getConnectAccountStatusController,
     releasePaymentController,
     processRefundController,
+    createDashboardLinkController
 };
