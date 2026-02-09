@@ -1,74 +1,236 @@
-import jwt from "jsonwebtoken";
+import { supabase } from "../config/supabase.js";
 import { prisma } from "../config/prisma.js";
+import { AuthenticationError, AuthorizationError } from "../utils/errors.js";
 
 /**
- * Authenticate JWT token
+ * Extract token from request
+ * Checks both Authorization header and cookies
+ */
+const extraToken = (req) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        return authHeader.substring(7);
+    }
+
+    if (req.cookies && req.cookies.sb_access_token) {
+        return req.cookies.sb_access_token;
+    }
+
+    return null;
+};
+
+/**
+ * Authenticate user with Supabase JWT
+ * Verifies the JWT and loads user data from database
  */
 export const authenticate = async (req, res, next) => {
     try {
-        const token = req.cookies.token;
+        const token = extraToken(req);
 
         if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: "Authentication required",
-            });
+            throw new AuthenticationError("Authentication required. Please log in.", "NO_TOKEN");
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Verify token with supabase
+        const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+
+        if (error || !supabaseUser) {
+            console.error("Token verification error:", error);
+            throw new AuthenticationError("Invalid or expired token", "INVALID_TOKEN");
+        }
 
         const user = await prisma.user.findUnique({
-            where: { id: decoded.id },
+            where: { id: supabaseUser.id },
             include: {
                 customerProfile: true,
                 therapistProfile: true
             },
         });
 
-        if (!user || !user.isActive) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid or inactive account",
-            });
+        if (!user) {
+            throw new AuthenticationError("User account not found", "USER_NOT_FOUND");
         }
 
+        if (!user.isActive) {
+            throw new AuthenticationError("Your account has been deactivated", "ACCOUNT_DEACTIVATED");
+        }
+
+        // Attach user and Supabase user to request
         req.user = user;
+        req.supabaseUser = supabaseUser;
+        req.accessToken = token;
+
         next();
     } catch (error) {
         // Clear invalid cookies
-        res.clearCookie("token", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-            path: "/",
-        });
-
-        return res.status(401).json({
-            success: false,
-            message: "Invalid token",
-        });
+        if (error instanceof AuthenticationError) {
+            res.clearCookie("sb_access_token", { path: "/", });
+            res.clearCookie("sb_refresh_token", { path: "/", });
+        }
+        next(error);
     }
 };
 
 /**
+ * Optional authentication middleware
+ * Attaches user to request if token is present, but doesn't require it
+ */
+export const optionalAuthenticate = async (req, res, next) => {
+    try {
+        const token = extraToken(req);
+
+        if (!token) {
+            return next();
+        }
+
+        const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+
+        if (error || !supabaseUser) {
+            return next();
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: supabaseUser.id },
+            include: {
+                customerProfile: true,
+                therapistProfile: true,
+            },
+        });
+
+        if (user && user.isActive) {
+            req.user = user;
+            req.supabaseUser = supabaseUser;
+            req.accessToken = token;
+        }
+
+        next();
+    } catch (error) {
+        next();
+    }
+}
+
+/**
  * Authorize specific roles
+ * Must be used after authenticate middleware
  */
 export const authorize = (roles) => {
     return (req, res, next) => {
         if (!req.user) {
-            return res.status(401).json({
-                success: false,
-                message: "Authentication required",
-            });
+            return next(new AuthenticationError("Authentication required"));
         }
 
         if (!roles.includes(req.user.role)) {
-            return res.status(403).json({
-                success: false,
-                message: "Insufficient permissions",
-            });
+            return next(
+                new AuthorizationError(
+                    `Access denied. Required role(s): ${roles.join(", ")}`,
+                    `INSUFFICIENT_PERMISSIONS`
+                )
+            );
         }
 
+        next();
+    };
+};
+
+/**
+ * Require email verification
+ * Must be used after authenticate middleware
+ */
+export const requireEmailVerification = (req, res, next) => {
+    if (!req.user) {
+        return next(new AuthenticationError("Authentication required"));
+    }
+
+    if (!req.user.emailVerified && !req.supabaseUser?.email_confirmed_at) {
+        return next(
+            new AuthenticationError(
+                "Please verify your email address to access this resource",
+                "EMAIL_NOT_VERIFIED"
+            )
+        );
+    }
+    next();
+}
+
+/**
+ * Require therapist approval
+ * Must be used after authenticate middleware
+ */
+export const requireTherapistApproval = (req, res, next) => {
+    if (!req.user) {
+        return next(new AuthenticationError("Authentication required"));
+    }
+
+    if (req.user.role !== "therapist") {
+        return next(new AuthorizationError("This resource is only available to therapists"));
+    }
+
+    if (!req.user.therapistProfile) {
+        return next(new AuthenticationError("Therapist profile not found", "PROFILE_NOT_FOUND"));
+    }
+
+    if (req.user.therapistProfile.approvalStatus !== "approved") {
+        const statusMessages = {
+            pending: "Your therapist account is pending approval",
+            rejected: "Your therapist account has been rejected. Please contact support."
+        }
+
+        return next(
+            new AuthenticationError(
+                statusMessages[req.user.therapistProfile.approvalStatus] ||
+                "Your therapist account is not approved",
+                "NOT_APPROVED"
+            )
+        );
+    }
+
+    next();
+}
+
+/**
+ * Middleware to refresh token if it's about to expire
+ * Checks if token expires within 5 mins and refreshes it
+ */
+export const autoRefreshToken = async (req, res, next) => {
+    try {
+        if (!req.supabaseUser || !req.cookies.sb_refresh_token) {
+            return next();
+        }
+
+        const expiresAt = req.supabaseUser.exp;
+        const now = Math.floor(Date.now() / 1000);
+        const timeUntilExpiry = expiresAt - now;
+
+        // Refresh if token expires in less than 5 mins (300 seconds)
+        if (timeUntilExpiry < 300) {
+            const { data, error } = await supabase.auth.refreshSession({
+                refresh_token: req.cookies.sb_refresh_token,
+            });
+
+            if (!error && data.session) {
+                // set new tokens in cookies
+                res.cookie("sb_access_token", data.session.access_token, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === "production",
+                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                    maxAge: 60 * 60 * 1000, // 1hour
+                    path: "/",
+                });
+                res.cookie("sb_refresh_token", data.session.refresh_token, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === "production",
+                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                    maxAge: 60 * 60 * 1000, // 1hour
+                    path: "/",
+                });
+
+                req.accessToken = data.session.access_token;
+            }
+        }
+
+        next();
+    } catch (error) {
+        console.error("Auto refresh error:", error);
         next();
     }
 }

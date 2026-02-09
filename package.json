@@ -2,6 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -25,7 +26,9 @@
     "@react-email/render": "^2.0.4",
     "@sentry/node": "^10.36.0",
     "@supabase/supabase-js": "^2.91.0",
+    "axios": "^1.13.4",
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
