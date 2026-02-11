@@ -80,34 +80,98 @@ model Patient {
 }
 
 model TherapistProfile {
-  id                 String         @id @default(uuid()) @db.Uuid
-  userId             String         @unique @map("user_id") @db.Uuid
-  fullName           String         @map("full_name") @db.VarChar(255)
-  phone              String         @db.VarChar(20)
-  specialization     String?        @db.Text
-  licenseNumber      String?        @unique @map("license_number") @db.VarChar(100)
-  licenseDocumentUrl String?        @map("license_document_url") @db.Text
-  workArea           String?        @map("work_area") @db.Text
-  stripeAccountId    String?        @unique @map("stripe_account_id") @db.VarChar(255)
-  approvalStatus     ApprovalStatus @default(pending) @map("approval_status")
-  approvedBy         String?        @map("approved_by") @db.Uuid
-  approvedAt         DateTime?      @map("approved_at") @db.Timestamptz(3)
-  rejectionReason    String?        @map("rejection_reason") @db.Text
-  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  // Basic Info
+  fullName String @map("full_name") @db.VarChar(255)
+  phone    String @db.VarChar(20)
+
+  // Professional Profile Fields
+  yearsOfExperience   Int?    @map("years_of_experience")
+  primaryLicenseType  String? @map("primary_license_type") @db.VarChar(100)
+  professionalSummary String? @map("professional_summary") @db.Text
+  profilePhotoUrl     String? @map("profile_photo_url") @db.Text
+
+  // Credentials
+  specialization   String?           @db.Text
+  licenseNumber    String?           @unique @map("license_number") @db.VarChar(100)
+  licenseState     String?           @map("license_state") @db.VarChar(2)
+  licenseDocuments LicenseDocument[]
+
+  // Work Area
+  workArea String? @map("work_area") @db.Text
+
+  // Stripe
+  stripeAccountId          String? @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeOnboardingComplete Boolean @default(false) @map("stripe_onboarding_complete")
+
+  // Background Check and Verification
+  backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")
+  backgroundCheckSignature String?                @map("background_check_signature") @db.VarChar(255)
+  backgroundCheckDate      DateTime?              @map("background_check_date") @db.Timestamptz(3)
+  backgroundCheckStatus    BackgroundCheckStatus? @default(pending) @map("background_check_status")
+
+  // Approval
+  approvalStatus  ApprovalStatus @default(review) @map("approval_status")
+  approvedBy      String?        @map("approved_by") @db.Uuid
+  approvedAt      DateTime?      @map("approved_at") @db.Timestamptz(3)
+  rejectionReason String?        @map("rejection_reason") @db.Text
+
+  // Onboarding progress
+  onboardingStep     Int     @default(1) @map("onboarding_step")
+  onboardingComplete Boolean @default(false) @map("onboarding_complete")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // Relations
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workAreas WorkArea[]
-  offers    Offer[]
-  bookings  Booking[]
-  payments  Payment[]
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workAreas    WorkArea[]
+  availability Availability[]
+  offers       Offer[]
+  bookings     Booking[]
+  payments     Payment[]
 
   @@index([userId])
   @@index([approvalStatus, createdAt])
   @@index([stripeAccountId])
   @@index([licenseNumber])
+  @@index([backgroundCheckStatus])
   @@map("therapist_profiles")
+}
+
+model LicenseDocument {
+  id           String   @id @default(uuid()) @db.Uuid
+  therapistId  String   @map("therapist_id") @db.Uuid
+  documentUrl  String   @map("document_url") @db.Text
+  documentType String   @map("document_type") @db.VarChar(50) // "license", "certification", "insurance"
+  fileName     String   @map("file_name") @db.VarChar(255)
+  fileSize     Int      @map("file_size") // in bytes
+  uploadedAt   DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@index([therapistId])
+  @@map("license_documents")
+}
+
+model Availability {
+  id          String    @id @default(uuid()) @db.Uuid
+  therapistId String    @map("therapist_id") @db.Uuid
+  dayOfWeek   DayOfWeek @map("day_of_week")
+  isEnabled   Boolean   @default(false) @map("is_enabled")
+  timeBlocks  Json      @default("[]") @map("time_blocks") @db.JsonB // Format: [{"startTime": "09:00", "endTime": "17:00"}, ...]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@unique([therapistId, dayOfWeek])
+  @@index([therapistId])
+  @@index([dayOfWeek])
+  @@map("availability")
 }
 
 model Subscription {
@@ -349,7 +413,7 @@ enum CustomerType {
 }
 
 enum ApprovalStatus {
-  pending
+  review
   approved
   rejected
 }
@@ -401,5 +465,22 @@ enum PaymentStatus {
   escrowed
   released
   refunded
+  failed
+}
+
+enum DayOfWeek {
+  monday
+  tuesday
+  wednesday
+  thursday
+  friday
+  saturday
+  sunday
+}
+
+enum BackgroundCheckStatus {
+  pending
+  in_progress
+  completed
   failed
 }
