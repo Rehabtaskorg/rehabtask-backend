@@ -416,6 +416,7 @@ enum ApprovalStatus {
   review
   approved
   rejected
+  pending
 }
 
 enum SubscriptionPlan {
