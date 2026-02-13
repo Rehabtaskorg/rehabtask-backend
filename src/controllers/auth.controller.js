@@ -8,13 +8,17 @@ import {
 /**
  * Cookie options for Supabase tokens
  */
-const getAccessTokenCookieOptions = () => ({
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 60 * 60 * 1000, // 1 hour
-    path: "/",
-});
+const getAccessTokenCookieOptions = () => {
+    const isProduction = process.env.NODE_ENV === "production";
+
+    return {
+        httpOnly: true,
+        secure: isProduction, // true in production
+        sameSite: isProduction ? "none" : "lax", // "none" for cross-origin
+        maxAge: 60 * 60 * 1000,
+        path: "/",
+    };
+};
 
 const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
