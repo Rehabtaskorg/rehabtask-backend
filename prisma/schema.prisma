@@ -7,23 +7,23 @@ datasource db {
 }
 
 model User {
-  id            String   @id @db.Uuid
-  email         String   @unique @db.VarChar(255)
-  passwordHash  String   @default("") @map("password_hash") @db.Text
-  role          UserRole
-  emailVerified Boolean  @default(false) @map("email_verified")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  customerProfile  CustomerProfile?
-  therapistProfile TherapistProfile?
-  patientProfile   Patient?
-  sentMessages     Message[]         @relation("SentMessages")
-  receivedMessages Message[]         @relation("ReceivedMessages")
-  auditLogs        AuditLog[]
-  configUpdates    SystemConfig[]
+  id                String            @id @db.Uuid
+  email             String            @unique @db.VarChar(255)
+  passwordHash      String            @default("") @map("password_hash")
+  role              UserRole
+  emailVerified     Boolean           @default(false) @map("email_verified")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  auditLogs         AuditLog[]
+  customerProfile   CustomerProfile?
+  uploadedDocuments LicenseDocument[] @relation("UserDocuments")
+  verifiedDocuments LicenseDocument[] @relation("DocumentVerifier")
+  receivedMessages  Message[]         @relation("ReceivedMessages")
+  sentMessages      Message[]         @relation("SentMessages")
+  patientProfile    Patient?
+  configUpdates     SystemConfig[]
+  therapistProfile  TherapistProfile?
 
   @@index([email])
   @@index([role, isActive])
@@ -31,24 +31,22 @@ model User {
 }
 
 model CustomerProfile {
-  id               String       @id @default(uuid()) @db.Uuid
-  userId           String       @unique @map("user_id") @db.Uuid
-  customerType     CustomerType @map("customer_type")
-  fullName         String       @map("full_name") @db.VarChar(255)
-  agencyName       String?      @map("agency_name") @db.VarChar(255)
-  phone            String       @db.VarChar(20)
-  location         String?      @db.Text
-  stripeCustomerId String?      @unique @map("stripe_customer_id") @db.VarChar(255)
-  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptions Subscription[]
-  requests      TherapyRequest[]
-  bookings      Booking[]
-  payments      Payment[]
-  patients      Patient[]        @relation("AgencyPatients")
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @unique @map("user_id") @db.Uuid
+  customerType     CustomerType     @map("customer_type")
+  fullName         String           @map("full_name") @db.VarChar(255)
+  agencyName       String?          @map("agency_name") @db.VarChar(255)
+  phone            String           @db.VarChar(20)
+  location         String?
+  stripeCustomerId String?          @unique @map("stripe_customer_id") @db.VarChar(255)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bookings         Booking[]
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patients         Patient[]        @relation("AgencyPatients")
+  payments         Payment[]
+  subscriptions    Subscription[]
+  requests         TherapyRequest[]
 
   @@index([userId])
   @@index([customerType])
@@ -57,21 +55,19 @@ model CustomerProfile {
 }
 
 model Patient {
-  id        String   @id @default(uuid()) @db.Uuid
-  agencyId  String   @map("agency_id") @db.Uuid
-  email     String   @db.VarChar(255)
-  fullName  String   @map("full_name") @db.VarChar(255)
-  phone     String?  @db.VarChar(20)
-  userId    String?  @unique @map("user_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
+  id                 String           @id @default(uuid()) @db.Uuid
+  agencyId           String           @map("agency_id") @db.Uuid
+  email              String           @db.VarChar(255)
+  fullName           String           @map("full_name") @db.VarChar(255)
+  phone              String?          @db.VarChar(20)
+  userId             String?          @unique @map("user_id") @db.Uuid
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bookingsForPatient Booking[]        @relation("PatientBookings")
+  messagesAbout      Message[]        @relation("PatientMessages")
   agency             CustomerProfile  @relation("AgencyPatients", fields: [agencyId], references: [id], onDelete: Cascade)
   user               User?            @relation(fields: [userId], references: [id])
   requestsForPatient TherapyRequest[] @relation("PatientRequests")
-  bookingsForPatient Booking[]        @relation("PatientBookings")
-  messagesAbout      Message[]        @relation("PatientMessages")
 
   @@index([agencyId])
   @@index([userId])
@@ -80,58 +76,39 @@ model Patient {
 }
 
 model TherapistProfile {
-  id     String @id @default(uuid()) @db.Uuid
-  userId String @unique @map("user_id") @db.Uuid
-
-  // Basic Info
-  fullName String @map("full_name") @db.VarChar(255)
-  phone    String @db.VarChar(20)
-
-  // Professional Profile Fields
-  yearsOfExperience   Int?    @map("years_of_experience")
-  primaryLicenseType  String? @map("primary_license_type") @db.VarChar(100)
-  professionalSummary String? @map("professional_summary") @db.Text
-  profilePhotoUrl     String? @map("profile_photo_url") @db.Text
-
-  // Credentials
-  specialization   String?           @db.Text
-  licenseNumber    String?           @unique @map("license_number") @db.VarChar(100)
-  licenseState     String?           @map("license_state") @db.VarChar(2)
-  licenseDocuments LicenseDocument[]
-
-  // Work Area
-  workArea String? @map("work_area") @db.Text
-
-  // Stripe
-  stripeAccountId          String? @unique @map("stripe_account_id") @db.VarChar(255)
-  stripeOnboardingComplete Boolean @default(false) @map("stripe_onboarding_complete")
-
-  // Background Check and Verification
+  id                       String                 @id @default(uuid()) @db.Uuid
+  userId                   String                 @unique @map("user_id") @db.Uuid
+  fullName                 String                 @map("full_name") @db.VarChar(255)
+  phone                    String                 @db.VarChar(20)
+  yearsOfExperience        Int?                   @map("years_of_experience")
+  primaryLicenseType       String?                @map("primary_license_type") @db.VarChar(100)
+  professionalSummary      String?                @map("professional_summary")
+  profilePhotoUrl          String?                @map("profile_photo_url")
+  specialization           String?
+  licenseNumber            String?                @unique @map("license_number") @db.VarChar(100)
+  licenseState             String?                @map("license_state") @db.VarChar(2)
+  workArea                 String?                @map("work_area")
+  stripeAccountId          String?                @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeOnboardingComplete Boolean                @default(false) @map("stripe_onboarding_complete")
   backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")
   backgroundCheckSignature String?                @map("background_check_signature") @db.VarChar(255)
   backgroundCheckDate      DateTime?              @map("background_check_date") @db.Timestamptz(3)
   backgroundCheckStatus    BackgroundCheckStatus? @default(pending) @map("background_check_status")
-
-  // Approval
-  approvalStatus  ApprovalStatus @default(review) @map("approval_status")
-  approvedBy      String?        @map("approved_by") @db.Uuid
-  approvedAt      DateTime?      @map("approved_at") @db.Timestamptz(3)
-  rejectionReason String?        @map("rejection_reason") @db.Text
-
-  // Onboarding progress
-  onboardingStep     Int     @default(1) @map("onboarding_step")
-  onboardingComplete Boolean @default(false) @map("onboarding_complete")
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workAreas    WorkArea[]
-  availability Availability[]
-  offers       Offer[]
-  bookings     Booking[]
-  payments     Payment[]
+  approvalStatus           ApprovalStatus         @default(review) @map("approval_status")
+  approvedBy               String?                @map("approved_by") @db.Uuid
+  approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
+  rejectionReason          String?                @map("rejection_reason")
+  onboardingStep           Int                    @default(1) @map("onboarding_step")
+  onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  availability             Availability[]
+  bookings                 Booking[]
+  licenseDocuments         LicenseDocument[]
+  offers                   Offer[]
+  payments                 Payment[]
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workAreas                WorkArea[]
 
   @@index([userId])
   @@index([approvalStatus, createdAt])
@@ -142,31 +119,43 @@ model TherapistProfile {
 }
 
 model LicenseDocument {
-  id           String   @id @default(uuid()) @db.Uuid
-  therapistId  String   @map("therapist_id") @db.Uuid
-  documentUrl  String   @map("document_url") @db.Text
-  documentType String   @map("document_type") @db.VarChar(50) // "license", "certification", "insurance"
-  fileName     String   @map("file_name") @db.VarChar(255)
-  fileSize     Int      @map("file_size") // in bytes
-  uploadedAt   DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(3)
-
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  id            String           @id @default(uuid()) @db.Uuid
+  therapistId   String           @map("therapist_id") @db.Uuid
+  documentUrl   String           @map("document_url")
+  documentType  String           @map("document_type") @db.VarChar(50)
+  fileName      String           @map("file_name") @db.VarChar(255)
+  fileSize      Int              @map("file_size")
+  uploadedAt    DateTime         @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  bucket        String?          @default("license-documents") @db.VarChar(50)
+  deletedAt     DateTime?        @map("deleted_at") @db.Timestamptz(3)
+  isDeleted     Boolean          @default(false) @map("is_deleted")
+  mimeType      String?          @map("mime_type") @db.VarChar(100)
+  reject_reason String?
+  status        String?          @default("pending") @db.VarChar(20)
+  uploadIp      String?          @map("upload_ip") @db.VarChar(45)
+  userId        String?          @map("user_id") @db.Uuid
+  verifiedAt    DateTime?        @map("verified_at") @db.Timestamptz(3)
+  verifiedBy    String?          @map("verified_by") @db.Uuid
+  therapist     TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  user          User?            @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
+  verifier      User?            @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
 
   @@index([therapistId])
+  @@index([userId], map: "idx_license_documents_user_active")
+  @@index([status, uploadedAt])
+  @@index([therapistId, status])
   @@map("license_documents")
 }
 
 model Availability {
-  id          String    @id @default(uuid()) @db.Uuid
-  therapistId String    @map("therapist_id") @db.Uuid
-  dayOfWeek   DayOfWeek @map("day_of_week")
-  isEnabled   Boolean   @default(false) @map("is_enabled")
-  timeBlocks  Json      @default("[]") @map("time_blocks") @db.JsonB // Format: [{"startTime": "09:00", "endTime": "17:00"}, ...]
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  id          String           @id @default(uuid()) @db.Uuid
+  therapistId String           @map("therapist_id") @db.Uuid
+  dayOfWeek   DayOfWeek        @map("day_of_week")
+  isEnabled   Boolean          @default(false) @map("is_enabled")
+  timeBlocks  Json             @default("[]") @map("time_blocks")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  therapist   TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@unique([therapistId, dayOfWeek])
   @@index([therapistId])
@@ -187,9 +176,7 @@ model Subscription {
   requestLimit         Int                @map("request_limit")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer             CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId, status])
   @@index([stripeSubscriptionId])
@@ -198,23 +185,21 @@ model Subscription {
 }
 
 model TherapyRequest {
-  id            String        @id @default(uuid()) @db.Uuid
-  customerId    String        @map("customer_id") @db.Uuid
-  patientId     String?       @map("patient_id") @db.Uuid
-  serviceType   String        @map("service_type") @db.VarChar(100)
-  description   String        @db.Text
-  preferredDate DateTime      @map("preferred_date") @db.Timestamptz(3)
-  location      String        @db.Text
-  latitude      Decimal       @db.Decimal(10, 8)
-  longitude     Decimal       @db.Decimal(11, 8)
+  id            String          @id @default(uuid()) @db.Uuid
+  customerId    String          @map("customer_id") @db.Uuid
+  patientId     String?         @map("patient_id") @db.Uuid
+  serviceType   String          @map("service_type") @db.VarChar(100)
+  description   String
+  preferredDate DateTime        @map("preferred_date") @db.Timestamptz(3)
+  location      String
+  latitude      Decimal         @db.Decimal(10, 8)
+  longitude     Decimal         @db.Decimal(11, 8)
   status        RequestStatus
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  patient  Patient?        @relation("PatientRequests", fields: [patientId], references: [id])
-  offers   Offer[]
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  offers        Offer[]
+  customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  patient       Patient?        @relation("PatientRequests", fields: [patientId], references: [id])
 
   @@index([customerId, status, createdAt])
   @@index([patientId, status, createdAt])
@@ -225,22 +210,20 @@ model TherapyRequest {
 }
 
 model Offer {
-  id           String      @id @default(uuid()) @db.Uuid
-  requestId    String      @map("request_id") @db.Uuid
-  therapistId  String      @map("therapist_id") @db.Uuid
-  rate         Decimal     @db.Decimal(10, 2)
-  sessionType  String      @map("session_type") @db.VarChar(20)
-  proposedDate DateTime    @map("proposed_date") @db.Timestamptz(3)
-  description  String      @db.Text
+  id           String           @id @default(uuid()) @db.Uuid
+  requestId    String           @map("request_id") @db.Uuid
+  therapistId  String           @map("therapist_id") @db.Uuid
+  rate         Decimal          @db.Decimal(10, 2)
+  sessionType  String           @map("session_type") @db.VarChar(20)
+  proposedDate DateTime         @map("proposed_date") @db.Timestamptz(3)
+  description  String
   status       OfferStatus
-  expiresAt    DateTime    @map("expires_at") @db.Timestamptz(3)
-  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  request   TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
-  booking   Booking?
+  expiresAt    DateTime         @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  booking      Booking?
+  request      TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@index([requestId, status])
   @@index([therapistId, status, createdAt])
@@ -250,24 +233,23 @@ model Offer {
 }
 
 model Booking {
-  id            String        @id @default(uuid()) @db.Uuid
-  offerId       String        @unique @map("offer_id") @db.Uuid
-  customerId    String        @map("customer_id") @db.Uuid
-  patientId     String?       @map("patient_id") @db.Uuid
-  therapistId   String        @map("therapist_id") @db.Uuid
-  scheduledDate DateTime      @map("scheduled_date") @db.Timestamptz(3)
-  rate          Decimal       @db.Decimal(10, 2)
-  sessionType   String        @map("session_type") @db.VarChar(20)
+  id            String           @id @default(uuid()) @db.Uuid
+  offerId       String           @unique @map("offer_id") @db.Uuid
+  customerId    String           @map("customer_id") @db.Uuid
+  patientId     String?          @map("patient_id") @db.Uuid
+  therapistId   String           @map("therapist_id") @db.Uuid
+  scheduledDate DateTime         @map("scheduled_date") @db.Timestamptz(3)
+  rate          Decimal          @db.Decimal(10, 2)
+  sessionType   String           @map("session_type") @db.VarChar(20)
   status        BookingStatus
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  offer     Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  patient   Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
-  session   Session?
-  payment   Payment?
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer      CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  offer         Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  patient       Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
+  therapist     TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  payment       Payment?
+  session       Session?
 
   @@index([customerId, status, scheduledDate])
   @@index([patientId, status, scheduledDate])
@@ -285,12 +267,10 @@ model Session {
   startedAt             DateTime?     @map("started_at") @db.Timestamptz(3)
   completedAt           DateTime?     @map("completed_at") @db.Timestamptz(3)
   confirmedByCustomerAt DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
-  cancellationReason    String?       @map("cancellation_reason") @db.Text
+  cancellationReason    String?       @map("cancellation_reason")
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking               Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([status, completedAt])
@@ -298,26 +278,24 @@ model Session {
 }
 
 model Payment {
-  id                    String        @id @default(uuid()) @db.Uuid
-  bookingId             String        @unique @map("booking_id") @db.Uuid
-  customerId            String        @map("customer_id") @db.Uuid
-  therapistId           String        @map("therapist_id") @db.Uuid
-  stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id") @db.VarChar(255)
-  stripeTransferId      String?       @unique @map("stripe_transfer_id") @db.VarChar(255)
-  amount                Decimal       @db.Decimal(10, 2)
-  platformFee           Decimal       @map("platform_fee") @db.Decimal(10, 2)
-  therapistPayout       Decimal       @map("therapist_payout") @db.Decimal(10, 2)
+  id                    String           @id @default(uuid()) @db.Uuid
+  bookingId             String           @unique @map("booking_id") @db.Uuid
+  customerId            String           @map("customer_id") @db.Uuid
+  therapistId           String           @map("therapist_id") @db.Uuid
+  stripePaymentIntentId String?          @unique @map("stripe_payment_intent_id") @db.VarChar(255)
+  stripeTransferId      String?          @unique @map("stripe_transfer_id") @db.VarChar(255)
+  amount                Decimal          @db.Decimal(10, 2)
+  platformFee           Decimal          @map("platform_fee") @db.Decimal(10, 2)
+  therapistPayout       Decimal          @map("therapist_payout") @db.Decimal(10, 2)
   status                PaymentStatus
-  escrowedAt            DateTime?     @map("escrowed_at") @db.Timestamptz(3)
-  releasedAt            DateTime?     @map("released_at") @db.Timestamptz(3)
-  refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(3)
-  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  escrowedAt            DateTime?        @map("escrowed_at") @db.Timestamptz(3)
+  releasedAt            DateTime?        @map("released_at") @db.Timestamptz(3)
+  refundedAt            DateTime?        @map("refunded_at") @db.Timestamptz(3)
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  booking               Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer              CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  therapist             TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([stripePaymentIntentId])
@@ -332,15 +310,13 @@ model Message {
   senderId    String    @map("sender_id") @db.Uuid
   recipientId String    @map("recipient_id") @db.Uuid
   patientId   String?   @map("patient_id") @db.Uuid
-  content     String    @db.Text
+  content     String
   readAt      DateTime? @map("read_at") @db.Timestamptz(3)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
-  patient   Patient? @relation("PatientMessages", fields: [patientId], references: [id])
+  patient     Patient?  @relation("PatientMessages", fields: [patientId], references: [id])
+  recipient   User      @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([recipientId, readAt, createdAt])
   @@index([senderId, createdAt])
@@ -350,18 +326,16 @@ model Message {
 }
 
 model WorkArea {
-  id          String   @id @default(uuid()) @db.Uuid
-  therapistId String   @map("therapist_id") @db.Uuid
-  city        String   @db.VarChar(100)
-  state       String   @db.VarChar(50)
-  latitude    Decimal  @db.Decimal(10, 8)
-  longitude   Decimal  @db.Decimal(11, 8)
-  radiusMiles Int      @default(25) @map("radius_miles")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  id          String           @id @default(uuid()) @db.Uuid
+  therapistId String           @map("therapist_id") @db.Uuid
+  city        String           @db.VarChar(100)
+  state       String           @db.VarChar(50)
+  latitude    Decimal          @db.Decimal(10, 8)
+  longitude   Decimal          @db.Decimal(11, 8)
+  radiusMiles Int              @default(25) @map("radius_miles")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  therapist   TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@index([therapistId])
   @@index([latitude, longitude])
@@ -374,11 +348,9 @@ model AuditLog {
   action     String   @db.VarChar(100)
   entityType String   @map("entity_type") @db.VarChar(50)
   entityId   String   @map("entity_id") @db.Uuid
-  changes    Json?    @db.JsonB
+  changes    Json?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  // Relations
-  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
 
   @@index([actorId, createdAt])
   @@index([entityType, entityId, createdAt])
@@ -388,14 +360,12 @@ model AuditLog {
 
 model SystemConfig {
   key         String   @id @db.VarChar(100)
-  value       String   @db.Text
+  value       String
   description String?
   dataType    String   @map("data_type") @db.VarChar(20)
   updatedBy   String?  @map("updated_by") @db.Uuid
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
-
-  // Relations
-  updater User? @relation(fields: [updatedBy], references: [id])
+  updater     User?    @relation(fields: [updatedBy], references: [id])
 
   @@index([key])
   @@map("system_config")

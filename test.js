@@ -1,25 +1,29 @@
-import { supabaseAdmin } from "./src/config/supabase.js";
-
-async function testConnection() {
-    console.log("Testing authenticated connection...")
-
-    // This query checks the internal Supabase "auth" schema
-    // which always exists and proves your admin key is working
-
-    const { data, error } = await supabaseAdmin
-        .from("users")
-        .select("id")
-        .limit(1);
-
-    if (error) {
-        // If you haven't had any users sign up yet, you might get an empty result
-        // but it shouldn't be a "Connection Failed" error.
-        console.log("📡 Connected to Supabase, but could not query users table.");
-        console.log("Error details:", error.message);
-    } else {
-        console.log("✅ SUCCESS! Your Supabase Admin client is fully authenticated.");
-        console.log("Data received:", data);
-    }
-}
-
-testConnection();
+/**
+ * Key Features:
+ * - Direct Supabase uploads (FE -> Supabase -> backend validates)
+ * - Public profile images (5MB, cached by CDN)
+ * - Private license documents (10MB, signed URls with 60s expiry)
+ * - File validation (size, MIME type, server-side)
+ * - Database-safe migrations (nullable fiels, won't break existing DBs)
+ * - Progress tracking (5 steps, auto-calculated, completion)
+ * - Approval workflow (auto-set's to 'review' after completion)
+ * - Security (RLS policies, signed URLs, ownership verification)
+ * 
+ * 
+ * Enhanced LicenseDocument table to the true source of truth with:
+ * userId = Direct ownership verification
+ * bucket = Which storage bucket
+ * mimeType = Validated file type
+ * status = pending/approved/rejected
+ * verifiedAt/By = Admin approval workflow
+ * uploadIp = Security audit trail
+ * isDeleted = Soft delete (never lose data)
+ * Indexes = Fast queries for dashboards
+ * 
+ * Storage is just a "dumb blob storage", it doesn't understand:
+ * - Business logic
+ * - Ownership (beyond folder name)
+ * - Audit trails
+ * - Rate limiting
+ * - Admin workflows
+ */
