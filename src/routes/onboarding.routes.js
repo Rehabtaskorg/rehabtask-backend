@@ -1,10 +1,14 @@
 import express from "express";
 import {
     completeOnboardingController,
+    deleteDocumentController,
+    getDocumentSignedUrlController,
     getOnboardingStatusController,
+    getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
     saveProfessionalProfileController,
+    submitBackgroundCheckController,
     validateFileUploadController
 } from "../controllers/onboarding.controller";
 import { authenticate } from "../middleware/auth.js";
@@ -60,6 +64,16 @@ router.post(
 );
 
 /**
+ * POST /api/therapist/onboarding/background-check
+ * Submit background check consent
+ */
+router.post(
+    "/background-check",
+    validate(backgroundCheckSchema),
+    submitBackgroundCheckController
+);
+
+/**
  * POST /api/therapist/onboarding/complete
  * Mark onboarding as complete (after all steps)
  */
@@ -73,4 +87,24 @@ router.post(
     "/validate-upload",
     validate(fileUploadMetadataSchema),
     validateFileUploadController
-)
+);
+
+/**
+ * GET /api/therapist/onboarding/documents
+ * Get all documents for current therapist
+ */
+router.get("/documents", getTherapistDocumentsController);
+
+/**
+ * GET /api/therapist/onboarding/document/:documentId
+ * Get signed URL for viewing a private document
+ */
+router.get("/document/:documentId", getDocumentSignedUrlController);
+
+/**
+ * DELETE /api/therapist/onboarding/document/:documentId
+ * Soft delete a document
+ */
+router.delete("/document/:documentId", deleteDocumentController);
+
+export default router;
