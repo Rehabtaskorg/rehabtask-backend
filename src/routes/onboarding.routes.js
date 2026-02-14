@@ -10,7 +10,7 @@ import {
     saveProfessionalProfileController,
     submitBackgroundCheckController,
     validateFileUploadController
-} from "../controllers/onboarding.controller";
+} from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -19,7 +19,7 @@ import {
     availabilitySchema,
     backgroundCheckSchema,
     fileUploadMetadataSchema
-} from "../validators/onboarding.schema";
+} from "../validators/onboarding.schema.js";
 
 const router = express.Router();
 

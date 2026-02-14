@@ -9,7 +9,7 @@ import {
     saveProfessionalProfile,
     submitBackgroundCheck
 
-} from "../services/onboarding.service";
+} from "../services/onboarding.service.js";
 
 /**
  * Get client IP address from the request
