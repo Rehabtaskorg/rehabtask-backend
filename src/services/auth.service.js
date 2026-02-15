@@ -322,20 +322,14 @@ export const getCurrentUser = async (userId) => {
             role: true,
             emailVerified: true,
             isActive: true,
-            createdAt: true,
             customerProfile: {
                 select: {
                     fullName: true,
-                    phone: true,
-                    location: true,
-                    customerType: true
                 },
             },
             therapistProfile: {
                 select: {
                     fullName: true,
-                    phone: true,
-                    specialization: true,
                     approvalStatus: true,
                 }
             }
@@ -346,7 +340,17 @@ export const getCurrentUser = async (userId) => {
         throw new NotFoundError("User not found");
     }
 
-    return user;
+    return {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        isActive: user.isActive,
+        profile:
+            user.role === "customer"
+                ? user.customerProfile
+                : user.therapistProfile
+    };
 };
 
 /**

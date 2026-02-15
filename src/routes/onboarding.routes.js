@@ -8,8 +8,7 @@ import {
     saveAvailabilityController,
     saveCredentialsController,
     saveProfessionalProfileController,
-    submitBackgroundCheckController,
-    validateFileUploadController
+    submitBackgroundCheckController
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -18,8 +17,9 @@ import {
     credentialsSchema,
     availabilitySchema,
     backgroundCheckSchema,
-    fileUploadMetadataSchema
 } from "../validators/onboarding.schema.js";
+import { handleMulterError, uploadDocument, uploadImage } from "../middleware/upload.middleware.js";
+import { uploadLicenseDocumentController, uploadProfilePhotoController } from "../controllers/upload.controller.js";
 
 const router = express.Router();
 
@@ -29,13 +29,11 @@ router.use(authenticate);
 
 /**
  * GET /api/therapist/onboarding status
- * Get current onboarding status and progress
  */
 router.get("/status", getOnboardingStatusController);
 
 /**
  * POST /api/therapist/onboarding/profile
- * Save professional profile
  */
 router.post(
     "/profile",
@@ -45,7 +43,6 @@ router.post(
 
 /**
  * POST /api/therapist/onboarding/credentials
- * Save credentials and license documents
  */
 router.post(
     "/credentials",
@@ -55,7 +52,6 @@ router.post(
 
 /**
  * POST /api/therapist/onboarding/availability
- * Save availability schedule
  */
 router.post(
     "/availability",
@@ -65,7 +61,6 @@ router.post(
 
 /**
  * POST /api/therapist/onboarding/background-check
- * Submit background check consent
  */
 router.post(
     "/background-check",
@@ -75,23 +70,31 @@ router.post(
 
 /**
  * POST /api/therapist/onboarding/complete
- * Mark onboarding as complete (after all steps)
  */
 router.post("/complete", completeOnboardingController);
 
 /**
- * POST /api/therapist/onboarding/validate-upload
- * Validate file upload metadata
+ * POST /api/therapist/onboarding/upload-document
  */
 router.post(
-    "/validate-upload",
-    validate(fileUploadMetadataSchema),
-    validateFileUploadController
+    "/upload-document",
+    uploadDocument,
+    handleMulterError,
+    uploadLicenseDocumentController
+);
+
+/**
+ * POST /api/therapist/onboarding/upload-profile-photo
+ */
+router.post(
+    "/upload-profile-photo",
+    uploadImage,
+    handleMulterError,
+    uploadProfilePhotoController
 );
 
 /**
  * GET /api/therapist/onboarding/documents
- * Get all documents for current therapist
  */
 router.get("/documents", getTherapistDocumentsController);
 

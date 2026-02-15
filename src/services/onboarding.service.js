@@ -174,7 +174,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
                     documentType: doc.documentType,
                     fileName: doc.fileName,
                     fileSize: doc.fileSize,
-                    mimeType: doc.mimeType || "application/pdf",
+                    mimeType: doc.mimetype || "application/pdf",
                     status: "pending",
                     uploadIp: uploadIp,
                 },

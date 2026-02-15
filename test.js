@@ -1,29 +1,28 @@
 /**
- * Key Features:
- * - Direct Supabase uploads (FE -> Supabase -> backend validates)
- * - Public profile images (5MB, cached by CDN)
- * - Private license documents (10MB, signed URls with 60s expiry)
- * - File validation (size, MIME type, server-side)
- * - Database-safe migrations (nullable fiels, won't break existing DBs)
- * - Progress tracking (5 steps, auto-calculated, completion)
- * - Approval workflow (auto-set's to 'review' after completion)
- * - Security (RLS policies, signed URLs, ownership verification)
+ * The 5-document limit is enforced at the business logic in (upload.service.js)
+ * not at the multer level. Here's how it works.
  * 
+ * Multer Level (per Request)
+ * - Accepts 1 file per request -> single('file')
+ * - This prevents memory issues from large batch uploads
  * 
- * Enhanced LicenseDocument table to the true source of truth with:
- * userId = Direct ownership verification
- * bucket = Which storage bucket
- * mimeType = Validated file type
- * status = pending/approved/rejected
- * verifiedAt/By = Admin approval workflow
- * uploadIp = Security audit trail
- * isDeleted = Soft delete (never lose data)
- * Indexes = Fast queries for dashboards
+ * Service Level (Total Documents)
+ * - Checks total active documents < 5
+ * - This is in your upload.service.js 
  * 
- * Storage is just a "dumb blob storage", it doesn't understand:
- * - Business logic
- * - Ownership (beyond folder name)
- * - Audit trails
- * - Rate limiting
- * - Admin workflows
+ * Frontend Level (User Experience)
+ * - Users can upload multiple time (one at a time)
+ * - Your CredentialsPage.jsx already handles this with the dropzone
+ * - Users sees 5/5 limit in the UI
+ * 
+ * You current Flow (working)
+ * 1. User stops 3 files in UI
+ * 2. Frontend loops: Upload file 1 -> success
+ * 3. Frontend loops: Upload file 2 -> success
+ * 4. Frontend loops: Upload file 3 -> success
+ * 5. Database now has 3 documents
+ * 6. User drops 3 more files
+ * Frontend loops: Upload file 4 → Success
+Frontend loops: Upload file 5 → Success
+Frontend loops: Upload file 6 → ❌ BLOCKED (backend checks: 5 documents exist)
  */

@@ -223,31 +223,3 @@ export const deleteDocumentController = async (req, res, next) => {
         next(error);
     }
 }
-
-/**
- * POST /api/therapist/onboarding/validate-upload
- * Validate file upload metadata
- */
-export const validateFileUploadController = async (req, res, next) => {
-    try {
-        const { path, fileName, fileSize, mimeType, bucket } = req.body;
-        const uploadIp = getClientIp(req);
-
-        // Validation is already done by Zod schema in validation middleware
-
-        res.status(200).json({
-            success: true,
-            message: "File upload validated",
-            data: {
-                path,
-                fileName,
-                fileSize,
-                mimeType,
-                bucket,
-                uploadIp
-            },
-        });
-    } catch (error) {
-        next(error);
-    }
-}

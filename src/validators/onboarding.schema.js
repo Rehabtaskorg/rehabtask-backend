@@ -114,19 +114,3 @@ export const backgroundCheckSchema = z.object({
         .min(2, "Signature is required")
         .max(255, "Signature too long"),
 });
-
-/**
- * File Upload metadata schema
- */
-export const fileUploadMetadataSchema = z.object({
-    path: z.string(),
-    fileName: z.string(),
-    fileSize: z.number().max(10 * 1024 * 1024, "File too large (max 10MB)"),
-    mimeType: z.enum([
-        'image/jpeg',
-        'image/jpg',
-        'image/png',
-        'application/pdf'
-    ]),
-    bucket: z.enum(['profile-images', 'license-documents']),
-});
