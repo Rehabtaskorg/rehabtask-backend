@@ -2,7 +2,10 @@
 CREATE TYPE "UserRole" AS ENUM ('customer', 'therapist', 'admin');
 
 -- CreateEnum
-CREATE TYPE "ApprovalStatus" AS ENUM ('pending', 'approved', 'rejected');
+CREATE TYPE "CustomerType" AS ENUM ('individual', 'agency');
+
+-- CreateEnum
+CREATE TYPE "ApprovalStatus" AS ENUM ('review', 'approved', 'rejected', 'pending');
 
 -- CreateEnum
 CREATE TYPE "SubscriptionPlan" AS ENUM ('free', 'premium');
@@ -25,15 +28,22 @@ CREATE TYPE "SessionStatus" AS ENUM ('scheduled', 'completed_by_therapist', 'con
 -- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('intent_created', 'escrowed', 'released', 'refunded', 'failed');
 
+-- CreateEnum
+CREATE TYPE "DayOfWeek" AS ENUM ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday');
+
+-- CreateEnum
+CREATE TYPE "BackgroundCheckStatus" AS ENUM ('pending', 'in_progress', 'completed', 'failed');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" UUID NOT NULL,
     "email" VARCHAR(255) NOT NULL,
-    "password_hash" TEXT NOT NULL,
+    "password_hash" TEXT NOT NULL DEFAULT '',
     "role" "UserRole" NOT NULL,
     "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
@@ -42,13 +52,30 @@ CREATE TABLE "users" (
 CREATE TABLE "customer_profiles" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
+    "customer_type" "CustomerType" NOT NULL,
     "full_name" VARCHAR(255) NOT NULL,
+    "agency_name" VARCHAR(255),
     "phone" VARCHAR(20) NOT NULL,
-    "location" TEXT NOT NULL,
+    "location" TEXT,
     "stripe_customer_id" VARCHAR(255),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "customer_profiles_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "patients" (
+    "id" UUID NOT NULL,
+    "agency_id" UUID NOT NULL,
+    "email" VARCHAR(255) NOT NULL,
+    "full_name" VARCHAR(255) NOT NULL,
+    "phone" VARCHAR(20),
+    "user_id" UUID,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
+
+    CONSTRAINT "patients_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -57,18 +84,56 @@ CREATE TABLE "therapist_profiles" (
     "user_id" UUID NOT NULL,
     "full_name" VARCHAR(255) NOT NULL,
     "phone" VARCHAR(20) NOT NULL,
-    "specialization" TEXT NOT NULL,
-    "license_number" VARCHAR(100) NOT NULL,
-    "license_document_url" TEXT,
+    "years_of_experience" INTEGER,
+    "primary_license_type" VARCHAR(100),
+    "professional_summary" TEXT,
+    "profile_photo_url" TEXT,
+    "specialization" TEXT,
+    "license_number" VARCHAR(100),
+    "license_state" VARCHAR(2),
     "work_area" TEXT,
     "stripe_account_id" VARCHAR(255),
-    "approval_status" "ApprovalStatus" NOT NULL DEFAULT 'pending',
+    "stripe_onboarding_complete" BOOLEAN NOT NULL DEFAULT false,
+    "background_check_consent" BOOLEAN DEFAULT false,
+    "background_check_signature" VARCHAR(255),
+    "background_check_date" TIMESTAMPTZ(3),
+    "background_check_status" "BackgroundCheckStatus" DEFAULT 'pending',
+    "approval_status" "ApprovalStatus" NOT NULL DEFAULT 'review',
     "approved_by" UUID,
     "approved_at" TIMESTAMPTZ(3),
     "rejection_reason" TEXT,
+    "onboarding_step" INTEGER NOT NULL DEFAULT 1,
+    "onboarding_complete" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "therapist_profiles_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "license_documents" (
+    "id" UUID NOT NULL,
+    "therapist_id" UUID NOT NULL,
+    "document_url" TEXT NOT NULL,
+    "document_type" VARCHAR(50) NOT NULL,
+    "file_name" VARCHAR(255) NOT NULL,
+    "file_size" INTEGER NOT NULL,
+    "uploaded_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "license_documents_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "availability" (
+    "id" UUID NOT NULL,
+    "therapist_id" UUID NOT NULL,
+    "day_of_week" "DayOfWeek" NOT NULL,
+    "is_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "time_blocks" JSONB NOT NULL DEFAULT '[]',
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
+
+    CONSTRAINT "availability_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -83,7 +148,8 @@ CREATE TABLE "subscriptions" (
     "current_period_end" TIMESTAMPTZ(3),
     "therapist_limit" INTEGER NOT NULL,
     "request_limit" INTEGER NOT NULL,
-    "create_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "subscriptions_pkey" PRIMARY KEY ("id")
 );
@@ -92,6 +158,7 @@ CREATE TABLE "subscriptions" (
 CREATE TABLE "therapy_requests" (
     "id" UUID NOT NULL,
     "customer_id" UUID NOT NULL,
+    "patient_id" UUID,
     "service_type" VARCHAR(100) NOT NULL,
     "description" TEXT NOT NULL,
     "preferred_date" TIMESTAMPTZ(3) NOT NULL,
@@ -100,6 +167,7 @@ CREATE TABLE "therapy_requests" (
     "longitude" DECIMAL(11,8) NOT NULL,
     "status" "RequestStatus" NOT NULL,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "therapy_requests_pkey" PRIMARY KEY ("id")
 );
@@ -116,6 +184,7 @@ CREATE TABLE "offers" (
     "status" "OfferStatus" NOT NULL,
     "expires_at" TIMESTAMPTZ(3) NOT NULL,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "offers_pkey" PRIMARY KEY ("id")
 );
@@ -125,12 +194,14 @@ CREATE TABLE "bookings" (
     "id" UUID NOT NULL,
     "offer_id" UUID NOT NULL,
     "customer_id" UUID NOT NULL,
+    "patient_id" UUID,
     "therapist_id" UUID NOT NULL,
     "scheduled_date" TIMESTAMPTZ(3) NOT NULL,
     "rate" DECIMAL(10,2) NOT NULL,
     "session_type" VARCHAR(20) NOT NULL,
     "status" "BookingStatus" NOT NULL,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "bookings_pkey" PRIMARY KEY ("id")
 );
@@ -146,6 +217,7 @@ CREATE TABLE "sessions" (
     "confirmed_by_customer_at" TIMESTAMPTZ(3),
     "cancellation_reason" TEXT,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "sessions_pkey" PRIMARY KEY ("id")
 );
@@ -166,6 +238,7 @@ CREATE TABLE "payments" (
     "released_at" TIMESTAMPTZ(3),
     "refunded_at" TIMESTAMPTZ(3),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "payments_pkey" PRIMARY KEY ("id")
 );
@@ -175,9 +248,11 @@ CREATE TABLE "messages" (
     "id" UUID NOT NULL,
     "sender_id" UUID NOT NULL,
     "recipient_id" UUID NOT NULL,
+    "patient_id" UUID,
     "content" TEXT NOT NULL,
     "read_at" TIMESTAMPTZ(3),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "messages_pkey" PRIMARY KEY ("id")
 );
@@ -192,6 +267,7 @@ CREATE TABLE "work_areas" (
     "longitude" DECIMAL(11,8) NOT NULL,
     "radius_miles" INTEGER NOT NULL DEFAULT 25,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "work_areas_pkey" PRIMARY KEY ("id")
 );
@@ -240,7 +316,22 @@ CREATE UNIQUE INDEX "customer_profiles_stripe_customer_id_key" ON "customer_prof
 CREATE INDEX "customer_profiles_user_id_idx" ON "customer_profiles"("user_id");
 
 -- CreateIndex
+CREATE INDEX "customer_profiles_customer_type_idx" ON "customer_profiles"("customer_type");
+
+-- CreateIndex
 CREATE INDEX "customer_profiles_stripe_customer_id_idx" ON "customer_profiles"("stripe_customer_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "patients_user_id_key" ON "patients"("user_id");
+
+-- CreateIndex
+CREATE INDEX "patients_agency_id_idx" ON "patients"("agency_id");
+
+-- CreateIndex
+CREATE INDEX "patients_user_id_idx" ON "patients"("user_id");
+
+-- CreateIndex
+CREATE INDEX "patients_email_idx" ON "patients"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "therapist_profiles_user_id_key" ON "therapist_profiles"("user_id");
@@ -264,6 +355,21 @@ CREATE INDEX "therapist_profiles_stripe_account_id_idx" ON "therapist_profiles"(
 CREATE INDEX "therapist_profiles_license_number_idx" ON "therapist_profiles"("license_number");
 
 -- CreateIndex
+CREATE INDEX "therapist_profiles_background_check_status_idx" ON "therapist_profiles"("background_check_status");
+
+-- CreateIndex
+CREATE INDEX "license_documents_therapist_id_idx" ON "license_documents"("therapist_id");
+
+-- CreateIndex
+CREATE INDEX "availability_therapist_id_idx" ON "availability"("therapist_id");
+
+-- CreateIndex
+CREATE INDEX "availability_day_of_week_idx" ON "availability"("day_of_week");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "availability_therapist_id_day_of_week_key" ON "availability"("therapist_id", "day_of_week");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "subscriptions_stripe_subscription_id_key" ON "subscriptions"("stripe_subscription_id");
 
 -- CreateIndex
@@ -277,6 +383,9 @@ CREATE INDEX "subscriptions_status_current_period_end_idx" ON "subscriptions"("s
 
 -- CreateIndex
 CREATE INDEX "therapy_requests_customer_id_status_created_at_idx" ON "therapy_requests"("customer_id", "status", "created_at");
+
+-- CreateIndex
+CREATE INDEX "therapy_requests_patient_id_status_created_at_idx" ON "therapy_requests"("patient_id", "status", "created_at");
 
 -- CreateIndex
 CREATE INDEX "therapy_requests_status_created_at_idx" ON "therapy_requests"("status", "created_at");
@@ -304,6 +413,9 @@ CREATE UNIQUE INDEX "bookings_offer_id_key" ON "bookings"("offer_id");
 
 -- CreateIndex
 CREATE INDEX "bookings_customer_id_status_scheduled_date_idx" ON "bookings"("customer_id", "status", "scheduled_date");
+
+-- CreateIndex
+CREATE INDEX "bookings_patient_id_status_scheduled_date_idx" ON "bookings"("patient_id", "status", "scheduled_date");
 
 -- CreateIndex
 CREATE INDEX "bookings_therapist_id_status_scheduled_date_idx" ON "bookings"("therapist_id", "status", "scheduled_date");
@@ -357,6 +469,9 @@ CREATE INDEX "messages_sender_id_created_at_idx" ON "messages"("sender_id", "cre
 CREATE INDEX "messages_sender_id_recipient_id_created_at_idx" ON "messages"("sender_id", "recipient_id", "created_at");
 
 -- CreateIndex
+CREATE INDEX "messages_patient_id_created_at_idx" ON "messages"("patient_id", "created_at");
+
+-- CreateIndex
 CREATE INDEX "work_areas_therapist_id_idx" ON "work_areas"("therapist_id");
 
 -- CreateIndex
@@ -378,13 +493,28 @@ CREATE INDEX "system_config_key_idx" ON "system_config"("key");
 ALTER TABLE "customer_profiles" ADD CONSTRAINT "customer_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "patients" ADD CONSTRAINT "patients_agency_id_fkey" FOREIGN KEY ("agency_id") REFERENCES "customer_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "patients" ADD CONSTRAINT "patients_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "therapist_profiles" ADD CONSTRAINT "therapist_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "license_documents" ADD CONSTRAINT "license_documents_therapist_id_fkey" FOREIGN KEY ("therapist_id") REFERENCES "therapist_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "availability" ADD CONSTRAINT "availability_therapist_id_fkey" FOREIGN KEY ("therapist_id") REFERENCES "therapist_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "therapy_requests" ADD CONSTRAINT "therapy_requests_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "therapy_requests" ADD CONSTRAINT "therapy_requests_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "offers" ADD CONSTRAINT "offers_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "therapy_requests"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -397,6 +527,9 @@ ALTER TABLE "bookings" ADD CONSTRAINT "bookings_offer_id_fkey" FOREIGN KEY ("off
 
 -- AddForeignKey
 ALTER TABLE "bookings" ADD CONSTRAINT "bookings_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customer_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "bookings" ADD CONSTRAINT "bookings_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "bookings" ADD CONSTRAINT "bookings_therapist_id_fkey" FOREIGN KEY ("therapist_id") REFERENCES "therapist_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -418,6 +551,9 @@ ALTER TABLE "messages" ADD CONSTRAINT "messages_sender_id_fkey" FOREIGN KEY ("se
 
 -- AddForeignKey
 ALTER TABLE "messages" ADD CONSTRAINT "messages_recipient_id_fkey" FOREIGN KEY ("recipient_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "messages" ADD CONSTRAINT "messages_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "work_areas" ADD CONSTRAINT "work_areas_therapist_id_fkey" FOREIGN KEY ("therapist_id") REFERENCES "therapist_profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;

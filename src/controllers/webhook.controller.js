@@ -1,6 +1,6 @@
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
-import { prisma } from "../config/prisma.js";
+import { prisma, withAdminAccess } from "../config/prisma.js";
 
 /**
  * Handle Stripe webhooks
@@ -81,6 +81,7 @@ const handleStripeWebhook = async (req, res) => {
 
         res.json({ received: true, event: event.type });
     } catch (error) {
+        console.error(`Error handling webhook ${event.type}:`, error);
         res.status(200).json({
             received: true,
             error: error.message,
@@ -276,6 +277,7 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                     }
                 });
 
+                console.log(`Payment ${payment.id} recovered and marked as released`);
             } catch (recoveryError) {
                 console.error(`Recovery Failed: ${recoveryError.message}`);
                 console.error(`MANUAL INTERVENTION REQUIRED`);
@@ -301,26 +303,82 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
 
 /**Connected account handlers */
 const handleAccountUpdated = async (account, accountId) => {
-    await prisma.therapistProfile.findUnique({
-        where: { stripeAccountId: accountId || account.id },
-    });
+    try {
+        const stripeAccountId = accountId || account.id;
 
-    // Status inspection only
+        // Find therapist with this Stripe account
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { stripeAccountId },
+        });
+
+        if (!therapist) {
+            console.log(`No therapist found for Stripe account: ${stripeAccountId}`);
+            return;
+        }
+
+        // Check if onboarding is complete
+        const isOnboardingComplete =
+            account.details_submitted === true &&
+            account.charges_enabled === true;
+
+        // Only update if status changed
+        if (isOnboardingComplete && !therapist.stripeOnboardingComplete) {
+            await withAdminAccess(async (db) => {
+                await db.therapistProfile.update({
+                    where: { stripeAccountId },
+                    data: {
+                        stripeOnboardingComplete: true,
+                    },
+                });
+            });
+
+            console.log(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
+
+            // TODO: Send notification to therapist
+            // TODO: If this was their last onboarding step, mark overall onboarding complete
+        } else if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
+            // Account was complete but now isn't (rare, but possible)
+            await withAdminAccess(async (db) => {
+                await db.therapistProfile.update({
+                    where: { stripeAccountId },
+                    data: {
+                        stripeOnboardingComplete: false
+                    },
+                });
+            });
+
+            console.log(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+        }
+    } catch (error) {
+        console.error(`Error handling account.updated:`, error.message);
+    }
 }
 
 const handleExternalAccountCreated = async (externalAccount, accountId) => {
-    await prisma.therapistProfile.findUnique({
-        where: { stripeAccountId: accountId },
-    });
+    try {
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { stripeAccountId: accountId },
+        });
+
+        if (therapist) {
+            console.log(`External account added for therapist: ${therapist.fullName}`);
+            // TODO: Send confirmation notification
+        }
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+    }
 }
 
 const handleExternalAccountDeleted = async (externalAccount, accountId) => {
     try {
         const therapist = await prisma.therapistProfile.findUnique({
-            where: { stripeAccountId: accountId }
+            where: { stripeAccountId: accountId },
         });
+
         if (therapist) {
-            console.log(`Therapist ${therapist.fullName} cannot receive payouts!`);
+            console.log(`External account removed for therapist: ${therapist.fullName}`);
+            console.log(`Therapist ${therapist.fullName} cannot receive payouts until they add a bank account!`);
+            // TODO: Send urgent notification to therapist
         }
     } catch (error) {
         console.error(`Error: ${error.message}`);
@@ -331,6 +389,15 @@ const handlePayoutPaid = async (payout, accountId) => {
     try {
         console.log(`Payout delivered: ${accountId}`);
         // Informational - payment already "released"
+
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { stripeAccountId: accountId },
+        });
+
+        if (therapist) {
+            console.log(`Payout of $${payout.amount / 100} delivered to ${therapist.fullName}`);
+            // TODO: Send notification: "Your payout of $X has arrived in your bank account!"
+        }
     } catch (error) {
         console.error(`Error:`, error.message);
     }
@@ -340,6 +407,7 @@ const handlePayoutFailed = async (payout, accountId) => {
     try {
         console.log(`Payout failed: ${accountId}`);
         console.log(`Reason: ${payout.failure_message}`);
+
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId: accountId },
         });

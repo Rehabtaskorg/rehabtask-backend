@@ -37,6 +37,7 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.2",
     "resend": "^6.8.0",
     "stripe": "^20.2.0",
     "winston": "^3.19.0",

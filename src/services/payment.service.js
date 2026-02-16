@@ -1,4 +1,4 @@
-import { prisma } from "../config/prisma.js";
+import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
 
 /**
@@ -372,16 +372,18 @@ const createConnectAccountLink = async (therapistId, userId) => {
 
         accountId = account.id;
 
-        await prisma.therapistProfile.update({
-            where: { id: therapistId },
-            data: { stripeAccountId: account.id }
+        await withAdminAccess(async (db) => {
+            await db.therapistProfile.update({
+                where: { id: therapistId },
+                data: { stripeAccountId: account.id }
+            });
         });
     }
 
     const accountLink = await stripe.accountLinks.create({
         account: accountId,
-        refresh_url: `${process.env.FRONTEND_URL}/therapist/profile?stripe_refresh=true`,
-        return_url: `${process.env.FRONTEND_URL}/therapist/profile?stripe_success=true`,
+        refresh_url: `${process.env.FRONTEND_URL}/therapist/onboarding/stripe?stripe_refresh=true`,
+        return_url: `${process.env.FRONTEND_URL}/therapist/onboarding/stripe?stripe_success=true`,
         type: "account_onboarding",
     });
 
@@ -400,13 +402,19 @@ const getConnectAccountStatus = async (therapistId) => {
     });
 
     if (!therapist || !therapist.stripeAccountId) {
-        return { connected: false, detailsSubmitted: false };
+        return {
+            connected: false,
+            detailsSubmitted: false,
+            chargesEnabled: false,
+            payoutsEnabled: false,
+        };
     }
 
     const account = await stripe.accounts.retrieve(therapist.stripeAccountId);
 
     return {
         connected: true,
+        accountId: therapist.stripeAccountId,
         detailsSubmitted: account.details_submitted,
         chargesEnabled: account.charges_enabled,
         payoutsEnabled: account.payouts_enabled,
