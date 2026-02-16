@@ -184,7 +184,7 @@ export const completeOAuthOnboardingSchema = z.object({
     })
     .refine(data => {
         if (data.role === "therapist") {
-            return !!data.licenseNumber?.trim();
+            return !!data.licenseNumber?.trim() && data.licenseNumber.length >= 3;
         }
         return true;
     }, {

@@ -535,7 +535,7 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                             fullName: profileData.fullName,
                             phone: profileData.phone || "",
                             specialization: profileData.specialization || null,
-                            licenseNumber: profileData.licenseNumber || null,
+                            licenseNumber: profileData.licenseNumber,
                             workArea: profileData.workArea || null,
                             approvalStatus: "pending", // Requires admin approval
                         },
