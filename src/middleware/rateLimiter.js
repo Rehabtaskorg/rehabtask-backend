@@ -73,3 +73,23 @@ export const sensitiveOperationRateLimiter = createRateLimiter({
     max: 10, // 10 requests per hour,
     message: "Rate limit exceeded for this operation.",
 });
+
+/**
+ * Messaging rate limiter
+ * Prevents spam - 20 messages per minute per user
+ */
+export const messagingRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 20,
+    message: "Too many messages sent. Please wait a moment.",
+    skip: (req) => {
+        if (req.path === "/health") return true;
+        return req.user?.role === "admin";
+    },
+
+    // Rate limit per authenticated user, fallback to IP
+    keyGenerator: (req) => {
+        return req.user?.id || req.ip;
+    }
+
+})

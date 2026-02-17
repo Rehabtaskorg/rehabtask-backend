@@ -198,6 +198,7 @@ model TherapyRequest {
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   offers        Offer[]
+  messages      Message[]
   customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
   patient       Patient?        @relation("PatientRequests", fields: [patientId], references: [id])
 
@@ -222,6 +223,7 @@ model Offer {
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking      Booking?
+  messages     Message[]
   request      TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
@@ -250,6 +252,7 @@ model Booking {
   therapist     TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   payment       Payment?
   session       Session?
+  messages      Message[]
 
   @@index([customerId, status, scheduledDate])
   @@index([patientId, status, scheduledDate])
@@ -306,21 +309,33 @@ model Payment {
 }
 
 model Message {
-  id          String    @id @default(uuid()) @db.Uuid
-  senderId    String    @map("sender_id") @db.Uuid
-  recipientId String    @map("recipient_id") @db.Uuid
-  patientId   String?   @map("patient_id") @db.Uuid
-  content     String
-  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  patient     Patient?  @relation("PatientMessages", fields: [patientId], references: [id])
-  recipient   User      @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
-  sender      User      @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  id          String @id @default(uuid()) @db.Uuid
+  senderId    String @map("sender_id") @db.Uuid
+  recipientId String @map("recipient_id") @db.Uuid
 
-  @@index([recipientId, readAt, createdAt])
-  @@index([senderId, createdAt])
+  requestId String? @map("request_id") @db.Uuid
+  offerId   String? @map("offer_id") @db.Uuid
+  bookingId String? @map("booking_id") @db.Uuid
+  patientId String? @map("patient_id") @db.Uuid
+
+  content String    @db.Text
+  readAt  DateTime? @map("read_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sender    User            @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User            @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  request   TherapyRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  offer     Offer?          @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  booking   Booking?        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  patient   Patient?        @relation("PatientMessages", fields: [patientId], references: [id])
+
   @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, readAt])
+  @@index([requestId, createdAt])
+  @@index([offerId, createdAt])
+  @@index([bookingId, createdAt])
   @@index([patientId, createdAt])
   @@map("messages")
 }

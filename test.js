@@ -1,28 +1,27 @@
 /**
- * The 5-document limit is enforced at the business logic in (upload.service.js)
- * not at the multer level. Here's how it works.
+ * Overall Design - Correct for MVP
+ * You correctly separated:
+ * - Persistence -> Prisma + Postgres
+ * - Business logic -> service layer
+ * - Transport (Realtime) -> Supabase channels
+ * - Delivery layer -> Express controllers
+ * - Frontend sync mechanism -> broadcast events
  * 
- * Multer Level (per Request)
- * - Accepts 1 file per request -> single('file')
- * - This prevents memory issues from large batch uploads
+ * Broadcast: Making something widely known, often referring to sharing
+ *  private information
  * 
- * Service Level (Total Documents)
- * - Checks total active documents < 5
- * - This is in your upload.service.js 
+ * - Supabase Realtime uses a WebSocket-based pub/sub system as its
+ * transports layer to broadcast changes to subscribed clients
  * 
- * Frontend Level (User Experience)
- * - Users can upload multiple time (one at a time)
- * - Your CredentialsPage.jsx already handles this with the dropzone
- * - Users sees 5/5 limit in the UI
  * 
- * You current Flow (working)
- * 1. User stops 3 files in UI
- * 2. Frontend loops: Upload file 1 -> success
- * 3. Frontend loops: Upload file 2 -> success
- * 4. Frontend loops: Upload file 3 -> success
- * 5. Database now has 3 documents
- * 6. User drops 3 more files
- * Frontend loops: Upload file 4 → Success
-Frontend loops: Upload file 5 → Success
-Frontend loops: Upload file 6 → ❌ BLOCKED (backend checks: 5 documents exist)
+ * WHat changed
+ * ❌ Removed — getUserConversations (old)
+- Grouped by contextType:contextId - meaning Sarah and John has 3 
+separate conversations (request, offer, booking)
+
+✅ Replaced with — getUserConversations (new, relationship-based)
+- Groups by otherUserId:patientId -- meaning Sarah and John have one
+conversation regardless how many stages they've gone through. Always
+exactly 2DB queries
+ * 
  */
