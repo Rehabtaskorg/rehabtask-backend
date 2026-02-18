@@ -8,51 +8,23 @@ import { BadRequestError, AuthorizationError } from "../utils/errors.js"
  */
 export const verifyConversationAccess = async (userId, contextType, contextId) => {
     const accessChecks = {
-        request: async () => {
-            const request = await prisma.therapyRequest.findFirst({
-                where: {
-                    id: contextId,
-                    OR: [
-                        { customer: { userId } },
-                        {
-                            offers: {
-                                some: {
-                                    therapist: { userId }
-                                }
-                            }
-                        }
-                    ]
-                },
-                include: {
-                    patient: true,
-                    customer: true,
-                    offers: {
-                        include: {
-                            therapist: true
-                        }
-                    }
-                }
-            });
-            return request;
-        },
-
         offer: async () => {
             const offer = await prisma.offer.findFirst({
                 where: {
                     id: contextId,
                     OR: [
                         { therapist: { userId } },
-                        { request: { customerId: userId } },
+                        { request: { customer: { userId } } },
                     ],
                 },
                 include: {
+                    therapist: true,
                     request: {
                         include: {
-                            patient: true,
                             customer: true,
+                            patient: true,
                         }
                     },
-                    therapist: true,
                 }
             });
             return offer;
@@ -94,13 +66,6 @@ const extractContextMetadata = (userId, contextType, contextData) => {
     let patientId = null;
 
     switch (contextType) {
-        case "request":
-            recipientId = contextData.customer.userId === userId
-                ? contextData.offers?.[0]?.therapist?.userId
-                : contextData.customer.userId;
-            patientId = contextData.patientId;
-            break;
-
         case "offer":
             recipientId = contextData.request.customer.userId === userId
                 ? contextData.therapist.userId
@@ -128,7 +93,7 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
         throw new BadRequestError("Message content cannot be empty");
     }
 
-    if (!["request", "offer", "booking"].includes(contextType)) {
+    if (!["offer", "booking"].includes(contextType)) {
         throw new BadRequestError("Invalid context type");
     }
 
@@ -141,7 +106,6 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
     }
 
     const contextField = {
-        request: "requestId",
         offer: "offerId",
         booking: "bookingId",
     }[contextType];
@@ -216,7 +180,6 @@ export const getConversationMessages = async (userId, contextType, contextId, op
     await verifyConversationAccess(userId, contextType, contextId);
 
     const contextField = {
-        request: "requestId",
         offer: "offerId",
         booking: "bookingId",
     }[contextType];
@@ -261,7 +224,6 @@ export const markMessagesAsRead = async (userId, contextType, contextId) => {
     await verifyConversationAccess(userId, contextType, contextId);
 
     const contextField = {
-        request: "requestId",
         offer: "offerId",
         booking: "bookingId",
     }[contextType];
@@ -493,7 +455,6 @@ const sendMessageEmailNotification = async (message, contextType) => {
         "A user";
 
     const contextLabel = {
-        request: "therapy request",
         offer: "offer",
         booking: "booking",
     }[contextType];

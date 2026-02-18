@@ -7,7 +7,7 @@ export const sendMessageSchema = z.object({
         .min(1, "Message cannot be empty")
         .max(2000, "Message too long (max 2000 characters)"),
 
-    contextType: z.enum(["request", "offer", "booking"], {
+    contextType: z.enum(["offer", "booking"], {
         errorMap: () => ({ message: "Invalid context type" }),
     }),
 
@@ -17,7 +17,7 @@ export const sendMessageSchema = z.object({
 
 export const getMessagesSchema = {
     params: z.object({
-        contextType: z.enum(["request", "offer", "booking"], {
+        contextType: z.enum(["offer", "booking"], {
             errorMap: () => ({ message: "Invalid context type" }),
         }),
         contextId: z.uuid("Invalid context ID format"),
@@ -36,7 +36,7 @@ export const getMessagesSchema = {
 
 export const markAsReadSchema = {
     params: z.object({
-        contextType: z.enum(["request", "offer", "booking"], {
+        contextType: z.enum(["offer", "booking"], {
             errorMap: () => ({ message: "Invalid context type" }),
         }),
         contextId: z.uuid("Invalid context ID format"),
