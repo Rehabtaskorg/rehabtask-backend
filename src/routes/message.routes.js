@@ -7,11 +7,11 @@ import {
     getConversationsController
 } from "../controllers/message.controller.js";
 import { authenticate } from "../middleware/auth.js"
-import { validate } from "../middleware/validate.js"
+import { validate, validateMultiple } from "../middleware/validate.js"
 import {
     sendMessageSchema,
-    getMessageSchema,
-    markAsReadSchema
+    markAsReadSchema,
+    getMessagesSchema
 } from "../validators/message.schema.js";
 import { messagingRateLimiter } from "../middleware/rateLimiter.js";
 
@@ -26,10 +26,9 @@ router.use(authenticate);
 router.post(
     "/",
     messagingRateLimiter,
-    validate(sendMessageSchema),
+    validate(sendMessageSchema, "body"),
     sendMessageController
 );
-
 /**
  * GET /api/messages/conversations
  * Get all conversations for current user
@@ -48,7 +47,7 @@ router.get("/unread-count", getUnreadCountController);
  */
 router.get(
     "/:contextType/:contextId",
-    validate(getMessageSchema),
+    validateMultiple(getMessagesSchema),
     getConversationMessagesController
 );
 
@@ -57,8 +56,8 @@ router.get(
  * Mark all messages as read in a conversation
  */
 router.put(
-    "/:contextType/:contextId/read",
-    validate(markAsReadSchema),
+    '/:contextType/:contextId/read',
+    validateMultiple(markAsReadSchema),
     markAsReadController
 );
 

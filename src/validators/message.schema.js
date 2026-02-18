@@ -15,28 +15,30 @@ export const sendMessageSchema = z.object({
         .uuid("Invalid context ID format"),
 });
 
-export const getMessageSchema = z.object({
+export const getMessagesSchema = {
     params: z.object({
-        contextType: z.enum(["request", "offer", "booking"]),
-        contextId: z.uuid(),
+        contextType: z.enum(["request", "offer", "booking"], {
+            errorMap: () => ({ message: "Invalid context type" }),
+        }),
+        contextId: z.uuid("Invalid context ID format"),
     }),
-
     query: z.object({
         limit: z
             .string()
             .optional()
-            .transform((val) => (val ? parseInt(val) : 50))
+            .default("50")
+            .transform((val) => parseInt(val))
             .refine((val) => val >= 1 && val <= 100, "Limit must be between 1 and 100"),
-
         cursor: z.uuid().optional(),
-
         order: z.enum(["asc", "desc"]).optional().default("desc"),
-    }).optional(),
-});
-
-export const markAsReadSchema = z.object({
-    params: z.object({
-        contextType: z.enum(["request", "offer", "booking"]),
-        contextId: z.uuid(),
     }),
-})
+};
+
+export const markAsReadSchema = {
+    params: z.object({
+        contextType: z.enum(["request", "offer", "booking"], {
+            errorMap: () => ({ message: "Invalid context type" }),
+        }),
+        contextId: z.uuid("Invalid context ID format"),
+    }),
+};

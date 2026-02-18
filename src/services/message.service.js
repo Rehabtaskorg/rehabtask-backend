@@ -13,7 +13,7 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                 where: {
                     id: contextId,
                     OR: [
-                        { customerId: userId },
+                        { customer: { userId } },
                         {
                             offers: {
                                 some: {
@@ -26,6 +26,11 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                 include: {
                     patient: true,
                     customer: true,
+                    offers: {
+                        include: {
+                            therapist: true
+                        }
+                    }
                 }
             });
             return request;
@@ -58,7 +63,7 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                 where: {
                     id: contextId,
                     OR: [
-                        { customerId: userId },
+                        { customer: userId },
                         { therapist: { userId } },
                     ],
                 },
@@ -90,25 +95,23 @@ const extractContextMetadata = (userId, contextType, contextData) => {
 
     switch (contextType) {
         case "request":
-            // If sender is customer, recipient is therapist (from first offer)
-            // If sender is therapist, recipient is customer
-            recipientId = contextData.customerId === userId
+            recipientId = contextData.customer.userId === userId
                 ? contextData.offers?.[0]?.therapist?.userId
-                : contextData.customerId;
+                : contextData.customer.userId;
             patientId = contextData.patientId;
             break;
 
         case "offer":
-            recipientId = contextData.request.customerId === userId
+            recipientId = contextData.request.customer.userId === userId
                 ? contextData.therapist.userId
-                : contextData.request.customerId;
+                : contextData.request.customer.userId;
             patientId = contextData.request.patientId;
             break;
 
         case "booking":
-            recipientId = contextData.customerId === userId
+            recipientId = contextData.customer.userId === userId
                 ? contextData.therapist.userId
-                : contextData.customerId;
+                : contextData.customer.userId;
             patientId = contextData.patientId;
             break;
     }

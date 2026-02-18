@@ -70,7 +70,7 @@ export const apiRateLimiter = createRateLimiter({
  */
 export const sensitiveOperationRateLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 10, // 10 requests per hour,
+    max: 20, // 10 requests per hour,
     message: "Rate limit exceeded for this operation.",
 });
 

@@ -38,23 +38,33 @@ export const validate = (schema, source = "body") => {
 export const validateMultiple = (schemas) => {
     return async (req, res, next) => {
         try {
+            const validatedData = {};
+
             for (const [source, schema] of Object.entries(schemas)) {
-                if (req[source]) {
-                    req[source] = await schema.parseAsync(req[source]);
+                const dataToValidate = req[source];
+                validatedData[source] = await schema.parseAsync(dataToValidate);
+            }
+
+            for (const [source, data] of Object.entries(validatedData)) {
+                if (source === "body") {
+                    req.body = data;
+                } else {
+                    Object.assign(req[source], data);
                 }
             }
+
             next();
         } catch (error) {
             if (error.issues || error.name === "ZodError") {
-                const formattedErrors = (error.errors || []).map((err) => ({
+                const formattedErrors = error.issues.map((err) => ({
                     field: err.path.join("."),
                     message: err.message,
                 }));
 
-                console.error("Validation Details:", formattedErrors);
-                return next(new ValidationError("Validation failed", formattedErrors));
+                next(new ValidationError("Validation failed", formattedErrors));
+            } else {
+                next(error);
             }
-            next(error);
         }
     };
 };
