@@ -45,25 +45,6 @@ export const getCustomerRequests = async (customerId) => {
  * Get request by ID
  */
 export const getRequestById = async (requestId, userId) => {
-    const request = await prisma.therapyRequest.findUnique({
-        where: { id: requestId },
-        include: {
-            customer: { include: { user: true } },
-            offers: {
-                include: {
-                    therapist: true,
-                },
-                orderBy: { createdAt: "desc" }
-            },
-        },
-    });
-
-
-    if (!request) {
-        throw new Error("Request not found");
-    }
-
-    // Get the user with their profiles
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: {
@@ -72,7 +53,24 @@ export const getRequestById = async (requestId, userId) => {
         }
     });
 
-    // Authorization check
+    const request = await prisma.therapyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+            customer: { include: { user: true } },
+            offers: {
+                where: user?.therapistProfile
+                    ? { therapistId: user.therapistProfile.id } // therapist sees only their own offers
+                    : undefined, // customer sees all offers
+                include: { therapist: true, },
+                orderBy: { createdAt: "desc" }
+            },
+        },
+    });
+
+    if (!request) {
+        throw new Error("Request not found");
+    }
+
     const isCustomer = request.customer.userId === userId;
     const isTherapist = user?.therapistProfile !== null;
 
