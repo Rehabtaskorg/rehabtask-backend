@@ -35,7 +35,7 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                 where: {
                     id: contextId,
                     OR: [
-                        { customer: userId },
+                        { customer: { userId } },
                         { therapist: { userId } },
                     ],
                 },
@@ -43,6 +43,7 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                     patient: true,
                     customer: true,
                     therapist: true,
+                    offer: true
                 }
             });
             return booking;
@@ -177,13 +178,79 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
 export const getConversationMessages = async (userId, contextType, contextId, options = {}) => {
     const { limit = 50, cursor, order = "desc" } = options;
 
-    await verifyConversationAccess(userId, contextType, contextId);
+    const contextData = await verifyConversationAccess(userId, contextType, contextId);
 
     const contextField = {
         offer: "offerId",
         booking: "bookingId",
     }[contextType];
 
+    const senderSelect = {
+        select: {
+            id: true,
+            role: true,
+            therapistProfile: {
+                select: {
+                    fullName: true,
+                    profilePhotoUrl: true
+                },
+            },
+            customerProfile: {
+                select: {
+                    fullName: true,
+                    agencyName: true,
+                },
+            }
+        }
+    };
+
+    // For a booking context, stitch offer messages + booking messages together
+    if (contextType === "booking") {
+        const offerId = contextData.offer?.id;
+
+        const [offerMessages, bookingMessages] = await Promise.all([
+            offerId
+                ? prisma.message.findMany({
+                    where: { offerId },
+                    orderBy: { createdAt: "asc" },
+                    include: { sender: senderSelect },
+                })
+                : Promise.resolve([]),
+            prisma.message.findMany({
+                where: { bookingId: contextId },
+                orderBy: { createdAt: "asc" },
+                include: { sender: senderSelect },
+            }),
+        ]);
+
+        const taggedOffer = offerMessages.map(m => ({ ...m, _context: "offer" }));
+        const taggedBooking = bookingMessages.map(m => ({ ...m, _context: "booking" }));
+
+        // Build the stitched thread
+        const stitched = [];
+
+        if (taggedOffer.length > 0) {
+            stitched.push(...taggedOffer);
+        }
+
+        // Inject the system divider between the 2 threads only when both sides have context, or when the offer thread exists at all
+        // (so the customer can see the transition even if they haven't messaged yet after booking)
+        if (offerId) {
+            stitched.push({
+                id: `system:booking-created:${contextId}`,
+                type: "system",                         // frontend uses this to render a divider
+                content: "Offer accepted — Booking created",
+                createdAt: contextData.createdAt,       // booking creation timestamp
+                _context: "booking",
+            });
+        }
+
+        stitched.push(...taggedBooking);
+
+        return stitched;
+    }
+
+    // Standard single-context fetch (offer or future types)
     const messages = await prisma.message.findMany({
         where: { [contextField]: contextId },
         orderBy: { createdAt: order },
@@ -192,26 +259,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
             cursor: { id: cursor },
             skip: 1
         }),
-        include: {
-            sender: {
-                select: {
-                    id: true,
-                    role: true,
-                    therapistProfile: {
-                        select: {
-                            fullName: true,
-                            profilePhotoUrl: true
-                        },
-                    },
-                    customerProfile: {
-                        select: {
-                            fullName: true,
-                            agencyName: true,
-                        },
-                    },
-                },
-            },
-        },
+        include: { sender: senderSelect },
     });
 
     return order === "desc" ? messages.reverse() : messages;
@@ -221,13 +269,14 @@ export const getConversationMessages = async (userId, contextType, contextId, op
  * Mark messages as read in a conversation
  */
 export const markMessagesAsRead = async (userId, contextType, contextId) => {
-    await verifyConversationAccess(userId, contextType, contextId);
+    const contextData = await verifyConversationAccess(userId, contextType, contextId);
 
     const contextField = {
         offer: "offerId",
         booking: "bookingId",
     }[contextType];
 
+    // Mark bookings messages are read
     const result = await prisma.message.updateMany({
         where: {
             [contextField]: contextId,
@@ -238,6 +287,18 @@ export const markMessagesAsRead = async (userId, contextType, contextId) => {
             readAt: new Date(),
         },
     });
+
+    // For bookings, also mark the parent offer's messages as read
+    if (contextType === "booking" && contextData.offer?.id) {
+        await prisma.message.updateMany({
+            where: {
+                offerId: contextData.offer.id,
+                recipientId: userId,
+                readAt: null,
+            },
+            data: { readAt: new Date() },
+        });
+    }
 
 
     // Publish read receipt to realtime
@@ -288,76 +349,40 @@ export const getUserConversations = async (userId) => {
                 select: {
                     id: true,
                     role: true,
-                    therapistProfile: {
-                        select: { fullName: true, profilePhotoUrl: true }
-                    },
-                    customerProfile: {
-                        select: { fullName: true, agencyName: true }
-                    },
+                    therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+                    customerProfile: { select: { fullName: true, agencyName: true } },
                 },
             },
             recipient: {
                 select: {
                     id: true,
                     role: true,
-                    therapistProfile: {
-                        select: { fullName: true, profilePhotoUrl: true }
-                    },
-                    customerProfile: {
-                        select: { fullName: true, agencyName: true }
-                    },
-                },
-            },
-            request: {
-                select: {
-                    id: true,
-                    serviceType: true,
-                    status: true,
-                    location: true,
-                    preferredDate: true
+                    therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+                    customerProfile: { select: { fullName: true, agencyName: true } },
                 },
             },
             offer: {
-                select: {
-                    id: true,
-                    status: true,
-                    rate: true,
-                    sessionType: true,
-                },
+                select: { id: true, status: true, rate: true, sessionType: true, },
             },
             booking: {
-                select: {
-                    id: true,
-                    status: true,
-                    scheduledDate: true,
-                    sessionType: true,
-                },
+                select: { id: true, status: true, scheduledDate: true, sessionType: true, },
             },
             patient: {
-                select: {
-                    id: true,
-                    fullName: true,
-                }
-            }
+                select: { id: true, fullName: true, }
+            },
         },
     });
 
-    // Query: All unread messages for this user in one shot
+    // Query: All unread messages for this user ihas received
     const allUnreadMessages = await prisma.message.findMany({
-        where: {
-            recipientId: userId,
-            readAt: null,
-        },
-        select: {
-            senderId: true,
-            patientId: true,
-        },
+        where: { recipientId: userId, readAt: null, },
+        select: { senderId: true, patientId: true, offerId: true },
     });
 
-    // Build unread count map in memory — keyed by "otherUserId:patientId"
-    // Zero extra DB queries regardless of how many conversations exist
+    // Build unread count map keyed by relationship: otherUserId:patientId
+    // We count unread across BOTH offer and booking contexts for the same
+    // relationship so the badge reflects the true total.
     const unreadCountMap = {};
-
     for (const unread of allUnreadMessages) {
         const key = `${unread.senderId}:${unread.patientId ?? "none"}`;
         unreadCountMap[key] = (unreadCountMap[key] ?? 0) + 1;
@@ -367,25 +392,22 @@ export const getUserConversations = async (userId) => {
     const relationships = new Map();
 
     for (const msg of userMessages) {
-        const otherUserId =
-            msg.senderId === userId ? msg.recipientId : msg.senderId;
-        const otherUser =
-            msg.senderId === userId ? msg.recipient : msg.sender;
+        const otherUserId = msg.senderId === userId ? msg.recipientId : msg.senderId;
+        const otherUser = msg.senderId === userId ? msg.recipient : msg.sender;
         const patientId = msg.patientId ?? "none";
 
-        // Unique key per relationship
         const relationshipKey = `${otherUserId}:${patientId}`;
+
+        const msgContextPriority = msg.bookingId ? 2 : 1;
 
         if (!relationships.has(relationshipKey)) {
             const currentContext = msg.bookingId
                 ? { type: "booking", id: msg.bookingId, data: msg.booking }
-                : msg.offerId
-                    ? { type: "offer", id: msg.offerId, data: msg.offer }
-                    : { type: "request", id: msg.requestId, data: msg.request };
+                : { type: "offer", id: msg.offerId, data: msg.offer };
 
             relationships.set(relationshipKey, {
                 otherUser,
-                patient: msg.patient,
+                patient: msg.patient ?? null,
                 lastMessage: {
                     id: msg.id,
                     content: msg.content,
@@ -394,17 +416,25 @@ export const getUserConversations = async (userId) => {
                     readAt: msg.readAt,
                 },
                 currentContext,
-                // Look up from map - no DB call
+                _contextPriority: msgContextPriority,
                 unreadCount: unreadCountMap[relationshipKey] ?? 0,
                 updatedAt: msg.createdAt,
             });
+        } else {
+            const existing = relationships.get(relationshipKey);
+
+            if (msgContextPriority > existing._contextPriority) {
+                existing.currentContext = msg.bookingId
+                    ? { type: "booking", id: msg.bookingId, data: msg.booking }
+                    : { type: "offer", id: msg.offerId, data: msg.offer };
+                existing._contextPriority = msgContextPriority;
+            }
         }
     }
 
-    // Return sorted by most recent activity
-    return Array.from(relationships.values()).sort(
-        (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
-    );
+    return Array.from(relationships.values())
+        .map(({ _contextPriority, ...rest }) => rest)
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
 /**
