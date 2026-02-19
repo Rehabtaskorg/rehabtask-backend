@@ -64,8 +64,15 @@ export const authenticate = async (req, res, next) => {
     } catch (error) {
         // Clear invalid cookies
         if (error instanceof AuthenticationError) {
-            res.clearCookie("sb_access_token", { path: "/", });
-            res.clearCookie("sb_refresh_token", { path: "/", });
+            const isProduction = process.env.NODE_ENV === "production";
+            const clearOptions = {
+                path: "/",
+                httpOnly: true,
+                secure: isProduction,
+                sameSite: isProduction ? "none" : "lax",
+            };
+            res.clearCookie("sb_access_token", clearOptions);
+            res.clearCookie("sb_refresh_token", clearOptions);
         }
         next(error);
     }

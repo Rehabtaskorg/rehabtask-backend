@@ -129,9 +129,17 @@ export const logoutController = async (req, res, next) => {
     try {
         await logout(req.accessToken);
 
-        // Clear all auth cookies
-        res.clearCookie("sb_access_token", { path: "/" });
-        res.clearCookie("sb_refresh_token", { path: "/" });
+        // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
+        const isProduction = process.env.NODE_ENV === "production";
+        const clearOptions = {
+            path: "/",
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+        };
+
+        res.clearCookie("sb_access_token", clearOptions);
+        res.clearCookie("sb_refresh_token", clearOptions);
 
         res.status(200).json({
             success: true,

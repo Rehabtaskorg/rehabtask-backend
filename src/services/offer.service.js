@@ -27,8 +27,10 @@ export const createOffer = async (therapistId, data) => {
     });
 
     if (existingOffer) {
+        console.error(`[Offer duplicate check] therapistId=${therapistId} requestId=${requestId} matched existingOfferId=${existingOffer.id}`);
         throw new Error("You have already made an offer for this request");
     }
+
 
     const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
 
