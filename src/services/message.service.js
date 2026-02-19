@@ -60,6 +60,34 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
 }
 
 /**
+ * Get the other party's info for an empty/new conversation
+ */
+export const getConversationContext = async (userId, contextType, contextId) => {
+    const contextData = await verifyConversationAccess(userId, contextType, contextId);
+
+    let otherUser = null;
+    let patient = null;
+
+    switch (contextType) {
+        case "offer":
+            otherUser = contextData.request.customer.userId === userId
+                ? contextData.therapist
+                : contextData.request.customer;
+            patient = contextData.request.patient ?? null;
+            break;
+
+        case "booking":
+            otherUser = contextData.customer.userId === userId
+                ? contextData.therapist
+                : contextData.customer;
+            patient = contextData.patient ?? null;
+            break;
+    }
+
+    return { otherUser, patient };
+}
+
+/**
  * Extract recipient and patient from context
  */
 const extractContextMetadata = (userId, contextType, contextData) => {
@@ -83,7 +111,6 @@ const extractContextMetadata = (userId, contextType, contextData) => {
     }
 
     return { recipientId, patientId }
-
 }
 
 /**
@@ -170,7 +197,6 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
 
     return message;
 };
-
 
 /**
  * Get conversation messages with pagination
@@ -379,16 +405,12 @@ export const getUserConversations = async (userId) => {
         select: { senderId: true, patientId: true, offerId: true },
     });
 
-    // Build unread count map keyed by relationship: otherUserId:patientId
-    // We count unread across BOTH offer and booking contexts for the same
-    // relationship so the badge reflects the true total.
     const unreadCountMap = {};
     for (const unread of allUnreadMessages) {
         const key = `${unread.senderId}:${unread.patientId ?? "none"}`;
         unreadCountMap[key] = (unreadCountMap[key] ?? 0) + 1;
     }
 
-    // Group conversations - zero DB queries inside this loop
     const relationships = new Map();
 
     for (const msg of userMessages) {

@@ -4,7 +4,8 @@ import {
     getConversationMessagesController,
     markAsReadController,
     getUnreadCountController,
-    getConversationsController
+    getConversationsController,
+    getConversationContextController
 } from "../controllers/message.controller.js";
 import { authenticate } from "../middleware/auth.js"
 import { validate, validateMultiple } from "../middleware/validate.js"
@@ -40,6 +41,13 @@ router.get("/conversations", getConversationsController);
  * Get total unread message count
  */
 router.get("/unread-count", getUnreadCountController);
+
+/**
+ * GET /api/messages/:contextType/:contextId/context
+ * Get the other party's info for a conversation (used when no messages exist yet)
+ * IMPORTANT: must be registered BEFORE /:contextType/:contextId to avoid being swallowed
+ */
+router.get("/:contextType/:contextId/context", getConversationContextController);
 
 /**
  * GET /api/messages/:contextType/:contextId

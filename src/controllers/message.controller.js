@@ -1,4 +1,4 @@
-import { createMessage, getConversationMessages, markMessagesAsRead, getUnreadCount, getUserConversations } from "../services/message.service.js";
+import { createMessage, getConversationMessages, markMessagesAsRead, getUnreadCount, getUserConversations, getConversationContext } from "../services/message.service.js";
 
 /**
  * Send a new message
@@ -100,6 +100,23 @@ export const getConversationsController = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: { conversations },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Get the other party's info for a conversation (used when no messages exist yet)
+ */
+export const getConversationContextController = async (req, res, next) => {
+    try {
+        const { contextType, contextId } = req.params;
+        const context = await getConversationContext(req.user.id, contextType, contextId);
+
+        res.status(200).json({
+            success: true,
+            data: context
         });
     } catch (error) {
         next(error);
