@@ -331,6 +331,7 @@ export const getCurrentUser = async (userId) => {
                 select: {
                     fullName: true,
                     approvalStatus: true,
+                    profilePhotoUrl: true,
                 }
             }
         }
