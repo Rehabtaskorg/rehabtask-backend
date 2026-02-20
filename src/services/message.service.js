@@ -439,14 +439,14 @@ export const getUserConversations = async (userId) => {
                 },
                 currentContext,
                 _contextPriority: msgContextPriority,
-                _offersIds: new Set(msg.offerId ? [msg.offerId] : []),
+                _offerIds: new Set(msg.offerId ? [msg.offerId] : []),
                 unreadCount: unreadCountMap[relationshipKey] ?? 0,
                 updatedAt: msg.createdAt,
             });
         } else {
             const existing = relationships.get(relationshipKey);
 
-            if (msg.offerId) existing._offersIds.add(msg.offerId);
+            if (msg.offerId) existing._offerIds.add(msg.offerId);
 
             if (msgContextPriority > existing._contextPriority) {
                 existing.currentContext = msg.bookingId
