@@ -1,4 +1,4 @@
-import { acceptOffer, createOffer, getTherapistOffers } from "../services/offer.service.js";
+import { acceptOffer, createOffer, getOfferById, getTherapistOffers } from "../services/offer.service.js";
 
 /**
  * Create a new offer
@@ -29,6 +29,21 @@ const getTherapistOffersController = async (req, res, next) => {
 }
 
 /**
+ * Get a single offer by ID (therapist read-only, for messages offer widget)
+ */
+const getOfferByIdController = async (req, res, next) => {
+    try {
+        const { offerId } = req.params;
+        const userId = req.user.id;
+        const offer = await getOfferById(offerId, userId);
+
+        res.status(200).json({ success: true, data: { offer } });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
  * Customer accepts an offer
  */
 const acceptOfferController = async (req, res, next) => {
@@ -46,5 +61,6 @@ const acceptOfferController = async (req, res, next) => {
 export {
     createOfferController,
     getTherapistOffersController,
+    getOfferByIdController,
     acceptOfferController
 }

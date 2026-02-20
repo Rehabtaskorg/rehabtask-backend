@@ -79,6 +79,45 @@ export const getTherapistOffers = async (therapistId) => {
 }
 
 /**
+ * Get a single offer by ID with therapist access check
+ * Uses by the messages page offer widget
+ * @param {string} offerId - UUID of the offer
+ * @param {string} userId - UUID of the authenticated user
+ */
+export const getOfferById = async (offerId, userId) => {
+    const offer = await prisma.offer.findUnique({
+        where: { id: offerId },
+        include: {
+            request: {
+                include: {
+                    customer: true,
+                },
+            },
+            therapist: true,
+        }
+    });
+
+    if (!offer) {
+        const err = new Error("Offer not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    // Access check: the authenticated user must be the therapist who created this offer
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId }
+    });
+
+    if (!therapist || offer.therapistId !== therapist.id) {
+        const err = new Error("Forbidden");
+        err.statusCode = 403;
+        throw err;
+    }
+
+    return offer;
+}
+
+/**
  * Accept offer (customer)
  */
 export const acceptOffer = async (offerId, customerId) => {
