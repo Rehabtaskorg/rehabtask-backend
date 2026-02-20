@@ -439,11 +439,14 @@ export const getUserConversations = async (userId) => {
                 },
                 currentContext,
                 _contextPriority: msgContextPriority,
+                _offersIds: new Set(msg.offerId ? [msg.offerId] : []),
                 unreadCount: unreadCountMap[relationshipKey] ?? 0,
                 updatedAt: msg.createdAt,
             });
         } else {
             const existing = relationships.get(relationshipKey);
+
+            if (msg.offerId) existing._offersIds.add(msg.offerId);
 
             if (msgContextPriority > existing._contextPriority) {
                 existing.currentContext = msg.bookingId
@@ -454,8 +457,61 @@ export const getUserConversations = async (userId) => {
         }
     }
 
+    // Post pass: upgrade offer-only conversations that have a booking
+    // This handles the case where an offer was accepted and a booking exists
+    // but no messages have been sent in the booking context yet.
+    const offerOnlyConversations = Array.from(relationships.values()).filter(
+        (conv) => conv._contextPriority < 2 && conv._offerIds.size > 0
+    );
+
+    if (offerOnlyConversations.length > 0) {
+        const allOfferIds = new Set();
+        for (const conv of offerOnlyConversations) {
+            for (const oid of conv._offerIds) allOfferIds.add(oid);
+        }
+
+        // Find bookings that were created from these offers
+        const bookingsFromOffers = await prisma.booking.findMany({
+            where: { offerId: { in: Array.from(allOfferIds) } },
+            select: {
+                id: true,
+                offerId: true,
+                status: true,
+                scheduledDate: true,
+                sessionType: true,
+            }
+        });
+
+        // Build offerId → booking map
+        const offerToBooking = new Map();
+        for (const booking of bookingsFromOffers) {
+            offerToBooking.set(booking.offerId, booking);
+        }
+
+        // Upgrade conversations whose offer now has a booking
+        for (const conv of offerOnlyConversations) {
+            for (const oid of conv._offerIds) {
+                const booking = offerToBooking.get(oid);
+                if (booking) {
+                    conv.currentContext = {
+                        type: "booking",
+                        id: booking.id,
+                        data: {
+                            id: booking.id,
+                            status: booking.status,
+                            scheduledDate: booking.scheduledDate,
+                            sessionType: booking.sessionType,
+                        },
+                    };
+                    conv._contextPriority = 2;
+                    break; // one booking per offer
+                }
+            }
+        }
+    }
+
     return Array.from(relationships.values())
-        .map(({ _contextPriority, ...rest }) => rest)
+        .map(({ _contextPriority, _offerIds, ...rest }) => rest)
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
