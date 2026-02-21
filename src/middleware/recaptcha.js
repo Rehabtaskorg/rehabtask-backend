@@ -110,21 +110,16 @@ export function recaptchaMiddleware(req, res, next) {
     verifyRecaptcha(recaptchaToken, clientIp)
         .then((result) => {
             if (!result.success) {
-                console.error("reCAPTCHA rejected token:", result.errors);
                 return res.status(400).json({
                     success: false,
                     code: "RECAPTCHA_FAILED",
                     message: "reCAPTCHA verification failed. Please try again.",
-                    debug: {
-                        score: result.score,
-                        errors: result.errors
-                    }
-                    // ...(process.env.NODE_ENV === "development" && {
-                    //     debug: {
-                    //         score: result.score,
-                    //         errors: result.errors
-                    //     }
-                    // })
+                    ...(process.env.NODE_ENV === "development" && {
+                        debug: {
+                            score: result.score,
+                            errors: result.errors
+                        }
+                    })
                 });
             }
 
