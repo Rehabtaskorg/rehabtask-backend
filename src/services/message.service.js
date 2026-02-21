@@ -399,7 +399,7 @@ export const getUserConversations = async (userId) => {
         },
     });
 
-    // Query: All unread messages for this user ihas received
+    // Query: All unread messages for this user has received
     const allUnreadMessages = await prisma.message.findMany({
         where: { recipientId: userId, readAt: null, },
         select: { senderId: true, patientId: true, offerId: true },
@@ -508,6 +508,142 @@ export const getUserConversations = async (userId) => {
                 }
             }
         }
+    }
+
+    // Booking pass: include bookings with no message yet
+    const userBookings = await prisma.booking.findMany({
+        where: {
+            status: { not: "cancelled" },
+            OR: [
+                { customer: { userId } },
+                { therapist: { userId } },
+            ]
+        },
+        select: {
+            id: true,
+            status: true,
+            scheduledDate: true,
+            sessionType: true,
+            patientId: true,
+            offerId: true,
+            updatedAt: true,
+            patient: { select: { id: true, fullName: true } },
+            customer: { select: { userId: true, fullName: true, agencyName: true } },
+            therapist: { select: { userId: true, fullName: true, profilePhotoUrl: true } },
+        }
+    });
+
+    for (const booking of userBookings) {
+        const isCurrentUserCustomer = booking.customer.userId === userId;
+        const otherUserId = isCurrentUserCustomer
+            ? booking.therapist.userId
+            : booking.customer.userId;
+        const patientId = booking.patientId ?? "none";
+        const relationshipKey = `${otherUserId}:${patientId}`;
+
+        if (relationships.has(relationshipKey)) continue; // already covered by messages
+
+        const otherUserProfile = isCurrentUserCustomer ? booking.therapist : booking.customer;
+
+        relationships.set(relationshipKey, {
+            otherUser: {
+                id: otherUserId,
+                role: isCurrentUserCustomer ? "therapist" : "customer",
+                therapistProfile: isCurrentUserCustomer
+                    ? { fullName: otherUserProfile.fullName, profilePhotoUrl: otherUserProfile.profilePhotoUrl }
+                    : null,
+                customerProfile: !isCurrentUserCustomer
+                    ? { fullName: otherUserProfile.fullName, agencyName: otherUserProfile.agencyName }
+                    : null,
+            },
+            patient: booking.patient ?? null,
+            lastMessage: null,
+            currentContext: {
+                type: "booking",
+                id: booking.id,
+                data: {
+                    id: booking.id,
+                    status: booking.status,
+                    scheduledDate: booking.scheduledDate,
+                    sessionType: booking.sessionType,
+                },
+            },
+            _contextPriority: 2,
+            _offerIds: new Set(booking.offerId ? [booking.offerId] : []),
+            unreadCount: 0,
+            updatedAt: booking.updatedAt,
+        });
+    }
+
+    // Offer pass: Include active offers with no messages and no booking yet
+    const userOffers = await prisma.offer.findMany({
+        where: {
+            status: { in: ["pending", "accepted"] },
+            booking: null, // only offers that haven't converted to a booking
+            OR: [
+                { therapist: { userId } },
+                { request: { customer: { userId } } },
+            ],
+        },
+        select: {
+            id: true,
+            status: true,
+            rate: true,
+            sessionType: true,
+            updatedAt: true,
+            request: {
+                select: {
+                    patientId: true,
+                    patient: { select: { id: true, fullName: true } },
+                    customer: { select: { userId: true, fullName: true, agencyName: true } },
+                },
+            },
+            therapist: { select: { userId: true, fullName: true, profilePhotoUrl: true } },
+        },
+    });
+
+    for (const offer of userOffers) {
+        const isCurrentUserTherapist = offer.therapist.userId === userId;
+        const otherUserId = isCurrentUserTherapist
+            ? offer.request.customer.userId
+            : offer.therapist.userId;
+        const patientId = offer.request.patientId ?? "none";
+        const relationshipKey = `${otherUserId}:${patientId}`;
+
+        if (relationships.has(relationshipKey)) continue;
+
+        const otherUserProfile = isCurrentUserTherapist
+            ? offer.request.customer
+            : offer.therapist;
+
+        relationships.set(relationshipKey, {
+            otherUser: {
+                id: otherUserId,
+                role: isCurrentUserTherapist ? "customer" : "therapist",
+                therapistProfile: !isCurrentUserTherapist
+                    ? { fullName: otherUserProfile.fullName, profilePhotoUrl: otherUserProfile.profilePhotoUrl }
+                    : null,
+                customerProfile: isCurrentUserTherapist
+                    ? { fullName: otherUserProfile.fullName, agencyName: otherUserProfile.agencyName }
+                    : null,
+            },
+            patient: offer.request.patient ?? null,
+            lastMessage: null,
+            currentContext: {
+                type: "offer",
+                id: offer.id,
+                data: {
+                    id: offer.id,
+                    status: offer.status,
+                    rate: offer.rate,
+                    sessionType: offer.sessionType,
+                },
+            },
+            _contextPriority: 1,
+            _offerIds: new Set([offer.id]),
+            unreadCount: 0,
+            updatedAt: offer.updatedAt,
+        });
     }
 
     return Array.from(relationships.values())
