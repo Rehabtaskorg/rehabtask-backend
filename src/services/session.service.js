@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -7,7 +8,14 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
     const session = await prisma.session.findUnique({
         where: { id: sessionId },
         include: {
-            booking: true,
+            booking: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                    therapist: true
+                },
+            },
         },
     });
 
@@ -37,6 +45,16 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         data: { status: "in_progress" },
     });
 
+    // Notify customer to confirm session (fire-and-forget)
+    sendSessionCompletionRequest({
+        customer: session.booking.customer,
+        therapist: session.booking.therapist,
+        session: updatedSession,
+        booking: session.booking
+    }).catch((err) => {
+        logger.error('[SessionService] Completion request notification failed', { error: err.message });
+    })
+
     return updatedSession;
 }
 
@@ -47,7 +65,14 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     const session = await prisma.session.findUnique({
         where: { id: sessionId },
         include: {
-            booking: true,
+            booking: {
+                include: {
+                    therapist: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                    customer: true,
+                },
+            },
         },
     });
 
@@ -76,6 +101,16 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         where: { id: session.bookingId },
         data: { status: "completed" },
     });
+
+    // Notify therapist that customer confirmed (fire-and-forget)
+    sendSessionConfirmed({
+        therapist: session.booking.therapist,
+        customer: session.booking.customer,
+        session: updatedSession,
+        booking: session.booking
+    }).catch((err) => {
+        logger.error('[SessionService] Session confirmed notification failed', { error: err.message });
+    })
 
     return updatedSession;
 }

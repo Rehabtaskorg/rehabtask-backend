@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 /**
  * Create rate limiter with custom options
@@ -89,7 +89,7 @@ export const messagingRateLimiter = createRateLimiter({
 
     // Rate limit per authenticated user, fallback to IP
     keyGenerator: (req) => {
-        return req.user?.id || req.ip;
+        return req.user?.id || ipKeyGenerator(req);
     }
 
 })

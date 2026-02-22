@@ -1,5 +1,7 @@
 import { prisma } from "../config/prisma.js"
 import { supabase } from "../config/supabase.js";
+import { sendNewMessageNotification } from "./email.service.js";
+import { logger } from "../config/logger.js";
 import { sendEmail } from "../config/email.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 
@@ -138,6 +140,17 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
         booking: "bookingId",
     }[contextType];
 
+    // Anti-spam: only notify on the first unread in this conversation
+    // If the recipient already has unread messages here, they're aware
+    const existingUnreadCount = await prisma.message.count({
+        where: {
+            [contextField]: contextId,
+            recipientId,
+            readAt: null
+        },
+    });
+    const shouldEmailNotify = existingUnreadCount === 0;
+
     const message = await prisma.message.create({
         data: {
             senderId,
@@ -181,19 +194,27 @@ export const createMessage = async ({ senderId, content, contextType, contextId 
         },
     });
 
-    // Publish to Supabase Realtime channel
     await publishMessageToRealtime(message, contextType, contextId);
 
-    // Check if recipient is online via Supabase presence
     const isRecipientOnline = await checkUserOnlineStatus(recipientId);
 
-    // // Send email notification if recipient is offline (optional MVP feature)
-    // if (!isRecipientOnline) {
-    //     await sendMessageEmailNotification(message, contextType).catch(err => {
-    //         console.error("Failed to send email notification:", err);
-    //         // Don't throw - email is optional
-    //     });
-    // }
+    // // Send email notification if recipient is offline and no existing unread
+    if (!isRecipientOnline && shouldEmailNotify) {
+        const senderName =
+            message.sender.therapistProfile?.fullName ||
+            message.sender.customerProfile?.fullName ||
+            "A user";
+
+        sendNewMessageNotification({
+            recipient: message.recipient,
+            senderName,
+            message,
+            contextType,
+            contextId
+        }).catch((err) => {
+            logger.error('[MessageService] Email notification failed', { error: err.message });
+        })
+    }
 
     return message;
 };
@@ -687,49 +708,4 @@ const publishMessageToRealtime = async (message, contextType, contextId) => {
 const checkUserOnlineStatus = async (_userId) => {
     // TODO: Implement proper Supabase presence tracking post-MVP
     return false;
-}
-
-/**
- * Send email notification for new message
- */
-const sendMessageEmailNotification = async (message, contextType) => {
-    const senderName =
-        message.sender.therapistProfile?.fullName ||
-        message.sender.customerProfile?.fullName ||
-        "A user";
-
-    const contextLabel = {
-        offer: "offer",
-        booking: "booking",
-    }[contextType];
-
-    const emailHtml = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2>New Message on RehabTask</h2>
-      <p>You have a new message from <strong>${senderName}</strong> regarding your ${contextLabel}.</p>
-      
-      ${message.patient ? `<p>Patient: <strong>${message.patient.fullName}</strong></p>` : ""}
-      
-      <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <p style="margin: 0;">${message.content}</p>
-      </div>
-      
-      <p>
-        <a href="${process.env.FRONTEND_URL}/messages/${contextType}/${message[`${contextType}Id`]}" 
-           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-          View Message
-        </a>
-      </p>
-      
-      <p style="color: #666; font-size: 12px; margin-top: 30px;">
-        You're receiving this because you have notifications enabled for RehabTask.
-      </p>
-    </div>
-  `;
-
-    await sendEmail({
-        to: message.recipient.email,
-        subject: `New message from ${senderName}`,
-        html: emailHtml,
-    });
-}
+};

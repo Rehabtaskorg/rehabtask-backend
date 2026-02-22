@@ -1,5 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import { addHours } from "date-fns";
+import { sendNewOfferNotification, sendOfferAccepted } from "./email.service.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Create offer
@@ -46,7 +48,14 @@ export const createOffer = async (therapistId, data) => {
             expiresAt,
         },
         include: {
-            therapist: true
+            therapist: true,
+            request: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                },
+            },
         },
     });
 
@@ -55,6 +64,16 @@ export const createOffer = async (therapistId, data) => {
         where: { id: requestId },
         data: { status: "offers_received" },
     });
+
+    // Notify customer about the new offer (fire-and-forget)
+    sendNewOfferNotification({
+        customer: offer.request.customer,
+        therapist: offer.therapist,
+        offer,
+        request: offer.request
+    }).catch((err) => {
+        logger.error('[OfferService] New offer notification failed', { error: err.message });
+    })
 
     return offer;
 }
@@ -178,15 +197,27 @@ export const acceptOffer = async (offerId, customerId) => {
             status: "pending",
         },
         include: {
-            therapist: true,
-            customer: true,
+            therapist: {
+                include: { user: { select: { id: true, email: true } } }
+            },
+            customer: {
+                include: { user: { select: { id: true, email: true } } }
+            },
             offer: {
-                include: {
-                    request: true
-                },
+                include: { request: true },
             },
         },
     });
+
+    // Notify therapist that their offer was accepted (fire-and forget)
+    sendOfferAccepted({
+        therapist: booking.therapist,
+        customer: booking.customer,
+        booking,
+        offer: booking.offer
+    }).catch((err) => {
+        logger.error('[OfferService] Offer accepted notification failed', { error: err.message });
+    })
 
     return { offer: updatedOffer, booking };
 }

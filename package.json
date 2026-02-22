@@ -5,8 +5,8 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "start": "node --import tsx/esm src/server.js",
+    "dev": "nodemon --import tsx/esm src/server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -38,8 +38,10 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.1",
     "resend": "^6.8.0",
     "stripe": "^20.2.0",
+    "tsx": "^4.21.0",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },
