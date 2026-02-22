@@ -1,84 +1,79 @@
 /**
- * Application mail transport
- * 
- * DEV: nodemailer + Gmail APP password (active below)
- * PROD: Resend API (commented out below - swap when deploying)
+ * Application mail transport.
+ *
+ * Picks the right transport automatically:
+ *   - RESEND_API_KEY set     → Resend (production)
+ *   - GMAIL_USER/PASS set    → nodemailer/Gmail (development)
+ *   - Neither                → emails silently skipped
  */
-import nodemailer from "nodemailer";
-import { logger } from "./logger.js";
-import { env } from "./env.js";
+import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
+import { logger } from './logger.js';
+import { env } from './env.js';
 
-/**Active: nodemailer + Gmail (development) */
-let transporter = null;
 
-if (env.GMAIL_USER && env.GMAIL_APP_PASSWORD) {
-    transporter = nodemailer.createTransport({
-        service: "gmail",
+let resendClient = null;
+let nodemailerTransporter = null;
+
+if (env.RESEND_API_KEY) {
+    resendClient = new Resend(env.RESEND_API_KEY);
+    logger.info('[Mailer] Using Resend transport (production)');
+} else if (env.GMAIL_USER && env.GMAIL_APP_PASSWORD) {
+    nodemailerTransporter = nodemailer.createTransport({
+        service: 'gmail',
         auth: {
             user: env.GMAIL_USER,
             pass: env.GMAIL_APP_PASSWORD,
         },
     });
+    logger.info('[Mailer] Using Gmail/nodemailer transport (development)');
 } else {
-    logger.warn('[Mailer] GMAIL_USER or GMAIL_APP_PASSWORD not set — emails will be skipped in dev');
+    logger.warn('[Mailer] No email transport configured — emails will be skipped');
 }
 
-/**
- * Send a single email
- * Returns { success, messageId?, error? } - never throw
- */
+// ---------------------------------------------------------------------------
+// Unified send function — never throws
+// ---------------------------------------------------------------------------
+
 export const sendMail = async ({ to, subject, html, text, replyTo }) => {
-    if (!transporter) {
-        logger.warn('[Mailer] No transport — skipping email', { to, subject });
-        return { success: false, error: 'No mail transport configured' };
+    // ── Resend (production) ─────────────────────────────────
+    if (resendClient) {
+        try {
+            const response = await resendClient.emails.send({
+                from: env.EMAIL_FROM || 'RehabTask <noreply@rehabtask.com>',
+                to,
+                subject,
+                html,
+                ...(text && { text }),
+                ...(replyTo && { replyTo }),
+            });
+            logger.info('[Mailer] Email sent via Resend', { to, subject, emailId: response.id });
+            return { success: true, messageId: response.id };
+        } catch (error) {
+            logger.error('[Mailer] Resend send failed', { to, subject, error: error.message });
+            return { success: false, error: error.message };
+        }
     }
 
-    try {
-        const info = await transporter.sendMail({
-            from: `"${env.EMAIL_FROM_NAME || 'RehabTask'}" <${env.GMAIL_USER}>`,
-            to,
-            subject,
-            html,
-            ...(text && { text }),
-            ...(replyTo && { replyTo }),
-        });
-        logger.info('[Mailer] Email sent', { to, subject, messageId: info.messageId })
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        logger.error('[Mailer] Send failed', { to, subject, error: error.message });
-        return { success: false, error: error.message };
+    // ── Nodemailer / Gmail (development) ────────────────────
+    if (nodemailerTransporter) {
+        try {
+            const info = await nodemailerTransporter.sendMail({
+                from: `"${env.EMAIL_FROM_NAME || 'RehabTask'}" <${env.GMAIL_USER}>`,
+                to,
+                subject,
+                html,
+                ...(text && { text }),
+                ...(replyTo && { replyTo }),
+            });
+            logger.info('[Mailer] Email sent via Gmail', { to, subject, messageId: info.messageId });
+            return { success: true, messageId: info.messageId };
+        } catch (error) {
+            logger.error('[Mailer] Gmail send failed', { to, subject, error: error.message });
+            return { success: false, error: error.message };
+        }
     }
+
+    logger.warn('[Mailer] No transport — skipping email', { to, subject });
+    return { success: false, error: 'No mail transport configured' };
 };
-
-// ---------------------------------------------------------------------------
-// PRODUCTION SWITCH — when deploying:
-//   1. Comment out the entire "ACTIVE: nodemailer" block above
-//   2. Uncomment the entire block below
-//   3. Ensure RESEND_API_KEY is set in production .env
-// ---------------------------------------------------------------------------
-
-// import { Resend } from 'resend';
-// import { logger } from './logger.js';
-// import { env } from './env.js';
-//
-// if (!env.RESEND_API_KEY) {
-//     throw new Error('[Mailer] RESEND_API_KEY is required in production');
-// }
-//
-// const resendClient = new Resend(env.RESEND_API_KEY);
-//
-// export const sendMail = async ({ to, subject, html, text, replyTo }) => {
-//     try {
-//         const response = await resendClient.emails.send({
-//             from: env.EMAIL_FROM,
-//             to, subject, html,
-//             ...(text && { text }),
-//             ...(replyTo && { replyTo }),
-//         });
-//         logger.info('[Mailer] Email sent via Resend', { to, subject, emailId: response.id });
-//         return { success: true, messageId: response.id };
-//     } catch (error) {
-//         logger.error('[Mailer] Resend send failed', { to, subject, error: error.message });
-//         return { success: false, error: error.message };
-//     }
-// };

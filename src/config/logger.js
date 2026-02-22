@@ -18,10 +18,8 @@ const colors = {
 
 winston.addColors(colors);
 
-// Determine the environment
 const isDevelopment = process.env.NODE_ENV !== "production";
 
-// Custom format for better readability
 const customFormat = winston.format.combine(
     winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
     winston.format.errors({ stack: true }),
@@ -30,8 +28,7 @@ const customFormat = winston.format.combine(
     winston.format.printf((info) => {
         const { timestamp, level, message, ...meta } = info;
         const sanitizedMeta = sanitizePII(meta);
-        return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(sanitizedMeta).length ? JSON.stringify(sanitizedMeta, null, 2) : ""
-            }`;
+        return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(sanitizedMeta).length ? JSON.stringify(sanitizedMeta, null, 2) : ""}`;
     })
 );
 
@@ -46,7 +43,6 @@ const sanitizePII = (obj) => {
             sanitized[key] = sanitizePII(sanitized[key]);
         }
     });
-
     return sanitized;
 }
 
@@ -54,6 +50,7 @@ export const logger = winston.createLogger({
     level: isDevelopment ? "debug" : "info",
     levels,
     format: customFormat,
+    exitOnError: false,
     transports: [
         new winston.transports.Console({
             format: winston.format.combine(
@@ -61,31 +58,27 @@ export const logger = winston.createLogger({
                 customFormat
             ),
         }),
-
         new winston.transports.File({
             filename: "logs/error.log",
             level: "error",
-            maxsize: 5242880, // 5MB
+            maxsize: 5242880,
             maxFiles: 5
         }),
-
         new winston.transports.File({
-            filename: "logs/combined/log",
+            filename: "logs/combined.log",
             maxsize: 5242880,
             maxFiles: 5
         }),
     ],
-
     exceptionHandlers: [
         new winston.transports.File({ filename: "logs/exceptions.log" })
     ],
-
     rejectionHandlers: [
         new winston.transports.File({ filename: "logs/rejections.log" }),
     ]
 });
 
-// Helper functions for common log scenarios
+// Helper functions
 export const logInfo = (message, meta = {}) => {
     logger.info(message, meta);
 };

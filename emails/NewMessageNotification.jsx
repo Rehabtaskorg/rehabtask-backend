@@ -1,8 +1,8 @@
 import { Text, Heading, Hr } from "@react-email/components";
-import { EmailLayout, } from "./_components/EmailLayout.jsx";
+import { EmailLayout, EmailButton } from "./_components/EmailLayout.jsx";
 
 export const NewMessageNotification = ({ recipient, senderName, message, contextType, contextId, frontendUrl }) => {
-    const baseUrl = frontendUrl || process.env.FRONTEND_URL || "http://localhost:3000";
+    const baseUrl = frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
 
     const truncatedContent = message.content && message.content.length > 200
         ? message.content.slice(0, 200) + '...'
@@ -27,7 +27,7 @@ export const NewMessageNotification = ({ recipient, senderName, message, context
             </Text>
         </EmailLayout>
     );
-}
+};
 
 export default NewMessageNotification;
 
