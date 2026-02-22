@@ -2,7 +2,6 @@ import { prisma } from "../config/prisma.js"
 import { supabase } from "../config/supabase.js";
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { sendEmail } from "../config/email.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 
 /**

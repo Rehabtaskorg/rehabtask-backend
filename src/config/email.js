@@ -3,7 +3,7 @@ import { Resend } from "resend";
 
 // Resend is the production email provider
 // In development, use src/config/mailer.js instead
-export const resend = new Resend(process.env.RESEND_API_KEY)
+export const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
     : null;
 
