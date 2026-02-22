@@ -58,23 +58,36 @@ export const logger = winston.createLogger({
                 customFormat
             ),
         }),
-        new winston.transports.File({
-            filename: "logs/error.log",
-            level: "error",
-            maxsize: 5242880,
-            maxFiles: 5
-        }),
-        new winston.transports.File({
-            filename: "logs/combined.log",
-            maxsize: 5242880,
-            maxFiles: 5
-        }),
+        // VPS: Uncomment file transports below when deploying to a VPS with filesystem access
+        // new winston.transports.File({
+        //     filename: "logs/error.log",
+        //     level: "error",
+        //     maxsize: 5242880,
+        //     maxFiles: 5
+        // }),
+        // new winston.transports.File({
+        //     filename: "logs/combined.log",
+        //     maxsize: 5242880,
+        //     maxFiles: 5
+        // }),
     ],
     exceptionHandlers: [
-        new winston.transports.File({ filename: "logs/exceptions.log" })
+        new winston.transports.Console({
+            format: winston.format.combine(
+                winston.format.colorize({ all: true }),
+                customFormat
+            ),
+        }),
+        // new winston.transports.File({ filename: "logs/exceptions.log" })
     ],
     rejectionHandlers: [
-        new winston.transports.File({ filename: "logs/rejections.log" }),
+        new winston.transports.Console({
+            format: winston.format.combine(
+                winston.format.colorize({ all: true }),
+                customFormat
+            ),
+        }),
+        // new winston.transports.File({ filename: "logs/rejections.log" }),
     ]
 });
 
