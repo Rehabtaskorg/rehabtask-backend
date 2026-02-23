@@ -17,6 +17,12 @@ import {
     sessionConfirmed,
     payoutConfirmation,
     newMessageNotification,
+    offerDeclined,
+    offerWithdrawn,
+    offerChangeRequested,
+    bookingRescheduleProposed,
+    bookingRescheduleAccepted,
+    bookingRescheduleDeclined
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -29,6 +35,15 @@ const dispatch = async (to, templateFn, props) => {
         return { success: false, error: error.message };
     }
 };
+
+export const sendTherapistRegistrationPendingAdmin = async ({ therapist, adminEmails }) => {
+    const results = [];
+    for (const email of adminEmails) {
+        const result = await dispatch(email, therapistRegistrationPendingAdmin, { therapist });
+        results.push(result);
+    }
+    return results;
+}
 
 /**
  * Therapist submitted registration
@@ -94,11 +109,10 @@ export const sendPaymentConfirmation = async ({ customer, booking, payment }) =>
 /**
  * Session reminder - 24h before, sent to both parties
  */
-export const sendSessionReminder = async ({ customer, therapist, booking }) => {
-    dispatch(customer.user.email, sessionReminder, { recipient: customer, booking, role: 'customer' }).catch(() => { });
-    return dispatch(therapist.user.email, sessionReminder, { recipient: therapist, booking, role: 'therapist' });
+export const sendSessionReminder = async ({ recipient, booking, role }) => {
+    const email = recipient.user?.email || recipient.email;
+    return dispatch(email, sessionReminder, { recipient, booking, role });
 };
-
 /**
  * Therapist marked session complete - ask customer to confirm
  */
@@ -125,4 +139,28 @@ export const sendPayoutConfirmation = async ({ therapist, payment, booking }) =>
  */
 export const sendNewMessageNotification = async ({ recipient, senderName, message, contextType, contextId }) => {
     return dispatch(recipient.email, newMessageNotification, { recipient, senderName, message, contextType, contextId });
+};
+
+export const sendOfferDeclined = async ({ therapist, customer, offer }) => {
+    return dispatch(therapist.user.email, offerDeclined, { therapist, customer, offer });
+};
+
+export const sendOfferWithdrawn = async ({ customer, therapist, offer }) => {
+    return dispatch(customer.user.email, offerWithdrawn, { customer, therapist, offer });
+};
+
+export const sendOfferChangeRequested = async ({ therapist, customer, offer, note }) => {
+    return dispatch(therapist.user.email, offerChangeRequested, { therapist, customer, offer, note });
+};
+
+export const sendBookingRescheduleProposed = async ({ customer, therapist, booking, newDate }) => {
+    return dispatch(customer.user.email, bookingRescheduleProposed, { customer, therapist, booking, newDate });
+};
+
+export const sendBookingRescheduleAccepted = async ({ therapist, booking }) => {
+    return dispatch(therapist.user.email, bookingRescheduleAccepted, { therapist, booking });
+};
+
+export const sendBookingRescheduleDeclined = async ({ therapist, booking, reason }) => {
+    return dispatch(therapist.user.email, bookingRescheduleDeclined, { therapist, booking, reason });
 };

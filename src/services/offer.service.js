@@ -1,6 +1,12 @@
 import { prisma } from "../config/prisma.js";
 import { addHours } from "date-fns";
-import { sendNewOfferNotification, sendOfferAccepted } from "./email.service.js";
+import {
+    sendNewOfferNotification,
+    sendOfferAccepted,
+    sendOfferDeclined,
+    sendOfferWithdrawn,
+    sendOfferChangeRequested
+} from "./email.service.js";
 import { logger } from "../config/logger.js";
 
 /**
@@ -185,7 +191,6 @@ export const acceptOffer = async (offerId, customerId) => {
         data: { status: "offers_accepted" }
     });
 
-    // Create booking
     const booking = await prisma.booking.create({
         data: {
             offerId,
@@ -220,4 +225,177 @@ export const acceptOffer = async (offerId, customerId) => {
     })
 
     return { offer: updatedOffer, booking };
+}
+
+/**
+ * Decline an offer (customer)
+ */
+export const declineOffer = async (offerId, customerId) => {
+    const offer = await prisma.offer.findUnique({
+        where: { id: offerId },
+        include: {
+            request: true,
+            therapist: {
+                include: { user: { select: { id: true, email: true } } }
+            },
+        },
+    });
+
+    if (!offer) {
+        const err = new Error("Offer not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    if (offer.request.customerId !== customerId) {
+        const err = new Error("Unauthorized");
+        err.statusCode = 403;
+        throw err;
+    }
+
+    if (offer.status !== "pending") {
+        throw new Error("Only pending offers can be declined");
+    }
+
+    if (new Date() > new Date(offer.expiresAt)) {
+        throw new Error("Offer has expired");
+    }
+
+    const updatedOffer = await prisma.offer.update({
+        where: { id: offerId },
+        data: { status: "rejected" },
+        include: {
+            therapist: {
+                include: { user: { select: { id: true, email: true } } }
+            },
+            request: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                },
+            },
+        },
+    });
+
+    sendOfferDeclined({
+        therapist: updatedOffer.therapist,
+        customer: updatedOffer.request.customer,
+        offer: updatedOffer
+    }).catch((err) => {
+        logger.error('[OfferService] Offer declined notification failed', { error: err.message });
+    });
+}
+
+/**
+ * Request change to offer (customer)
+ */
+export const requestOfferChange = async (offerId, customerId, note) => {
+    const offer = await prisma.offer.findUnique({
+        where: { id: offerId },
+        include: {
+            request: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                },
+            },
+            therapist: {
+                include: { user: { select: { id: true, email: true } } }
+            },
+        },
+    });
+
+    if (!offer) {
+        const err = new Error("Offer not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    if (offer.request.customerId !== customerId) {
+        const err = new Error("Unauthorized");
+        err.statusCode = 403;
+        throw err;
+    }
+
+    if (offer.status !== "pending") {
+        throw new Error("Only pending offers can have changes requested");
+    }
+
+    if (new Date() > new Date(offer.expiresAt)) {
+        throw new Error("Offer has expired. Cannot request changes after expiration.");
+    }
+
+    const updatedOffer = await prisma.offer.update({
+        where: { id: offerId },
+        data: {
+            status: "change_requested",
+            changeRequestNote: note,
+        }
+    });
+
+    sendOfferChangeRequested({
+        therapist: offer.therapist,
+        customer: offer.request.customer,
+        offer,
+        note,
+    }).catch((err) => {
+        logger.error('[OfferService] Change request notification failed', { error: err.message });
+    });
+
+    return updatedOffer;
+}
+
+/**
+ * Withdraw an offer (therapist)
+ */
+export const withdrawOffer = async (offerId, therapistId) => {
+    const offer = await prisma.offer.findUnique({
+        where: { id: offerId },
+        include: {
+            request: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                },
+            },
+            therapist: true,
+        },
+    });
+
+    if (!offer) {
+        const err = new Error("Offer not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    if (offer.therapistId !== therapistId) {
+        const err = new Error("Unauthorized");
+        err.statusCode = 403;
+        throw err;
+    }
+
+    if (!["pending", "change_requested"].includes(offer.status)) {
+        throw new Error("Only pending or change-requested offers can be withdrawn");
+    }
+
+    const updatedOffer = await prisma.offer.update({
+        where: { id: offerId },
+        data: {
+            status: "withdrawn",
+            withdrawnAt: new Date(),
+        },
+    });
+
+    sendOfferWithdrawn({
+        customer: offer.request.customer,
+        therapist: offer.therapist,
+        offer
+    }).catch((err) => {
+        logger.error('[OfferService] Offer withdrawn notification failed', { error: err.message });
+    });
+
+    return updatedOffer;
 }

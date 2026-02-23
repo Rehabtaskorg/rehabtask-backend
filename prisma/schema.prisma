@@ -220,6 +220,8 @@ model Offer {
   description  String
   status       OfferStatus
   expiresAt    DateTime         @map("expires_at") @db.Timestamptz(3)
+  withdrawnAt  DateTime?        @map("withdrawn_at") @db.Timestamptz(3)
+  changeRequestNote String?     @map("change_request_note")
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking      Booking?
@@ -244,6 +246,7 @@ model Booking {
   rate          Decimal          @db.Decimal(10, 2)
   sessionType   String           @map("session_type") @db.VarChar(20)
   status        BookingStatus
+  proposedNewDate DateTime?       @map("proposed_new_date") @db.Timestamptz(3)
   createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer      CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -429,6 +432,8 @@ enum OfferStatus {
   accepted
   rejected
   expired
+  withdrawn
+  change_requested
 }
 
 enum BookingStatus {
@@ -437,6 +442,7 @@ enum BookingStatus {
   in_progress
   completed
   cancelled
+  reschedule_requested
 }
 
 enum SessionStatus {

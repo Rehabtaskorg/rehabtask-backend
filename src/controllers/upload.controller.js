@@ -25,29 +25,6 @@ export const uploadLicenseDocumentController = async (req, res, next) => {
         const file = req.file;
         const uploadIp = getClientIp(req);
         const userId = req.user.id;
-
-        // Validate file type
-        const allowedMimeTypes = [
-            'application/pdf',
-            'image/jpeg',
-            'image/jpg',
-            'image/png'
-        ];
-
-        if (!allowedMimeTypes.includes(file.mimetype)) {
-            throw new BadRequestError(
-                "Invalid file type. Only PDF, JPEG, and PNG files are allowed."
-            );
-        }
-
-        // Validate file size (10MB max)
-        const maxSize = 10 * 1024 * 1024; // 10MB in bytes
-        if (file.size > maxSize) {
-            throw new BadRequestError(
-                "File too large. Maximum size is 10MB."
-            );
-        }
-
         const documentType = req.body.documentType || "license";
 
         const result = await uploadLicenseDocument({

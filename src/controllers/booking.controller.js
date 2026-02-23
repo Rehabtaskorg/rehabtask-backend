@@ -1,4 +1,10 @@
-import { getBookingById, getCustomerBookings, getTherapistBookings } from "../services/booking.service.js";
+import {
+    getBookingById,
+    getCustomerBookings,
+    getTherapistBookings,
+    rescheduleBooking,
+    respondToReschedule
+} from "../services/booking.service.js";
 
 /**
  * Get a booking by ID
@@ -22,11 +28,7 @@ const getCustomerBookingsController = async (req, res, next) => {
     try {
         const customerId = req.user.customerProfile.id;
         const bookings = await getCustomerBookings(customerId);
-
-        res.status(200).json({
-            success: true,
-            data: bookings || []
-        });
+        res.status(200).json({ success: true, data: bookings || [] });
     } catch (error) {
         next(error);
     }
@@ -39,15 +41,40 @@ const getTherapistBookingsController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const bookings = await getTherapistBookings(therapistId);
-
         res.status(200).json({ success: true, data: bookings });
     } catch (error) {
         next(error)
     }
 }
 
+const rescheduleBookingController = async (req, res, next) => {
+    try {
+        const { bookingId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const { newDate } = req.body;
+        const result = await rescheduleBooking(bookingId, therapistId, newDate);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
+const respondToRescheduleController = async (req, res, next) => {
+    try {
+        const { bookingId } = req.params;
+        const customerId = req.user.customerProfile.id;
+        const { accept, reason } = req.body;
+        const result = await respondToReschedule(bookingId, customerId, accept, reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export {
     getBookingByIdController,
     getCustomerBookingsController,
-    getTherapistBookingsController
+    getTherapistBookingsController,
+    rescheduleBookingController,
+    respondToRescheduleController
 };
