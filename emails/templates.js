@@ -276,3 +276,110 @@ export const newMessageNotification = ({ senderName, message, contextType, conte
         `),
     };
 };
+
+// Offer declined (to therapist)
+export const offerDeclined = ({ therapist, customer, offer }) => ({
+    subject: 'Your offer was declined',
+    html: layout(`
+        ${heading('Offer Declined')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> has reviewed and declined your offer for their therapy request.`)}
+        ${hr()}
+        ${field('Proposed Date', formatDate(offer.proposedDate))}
+        ${field('Rate', formatCurrency(offer.rate))}
+        ${field('Session Type', offer.sessionType)}
+        ${hr()}
+        ${text('You can continue submitting offers on other open requests.')}
+        ${button(`${FRONTEND_URL}/therapist/requests`, 'Browse Requests')}
+    `),
+});
+
+// Offer Withdrawn (to customer)
+export const offerWithdrawn = ({ customer, therapist, offer }) => ({
+    subject: `An offer on your request has been withdrawn`,
+    html: layout(`
+        ${heading('Offer Withdrawn')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${therapist.fullName}</strong> has withdrawn their offer for your therapy request.`)}
+        ${hr()}
+        ${field('Proposed Date', formatDate(offer.proposedDate))}
+        ${field('Rate', formatCurrency(offer.rate))}
+        ${hr()}
+        ${text('Other therapists may still submit offers on your request.')}
+        ${button(`${FRONTEND_URL}/requests`, 'View Your Requests')}
+    `),
+});
+
+// Offer Change requested (to therapist)
+export const offerChangeRequested = ({ therapist, customer, offer, note }) => ({
+    subject: `${customer.fullName} requested changes to your offer`,
+    html: layout(`
+        ${heading('Change Requested')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> has reviewed your offer and is requesting some changes before accepting.`)}
+        ${hr()}
+        ${field('Proposed Date', formatDate(offer.proposedDate))}
+        ${field('Rate', formatCurrency(offer.rate))}
+        ${field('Session Type', offer.sessionType)}
+        ${hr()}
+        <div style="background-color:#f6f9fc;padding:16px;border-radius:6px;border-left:4px solid #f59e0b;margin:20px 0;">
+            <p style="color:#92400e;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 6px;">Customer's Note</p>
+            <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${note}</p>
+        </div>
+        ${text('You can withdraw your current offer and submit a revised one, or reach out via messages to discuss.')}
+        ${button(`${FRONTEND_URL}/therapist/offers`, 'View Offer')}
+    `),
+});
+
+// Booking reschedule Proposed (to customer)
+export const bookingRescheduleProposed = ({ customer, therapist, booking, newDate }) => ({
+    subject: `${therapist.fullName} proposed a new session date`,
+    html: layout(`
+        ${heading('Reschedule Request')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${therapist.fullName}</strong> has proposed a new date for your upcoming session.`)}
+        ${hr()}
+        ${field('Current Date', formatDate(booking.scheduledDate))}
+        ${field('Proposed New Date', formatDate(newDate))}
+        ${field('Session Type', booking.sessionType)}
+        ${field('Rate', formatCurrency(booking.rate))}
+        ${hr()}
+        ${text('Please review and accept or decline the new proposed date.')}
+        ${button(`${FRONTEND_URL}/bookings/${booking.id}`, 'Review Reschedule')}
+    `),
+});
+
+// Booking reschedule accepted (to therapist)
+export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
+    subject: 'Session reschedule accepted',
+    html: layout(`
+        ${heading('Reschedule Accepted')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('Your client has accepted the new session date.')}
+        ${hr()}
+        ${field('New Session Date', formatDate(booking.scheduledDate))}
+        ${field('Session Type', booking.sessionType)}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+    `),
+});
+
+// Booking Reschedule Declined (to therapist)
+export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
+    subject: 'Session reschedule declined',
+    html: layout(`
+        ${heading('Reschedule Declined')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('Your client has declined the proposed reschedule. The session will remain on the original date.')}
+        ${hr()}
+        ${field('Original Date', formatDate(booking.scheduledDate))}
+        ${field('Session Type', booking.sessionType)}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+    `),
+});
