@@ -228,6 +228,69 @@ export const acceptOffer = async (offerId, customerId) => {
 }
 
 /**
+ * Revise an offer that has status "change_requested"
+ */
+export const reviseOffer = async (therapistId, offerId, data) => {
+    const { rate, sessionType, proposedDate, description } = data;
+
+    const existing = await prisma.offer.findUnique({
+        where: { id: offerId },
+    });
+
+    if (!existing) {
+        throw new Error("Offer not found");
+    }
+
+    if (existing.therapistId !== therapistId) {
+        throw new Error("You are not authorized to revise this offer");
+    }
+
+    if (existing.status !== "change_requested") {
+        throw new Error("This offer cannot be revised in its current state");
+    }
+
+    // Reset expiry from now
+    const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
+
+    const updated = await prisma.offer.update({
+        where: { id: offerId },
+        data: {
+            rate,
+            sessionType,
+            proposedDate: new Date(proposedDate),
+            description,
+            status: "pending", // reset back to pending after revision
+            expiresAt,
+            changeRequestNote: null, // clear the change request note
+        },
+        include: {
+            therapist: true,
+            request: {
+                include: {
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } },
+                    },
+                }
+            }
+        }
+    });
+
+    // Notify customer about the revised offer (fire-and-forget)
+    sendNewOfferNotification({
+        customer: updated.request.customer,
+        therapist: updated.therapist,
+        offer: updated,
+        request: updated.request,
+    }).catch((err) => {
+        logger.error("[OfferService] Revised offer notification failed", {
+            error: err.message,
+        });
+    });
+
+    return updated;
+}
+
+/**
  * Decline an offer (customer)
  */
 export const declineOffer = async (offerId, customerId) => {

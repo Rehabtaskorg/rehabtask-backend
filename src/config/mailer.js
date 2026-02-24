@@ -36,6 +36,12 @@ if (env.RESEND_API_KEY) {
 // ---------------------------------------------------------------------------
 
 export const sendMail = async ({ to, subject, html, text, replyTo }) => {
+    // Skip all email sending outside of production
+    if (process.env.NODE_ENV !== "production") {
+        logger.info(`[mailer] Email skipped (NODE_ENV=${process.env.NODE_ENV}): "${subject}" → ${to}`);
+        return { success: false, error: "Email skipped in non-production environment" };
+    }
+
     // ── Resend (production) ─────────────────────────────────
     if (resendClient) {
         try {
