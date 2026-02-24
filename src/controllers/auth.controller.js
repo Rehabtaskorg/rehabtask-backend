@@ -6,15 +6,19 @@ import {
 } from "../services/auth.service.js";
 
 /**
- * Cookie options for Supabase tokens
+ * Whether cookies should use secure/cross-origin settings
+ * Driven by COOKIE_SECURE env var so it works indepentely of NODE_ENV
+ * Set COOKIE_SECURE=true on any deployment that serves over HTTPS (staging, production)
+ * Leave unset for local dev (HTTP localhost)
  */
-const getAccessTokenCookieOptions = () => {
-    const isProduction = process.env.NODE_ENV === "production";
 
+const isSecureContext = process.env.COOKIE_SECURE === "true";
+
+const getAccessTokenCookieOptions = () => {
     return {
         httpOnly: true,
-        secure: isProduction, // true in production
-        sameSite: isProduction ? "none" : "lax", // "none" for cross-origin
+        secure: isSecureContext,
+        sameSite: isSecureContext ? "none" : "lax", // "none" for cross-origin
         maxAge: 60 * 60 * 1000,
         path: "/",
     };
@@ -22,8 +26,8 @@ const getAccessTokenCookieOptions = () => {
 
 const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/",
 });
@@ -130,12 +134,12 @@ export const logoutController = async (req, res, next) => {
         await logout(req.accessToken);
 
         // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
-        const isProduction = process.env.NODE_ENV === "production";
+        const isSecureContext = process.env.COOKIE_SECURE === "true";
         const clearOptions = {
             path: "/",
             httpOnly: true,
-            secure: isProduction,
-            sameSite: isProduction ? "none" : "lax",
+            secure: isSecureContext,
+            sameSite: isSecureContext ? "none" : "lax",
         };
 
         res.clearCookie("sb_access_token", clearOptions);
