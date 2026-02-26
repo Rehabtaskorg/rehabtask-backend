@@ -1,8 +1,6 @@
 import { prisma } from "../config/prisma.js";
+import { haversineDistance } from "../utils/distance.js";
 
-/**
- * Create therapy request
- */
 export const createRequest = async (customerId, data) => {
     const { serviceType, description, preferredDate, location, latitude, longitude } = data;
 
@@ -22,35 +20,20 @@ export const createRequest = async (customerId, data) => {
     return request;
 }
 
-/**
- * Get customer's requests
- */
 export const getCustomerRequests = async (customerId) => {
     const requests = await prisma.therapyRequest.findMany({
         where: { customerId },
-        include: {
-            offers: {
-                include: {
-                    therapist: true,
-                },
-            },
-        },
-        orderBy: { createdAt: "desc" }
+        include: { offers: { include: { therapist: true } } },
+        orderBy: { createdAt: "desc" },
     });
 
     return requests;
 }
 
-/**
- * Get request by ID
- */
 export const getRequestById = async (requestId, userId) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: {
-            therapistProfile: true,
-            customerProfile: true,
-        }
+        include: { therapistProfile: true, customerProfile: true }
     });
 
     const request = await prisma.therapyRequest.findUnique({
@@ -67,45 +50,51 @@ export const getRequestById = async (requestId, userId) => {
         },
     });
 
-    if (!request) {
-        throw new Error("Request not found");
-    }
+    if (!request) throw new Error("Request not found");
 
     const isCustomer = request.customer.userId === userId;
     const isTherapist = user?.therapistProfile !== null;
 
-    if (!isCustomer && !isTherapist) {
-        throw new Error("Unauthorized");
-    }
+    if (!isCustomer && !isTherapist) throw new Error("Unauthorized");
 
     return request;
 }
 
-/**
- * Get available requests for therapist (within service area)
- */
+// GEO-FILTERED: Only return requests within the therapist's work area radii
 export const getAvailableRequests = async (therapistId) => {
-    // For MVP return all open requests
-    // In production, filter by distance from therapist work areas
+    // Fetch therapist's work areas
+    const workAreas = await prisma.workArea.findMany({
+        where: { therapistId },
+    });
+
+    // If therapist hasn't set up work areas, return empty array
+    if (!workAreas || workAreas.length === 0) {
+        return [];
+    }
+
+    // Fetch all open requests
     const requests = await prisma.therapyRequest.findMany({
-        where: {
-            status: { in: ["created", "offers_received"] },
-        },
-        include: {
-            customer: true,
-            offers: {
-                where: { therapistId },
-            },
-        },
+        where: { status: { in: ["created", "offers_received"] } },
+        include: { customer: true, offers: { where: { therapistId } } },
         orderBy: { createdAt: "desc" }
     });
 
-    return requests;
+    // Filter requests that fall within ANY of the therapist's work area radii
+    const filteredRequests = requests.filter((request) => {
+        const requestLast = parseFloat(request.latitude);
+        const requestLng = parseFloat(request.longitude);
+
+        return workAreas.some((area) => {
+            const areaLat = parseFloat(area.latitude);
+            const areaLng = parseFloat(area.longitude);
+            const distance = haversineDistance(requestLast, requestLng, areaLat, areaLng);
+            return distance <= area.radiusMiles;
+        });
+    });
+
+    return filteredRequests;
 }
 
-/**
- * Update request status
- */
 export const updateRequestStatus = async (requestId, status) => {
     const request = await prisma.therapyRequest.update({
         where: { id: requestId },

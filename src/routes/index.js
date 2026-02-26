@@ -9,6 +9,14 @@ import paymentRoutes from "./payment.routes.js";
 import onboardingRoutes from "./onboarding.routes.js";
 import messageRoutes from "./message.routes.js";
 
+import therapistRoutes from "./therapist.routes.js";
+import therapistPublicRoutes from "./therapistPublic.routes.js";
+import reviewRoutes from "./review.routes.js";
+import faqRoutes from "./faq.routes.js";
+import disputeRoutes from "./dispute.routes.js";
+import adminRoutes from "./admin.routes.js";
+import qaAdminRoutes from "./qaAdmin.routes.js"
+
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -19,5 +27,13 @@ router.use("/sessions", sessionRoutes);
 router.use("/payments", paymentRoutes);
 router.use("/therapist/onboarding", onboardingRoutes);
 router.use("/messages", messageRoutes);
+
+router.use("/therapist", therapistRoutes);
+router.use("/therapists", therapistPublicRoutes);
+router.use("/reviews", reviewRoutes);
+router.use("/faqs", faqRoutes);
+router.use("/disputes", disputeRoutes);
+router.use("/admin", adminRoutes);
+router.use("/qa-admin", qaAdminRoutes);
 
 export default router;

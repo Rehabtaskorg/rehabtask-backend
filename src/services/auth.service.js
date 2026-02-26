@@ -332,6 +332,8 @@ export const getCurrentUser = async (userId) => {
                     fullName: true,
                     approvalStatus: true,
                     profilePhotoUrl: true,
+                    onboardingStep: true,
+                    onboardingComplete: true
                 }
             }
         }

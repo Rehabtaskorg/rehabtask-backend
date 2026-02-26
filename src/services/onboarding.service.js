@@ -1,6 +1,6 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { supabase } from "../config/supabase.js";
-import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js"
+import { supabase, supabaseAdmin } from "../config/supabase.js";
+import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -198,6 +198,10 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
 
 /**
  * Save availability (Step 3)
+ * 
+ * Now also creates an initial WorkArea record from geocoded zip code data
+ * sent by the FE. This ensures the therapist is searchable immediately after admin approval,
+ * without needing to manually add work area via profile
  */
 export const saveAvailability = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -231,7 +235,27 @@ export const saveAvailability = async (userId, data) => {
         });
     }
 
-    // Update therapist profile with additional fields
+    // Create initial Work area from geocoded zip code (if provided)
+    if (data.workArea && data.workArea.latitude && data.workArea.longitude) {
+        // Delete any existing work areas from previous onboarding attempts
+        // to ensure idempotency (re-submitting step 3 replaces, not duplicates)
+        await prisma.workArea.deleteMany({
+            where: { therapistId: therapist.id }
+        });
+
+        await prisma.workArea.create({
+            data: {
+                therapistId: therapist.id,
+                city: data.workArea.city,
+                state: data.workArea.state,
+                latitude: data.workArea.latitude,
+                longitude: data.workArea.longitude,
+                radiusMiles: Math.min(Math.max(data.workArea.radiusMiles || 25, 1), 100)
+            },
+        });
+    }
+
+    // Update therapist profile
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
             where: { userId },
@@ -377,7 +401,7 @@ export const getDocumentSignedUrl = async (userId, documentId) => {
     }
 
     // Generate signed URL (60 second expiry)
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseAdmin.storage
         .from(document.bucket)
         .createSignedUrl(document.documentUrl, 60);
 
@@ -426,7 +450,7 @@ export const getTherapistDocuments = async (userId) => {
     });
 
     return { documents };
-}
+};
 
 /**
  * Delete document (soft delete)
@@ -462,4 +486,4 @@ export const deleteDocument = async (userId, documentId) => {
     return {
         message: "Document deleted successfully",
     };
-}
+};
