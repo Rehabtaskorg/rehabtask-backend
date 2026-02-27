@@ -1,3 +1,4 @@
+import { prisma } from "../config/prisma.js";
 import {
     getTherapistProfile as getTherapistProfileService,
     updateTherapistProfile as updateTherapistProfileService,
@@ -70,6 +71,29 @@ const getTherapistPublicProfileController = async (req, res, next) => {
     try {
         const { therapistId } = req.params;
         const profile = await getTherapistPublicProfileService(therapistId);
+
+        // If authenticated customer, include reviewable bookings
+        if (req.user && req.user.role === "customer") {
+            const customerProfile = await prisma.customerProfile.findUnique({
+                where: { userId: req.user.id },
+                select: { id: true }
+            });
+
+            if (customerProfile) {
+                const reviewableBookings = await prisma.booking.findMany({
+                    where: {
+                        customerId: customerProfile.id,
+                        therapistId: therapistId,
+                        status: "completed",
+                        review: null
+                    },
+                    select: { id: true, scheduledDate: true },
+                    orderBy: { scheduledDate: "desc" },
+                });
+                profile.reviewableBookings = reviewableBookings;
+            }
+        }
+
         res.status(200).json({ success: true, data: profile });
     } catch (error) {
         next(error);
