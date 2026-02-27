@@ -86,23 +86,23 @@ export const searchTherapistsSchema = z.object({
         .optional(),
     radiusMiles: z
         .string()
-        .transform((val) => parseInt(val, 10))
-        .pipe(z.number().int().min(1).max(500))
         .optional()
-        .default("50"),
+        .default("50")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1).max(500)),
     specialization: z.string().max(500).optional(),
     page: z
         .string()
-        .transform((val) => parseInt(val, 10))
-        .pipe(z.number().int().min(1))
         .optional()
-        .default("1"),
+        .default("1")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1)),
     limit: z
         .string()
-        .transform((val) => parseInt(val, 10))
-        .pipe(z.number().int().min(1).max(50))
         .optional()
-        .default("20"),
+        .default("20")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1).max(50)),
 });
 
 export const therapistIdParamSchema = z.object({
@@ -112,14 +112,14 @@ export const therapistIdParamSchema = z.object({
 export const reviewsPaginationSchema = z.object({
     page: z
         .string()
-        .transform((val) => parseInt(val, 10))
-        .pipe(z.number().int().min(1))
         .optional()
-        .default("1"),
+        .default("1")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1)),
     limit: z
         .string()
-        .transform((val) => parseInt(val, 10))
-        .pipe(z.number().int().min(1).max(50))
         .optional()
-        .default("10"),
+        .default("10")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1).max(50)),
 })
