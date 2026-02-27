@@ -12,7 +12,11 @@ export const validate = (schema, source = "body") => {
         try {
             const dataToValidate = req[source];
             const validatedData = await schema.parseAsync(dataToValidate);
-            req[source] = validatedData;
+            if (source === "body") {
+                req[source] = validatedData;
+            } else {
+                Object.assign(req[source], validatedData);
+            }
             next();
         } catch (error) {
             if (error.issues || error.name === "ZodError") {
