@@ -46,7 +46,7 @@ export const updateWorkAreasSchema = z.object({
                     .default(25),
             })
         )
-        .min(1, "At least one work area is required")
+        .min(0)
         .max(5, "Maximum of 5 work areas allowed"),
 });
 
@@ -91,6 +91,7 @@ export const searchTherapistsSchema = z.object({
         .transform((val) => parseInt(val, 10))
         .pipe(z.number().int().min(1).max(500)),
     specialization: z.string().max(500).optional(),
+    primaryLicenseType: z.string().max(100).optional(),
     page: z
         .string()
         .optional()

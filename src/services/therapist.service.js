@@ -125,6 +125,7 @@ export const searchTherapists = async ({
     longitude,
     radiusMiles = 50,
     specialization,
+    primaryLicenseType,
     page = 1,
     limit = 20,
 }) => {
@@ -141,30 +142,28 @@ export const searchTherapists = async ({
     let therapists;
     let total;
 
+    // Build dynamic where clause
+    const where = {
+        approvalStatus: "approved",
+        onboardingComplete: true,
+    };
+
+    if (specialization) {
+        where.specialization = { contains: specialization, mode: "insensitive" };
+    }
+
+    if (primaryLicenseType) {
+        where.primaryLicenseType = { equals: primaryLicenseType, mode: "insensitive" };
+    }
+
     if (hasLocation) {
-        // Inline everything so Prisma can infer the return type with relations
-        const allTherapists = specialization
-            ? await prisma.therapistProfile.findMany({
-                where: {
-                    approvalStatus: "approved",
-                    onboardingComplete: true,
-                    specialization: { contains: specialization, mode: "insensitive" },
-                },
-                include: {
-                    workAreas: true,
-                    reviews: { select: { rating: true } },
-                },
-            })
-            : await prisma.therapistProfile.findMany({
-                where: {
-                    approvalStatus: "approved",
-                    onboardingComplete: true,
-                },
-                include: {
-                    workAreas: true,
-                    reviews: { select: { rating: true } },
-                },
-            });
+        const allTherapists = await prisma.therapistProfile.findMany({
+            where,
+            include: {
+                workAreas: true,
+                reviews: { select: { rating: true } },
+            },
+        });
 
         // Filter by radius overlap: search point within any work area circle
         const geoFiltered = allTherapists.filter((therapist) =>
@@ -175,7 +174,7 @@ export const searchTherapists = async ({
                     parseFloat(area.latitude),
                     parseFloat(area.longitude)
                 );
-                return distance <= area.radiusMiles;
+                return distance <= area.radiusMiles && distance <= radiusMiles;
             })
         );
 
@@ -186,54 +185,22 @@ export const searchTherapists = async ({
         therapists = geoFiltered.slice(start, start + limit);
     } else {
         // No location — return all approved therapists, paginated
-        const queryResult = specialization
-            ? await Promise.all([
-                prisma.therapistProfile.findMany({
-                    where: {
-                        approvalStatus: "approved",
-                        onboardingComplete: true,
-                        specialization: { contains: specialization, mode: "insensitive" },
-                    },
-                    include: {
-                        workAreas: true,
-                        reviews: { select: { rating: true } },
-                    },
-                    skip: (page - 1) * limit,
-                    take: limit,
-                    orderBy: { createdAt: "desc" },
-                }),
-                prisma.therapistProfile.count({
-                    where: {
-                        approvalStatus: "approved",
-                        onboardingComplete: true,
-                        specialization: { contains: specialization, mode: "insensitive" },
-                    },
-                }),
-            ])
-            : await Promise.all([
-                prisma.therapistProfile.findMany({
-                    where: {
-                        approvalStatus: "approved",
-                        onboardingComplete: true,
-                    },
-                    include: {
-                        workAreas: true,
-                        reviews: { select: { rating: true } },
-                    },
-                    skip: (page - 1) * limit,
-                    take: limit,
-                    orderBy: { createdAt: "desc" },
-                }),
-                prisma.therapistProfile.count({
-                    where: {
-                        approvalStatus: "approved",
-                        onboardingComplete: true,
-                    },
-                }),
-            ]);
+        const [therapists_result, total_result] = await Promise.all([
+            prisma.therapistProfile.findMany({
+                where,
+                include: {
+                    workAreas: true,
+                    reviews: { select: { rating: true } },
+                },
+                skip: (page - 1) * limit,
+                take: limit,
+                orderBy: { createdAt: "desc" },
+            }),
+            prisma.therapistProfile.count({ where }),
+        ]);
 
-        therapists = queryResult[0];
-        total = queryResult[1];
+        therapists = therapists_result;
+        total = total_result;
     }
 
     // Map to public response shape with aggregated review stats

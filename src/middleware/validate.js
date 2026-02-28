@@ -15,7 +15,14 @@ export const validate = (schema, source = "body") => {
             if (source === "body") {
                 req[source] = validatedData;
             } else {
-                Object.assign(req[source], validatedData);
+                // Express 5 defines req.query/req.params as prototype getters
+                // that re-parse on each access. Object.assign won't persist.
+                // Use defineProperty to create an own property that shadows the getter.
+                Object.defineProperty(req, source, {
+                    value: validatedData,
+                    writable: true,
+                    configurable: true,
+                });
             }
             next();
         } catch (error) {
@@ -53,7 +60,11 @@ export const validateMultiple = (schemas) => {
                 if (source === "body") {
                     req.body = data;
                 } else {
-                    Object.assign(req[source], data);
+                    Object.defineProperty(req, source, {
+                        value: data,
+                        writable: true,
+                        configurable: true,
+                    });
                 }
             }
 

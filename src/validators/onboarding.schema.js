@@ -75,8 +75,8 @@ const daySchema = z.object({
 
 // WorkArea sub-schema for geocoded zip code data from frontend
 const workAreaSchema = z.object({
-    city: z.string().max(100, "City name too long"),
-    state: z.string().max(50, "State name too long"),
+    city: z.string().min(1, "City is required").max(100, "City name too long"),
+    state: z.string().min(1, "State is required").max(50, "State name too long"),
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
     radiusMiles: z.number().int().min(1).max(100).default(25),
