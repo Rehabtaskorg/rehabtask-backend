@@ -355,19 +355,25 @@ export const completeOnboarding = async (userId) => {
         throw new BadRequestError("All onboarding steps must be completed");
     }
 
-    // Mark onboarding as complete and set status to review
+
+    // Only move to "review" if the therapist has not already been approved or rejected
+    // An already-approved therapist connecting Stripe post-approval must NOT be sent back to review
+    const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
+
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
             where: { userId },
             data: {
                 onboardingComplete: true,
-                approvalStatus: "review"
+                ...(!alreadyDecided && { approvalStatus: "review" }),
             },
         });
     });
 
     return {
-        message: "Onboarding completed successfully. Your profile is under review.",
+        message: alreadyDecided
+            ? "Stripe setup noted. Your approval status is unchanged."
+            : "Onboarding completed successfully. Your profile is under review.",
         therapist: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
