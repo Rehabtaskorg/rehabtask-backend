@@ -25,13 +25,13 @@ const emailSchema = z
     .trim();
 
 /**
- * Phone number validation (international format)
+ * Phone number validation (US format: +1XXXXXXXXXX)
  */
 const phoneSchema = z
     .string()
     .regex(
         /^\+1\d{10}$/,
-        "Invalid US phone number format. Use +1XXXXXXXXXX"
+        "Invalid phone number format. Use +1XXXXXXXXXX"
     );
 
 
