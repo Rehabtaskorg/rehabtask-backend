@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { BadRequestError } from "../utils/errors.js";
 import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
 
 /**
@@ -25,6 +26,15 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
 
     if (session.booking.therapistId !== therapistId) {
         throw new Error("Unauthorized");
+    }
+
+    // Guard: therapist must have connected and completed Stripe onboarding
+    const therapistProfile = session.booking.therapist;
+    if (!therapistProfile.stripeAccountId || !therapistProfile.stripeOnboardingComplete) {
+        throw new BadRequestError(
+            "You must connect and complete your Stripe account setup before marking a session as complete.",
+            "STRIPE_NOT_CONNECTED"
+        );
     }
 
     if (session.status !== "scheduled") {
