@@ -6,7 +6,7 @@ import { createRequest, getAvailableRequests, getCustomerRequests, getRequestByI
 const createRequestController = async (req, res, next) => {
     try {
         const customerId = req.user.customerProfile.id;
-        const request = await createRequest(customerId, req.body);
+        const request = await createRequest(customerId, req.body, req.user.customerProfile);
 
         res.status(201).json({ success: true, data: request });
     } catch (error) {

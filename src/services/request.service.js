@@ -1,8 +1,22 @@
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 
-export const createRequest = async (customerId, data) => {
-    const { serviceType, description, preferredDate, location, latitude, longitude } = data;
+export const createRequest = async (customerId, data, customerProfile) => {
+    const { serviceType, description, preferredDate, location, latitude, longitude, patientId } = data;
+
+    // IF patientId is provided, validate the patient belongs to this agency
+    if (patientId) {
+        if (customerProfile?.customerType !== "agency") {
+            throw new Error("Only agency accounts can assign requests to patients");
+        }
+
+        const patient = await prisma.patient.findFirst({
+            where: { id: patientId, agencyId: customerProfile.id, isActive: true }
+        });
+        if (!patient) {
+            throw new Error("Patient not found or does not belong to your agency");
+        }
+    }
 
     const request = await prisma.therapyRequest.create({
         data: {
@@ -13,7 +27,8 @@ export const createRequest = async (customerId, data) => {
             location,
             latitude,
             longitude,
-            status: "created"
+            status: "created",
+            ...(patientId && { patientId }),
         },
     });
 
@@ -23,7 +38,12 @@ export const createRequest = async (customerId, data) => {
 export const getCustomerRequests = async (customerId) => {
     const requests = await prisma.therapyRequest.findMany({
         where: { customerId },
-        include: { offers: { include: { therapist: true } } },
+        include: {
+            offers: { include: { therapist: true } },
+            patient: {
+                select: { id: true, fullName: true, email: true, phone: true }
+            },
+        },
         orderBy: { createdAt: "desc" },
     });
 
@@ -42,10 +62,13 @@ export const getRequestById = async (requestId, userId) => {
             customer: { include: { user: true } },
             offers: {
                 where: user?.therapistProfile
-                    ? { therapistId: user.therapistProfile.id } // therapist sees only their own offers
-                    : undefined, // customer sees all offers
+                    ? { therapistId: user.therapistProfile.id }
+                    : undefined,
                 include: { therapist: true, },
                 orderBy: { createdAt: "desc" }
+            },
+            patient: {
+                select: { id: true, fullName: true, email: true, phone: true }
             },
         },
     });

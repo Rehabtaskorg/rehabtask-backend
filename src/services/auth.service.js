@@ -325,6 +325,8 @@ export const getCurrentUser = async (userId) => {
             customerProfile: {
                 select: {
                     fullName: true,
+                    customerType: true,
+                    agencyName: true
                 },
             },
             therapistProfile: {

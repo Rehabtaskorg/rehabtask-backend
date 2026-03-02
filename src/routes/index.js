@@ -16,6 +16,7 @@ import faqRoutes from "./faq.routes.js";
 import disputeRoutes from "./dispute.routes.js";
 import adminRoutes from "./admin.routes.js";
 import qaAdminRoutes from "./qaAdmin.routes.js"
+import agencyRoutes from "./agency.routes.js";
 
 const router = express.Router();
 
@@ -35,5 +36,6 @@ router.use("/faqs", faqRoutes);
 router.use("/disputes", disputeRoutes);
 router.use("/admin", adminRoutes);
 router.use("/qa-admin", qaAdminRoutes);
+router.use("/agency", agencyRoutes);
 
 export default router;

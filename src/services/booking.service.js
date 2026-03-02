@@ -21,8 +21,11 @@ export const getBookingById = async (bookingId, userId) => {
                 },
             },
             payment: true,
-            session: true
-        }
+            session: true,
+            patient: {
+                select: { id: true, fullName: true, email: true, phone: true }
+            },
+        },
     });
 
     if (!booking) {
@@ -49,6 +52,9 @@ export const getCustomerBookings = async (customerId) => {
             therapist: true,
             offer: { include: { request: true, }, },
             payment: true,
+            patient: {
+                select: { id: true, fullName: true, email: true, phone: true }
+            },
             session: true,
         },
         orderBy: { scheduledDate: "desc" },
@@ -72,6 +78,9 @@ export const getTherapistBookings = async (therapistId) => {
             },
             payment: true,
             session: true,
+            patient: {
+                select: { id: true, fullName: true, email: true, phone: true }
+            },
         },
         orderBy: { scheduledDate: "desc" },
     });

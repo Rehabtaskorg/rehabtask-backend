@@ -64,6 +64,9 @@ export const createOffer = async (therapistId, data) => {
                     customer: {
                         include: { user: { select: { id: true, email: true } } }
                     },
+                    patient: {
+                        select: { id: true, fullName: true, email: true, phone: true }
+                    },
                 },
             },
         },
@@ -98,6 +101,9 @@ export const getTherapistOffers = async (therapistId) => {
             request: {
                 include: {
                     customer: true,
+                    patient: {
+                        select: { id: true, fullName: true, email: true, phone: true }
+                    },
                 },
             },
         },
@@ -120,6 +126,9 @@ export const getOfferById = async (offerId, userId) => {
             request: {
                 include: {
                     customer: true,
+                    patient: {
+                        select: { id: true, fullName: true, email: true, phone: true }
+                    },
                 },
             },
             therapist: true,
@@ -204,6 +213,7 @@ export const acceptOffer = async (offerId, customerId) => {
             rate: offer.rate,
             sessionType: offer.sessionType,
             status: "pending",
+            patientId: offer.request.patientId || null,
         },
         include: {
             therapist: {
