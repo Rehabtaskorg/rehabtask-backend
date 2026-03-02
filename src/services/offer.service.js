@@ -1,5 +1,5 @@
 import { prisma } from "../config/prisma.js";
-import { addHours } from "date-fns";
+import { addHours, addMinutes } from "date-fns";
 import {
     sendNewOfferNotification,
     sendOfferAccepted,
@@ -40,7 +40,11 @@ export const createOffer = async (therapistId, data) => {
     }
 
 
-    const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
+    // PRODUCTION: uncomment line below and remove the QA line before going live
+    // const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
+
+    // QA Testing only - expires in 5 minutes
+    const expiresAt = addMinutes(new Date(), 5);
 
     const offer = await prisma.offer.create({
         data: {
