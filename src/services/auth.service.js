@@ -27,10 +27,13 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         if (error) {
             if (error.status === 422 || error.message?.toLowerCase().includes("already registered")) {
+                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+                });
                 return {
                     message: "Registration successful. Please check your email for verification.",
                     user: null
-                };
+                }
             }
 
             throw error;
@@ -105,13 +108,14 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
             message
         };
     } catch (error) {
-        console.log("Error object:", error);
-
         /**
          * Handle Prisma uniqueness safely
          * Treat duplicate DB records as idempotent success
          */
         if (error?.code === "P2002" && error?.meta?.modelName === "User") {
+            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+            });
             return {
                 message: "Registration successful. Please check your email for verification.",
                 user: null
@@ -160,6 +164,9 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
 
         if (error) {
             if (error.status === 422 || error.message.includes("already registered")) {
+                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+                });
                 return {
                     message: "Registration successful. Please check your email and wait for admin approval.",
                     user: null
@@ -207,6 +214,20 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
         };
 
     } catch (error) {
+        /**
+         * Handle Prisma uniqueness safely
+         * Treat duplicate DB records as idempotent success
+         */
+        if (error?.code === "P2002" && error?.meta?.modelName === "User") {
+            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+            });
+            return {
+                message: "Registration successful. Please check your email and wait for admin approval.",
+                user: null
+            }
+        }
+
         if (authUser?.id) {
             await supabaseAdmin.auth.admin.deleteUser(authUser.id);
         }
