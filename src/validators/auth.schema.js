@@ -46,15 +46,6 @@ const fullNameSchema = z
     .trim();
 
 /**
- * License number validation
- */
-const licenseNumberSchema = z
-    .string()
-    .min(3, 'License number must be at least 3 characters')
-    .max(100, 'License number must not exceed 100 characters')
-    .trim();
-
-/**
  * Customer type enum
  */
 const customerTypeSchema = z.enum(["individual", "agency"], {
@@ -158,8 +149,6 @@ export const completeOAuthOnboardingSchema = z.object({
         .max(1000, "Specialization must not exceed 1000 characters")
         .optional(),
 
-    licenseNumber: licenseNumberSchema.optional(),
-
     workArea: z.string()
         .max(500, "Work area must not exceed 500 characters")
         .optional()
@@ -181,15 +170,6 @@ export const completeOAuthOnboardingSchema = z.object({
     }, {
         message: "Agency name is required for agency customers",
         path: ["agencyName"]
-    })
-    .refine(data => {
-        if (data.role === "therapist") {
-            return !!data.licenseNumber?.trim() && data.licenseNumber.length >= 3;
-        }
-        return true;
-    }, {
-        message: "License number is required for therapists",
-        path: ["licenseNumber"]
     });
 
 
