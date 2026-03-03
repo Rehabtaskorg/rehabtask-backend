@@ -144,14 +144,6 @@ export const completeOAuthOnboardingSchema = z.object({
         .max(500, "Location must not exceed 500 characters")
         .optional(),
 
-    // Therapist fields
-    specialization: z.string()
-        .max(1000, "Specialization must not exceed 1000 characters")
-        .optional(),
-
-    workArea: z.string()
-        .max(500, "Work area must not exceed 500 characters")
-        .optional()
 })
     .refine(data => {
         if (data.role === "customer") {

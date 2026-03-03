@@ -242,7 +242,7 @@ export const changePasswordController = async (req, res, next) => {
  */
 export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
-        const { role, fullName, phone, customerType, agencyName, location, specialization, workArea } = req.body;
+        const { role, fullName, phone, customerType, agencyName, location } = req.body;
 
         // Build profile data object based on role
         const profileData = {
@@ -253,10 +253,6 @@ export const completeOAuthOnboardingController = async (req, res, next) => {
                 agencyName,
                 location
             }),
-            ...(role === "therapist" && {
-                specialization,
-                workArea
-            })
         };
 
         const result = await completeOAuthOnboarding({
