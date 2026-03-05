@@ -24,6 +24,7 @@ const adminGetAllFaqsController = async (req, res, next) => {
 const adminCreateFaqController = async (req, res, next) => {
     try {
         const faq = await createFaqService(req.body);
+        res.status(201).json({ success: true, data: faq });
     } catch (error) {
         next(error);
     }

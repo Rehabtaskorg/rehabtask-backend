@@ -7,24 +7,30 @@ datasource db {
 }
 
 model User {
-  id                String            @id @db.Uuid
-  email             String            @unique @db.VarChar(255)
-  passwordHash      String            @default("") @map("password_hash")
+  id                String             @id @db.Uuid
+  email             String             @unique @db.VarChar(255)
+  passwordHash      String             @default("") @map("password_hash")
   role              UserRole
-  emailVerified     Boolean           @default(false) @map("email_verified")
-  isActive          Boolean           @default(true) @map("is_active")
-  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  emailVerified     Boolean            @default(false) @map("email_verified")
+  isActive          Boolean            @default(true) @map("is_active")
+  deactivatedAt     DateTime?          @map("deactivated_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   auditLogs         AuditLog[]
   customerProfile   CustomerProfile?
-  uploadedDocuments LicenseDocument[] @relation("UserDocuments")
-  verifiedDocuments LicenseDocument[] @relation("DocumentVerifier")
-  receivedMessages  Message[]         @relation("ReceivedMessages")
-  sentMessages      Message[]         @relation("SentMessages")
+  uploadedDocuments LicenseDocument[]  @relation("UserDocuments")
+  verifiedDocuments LicenseDocument[]  @relation("DocumentVerifier")
+  receivedMessages  Message[]          @relation("ReceivedMessages")
+  sentMessages      Message[]          @relation("SentMessages")
   patientProfile    Patient?
   configUpdates     SystemConfig[]
   therapistProfile  TherapistProfile?
-  disputes          Dispute[]
+  disputes          Dispute[]          @relation("DisputeFiledBy")
+  assignedDisputes  Dispute[]          @relation("DisputeAssignedAdmin")
+  notifications     Notification[]
+  subAdminProfile   SubAdminProfile?   @relation("SubAdminUser")
+  createdSubAdmins  SubAdminProfile[]  @relation("SubAdminCreatedBy")
+  commissionConfigs CommissionConfig[]
 
   @@index([email])
   @@index([role, isActive])
@@ -367,17 +373,17 @@ model WorkArea {
 }
 
 model Review {
-  id          String           @id @default(uuid()) @db.Uuid
-  bookingId   String           @unique @map("booking_id") @db.Uuid
-  customerId  String           @map("customer_id") @db.Uuid
-  therapistId String           @map("therapist_id") @db.Uuid
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @unique @map("booking_id") @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  therapistId String   @map("therapist_id") @db.Uuid
   rating      Int
-  comment     String?          @db.Text
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  comment     String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  booking  Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@index([therapistId, createdAt])
@@ -402,28 +408,82 @@ model FAQ {
 }
 
 model Dispute {
-  id          String        @id @default(uuid()) @db.Uuid
-  ticketId    String        @unique @map("ticket_id") @db.VarChar(20)
-  userId      String        @map("user_id") @db.Uuid
-  bookingId   String?       @map("booking_id") @db.Uuid
-  type        DisputeType
-  description String        @db.Text
-  status      DisputeStatus @default(open)
-  resolution  String?       @db.Text
-  resolvedAt  DateTime?     @map("resolved_at") @db.Timestamptz(3)
-  resolvedBy  String?       @map("resolved_by") @db.Uuid
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String        @id @default(uuid()) @db.Uuid
+  ticketId        String        @unique @map("ticket_id") @db.VarChar(20)
+  userId          String        @map("user_id") @db.Uuid
+  bookingId       String?       @map("booking_id") @db.Uuid
+  assignedAdminId String?       @map("assigned_admin_id") @db.Uuid
+  title           String?       @db.VarChar(255)
+  type            DisputeType
+  description     String        @db.Text
+  status          DisputeStatus @default(open)
+  resolution      String?       @db.Text
+  resolvedAt      DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy      String?       @map("resolved_by") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  booking Booking? @relation(fields: [bookingId], references: [id])
+  user          User     @relation("DisputeFiledBy", fields: [userId], references: [id], onDelete: Cascade)
+  booking       Booking? @relation(fields: [bookingId], references: [id])
+  assignedAdmin User?    @relation("DisputeAssignedAdmin", fields: [assignedAdminId], references: [id])
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([ticketId])
+  @@index([assignedAdminId])
   @@map("disputes")
 }
 
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  type       String    @db.VarChar(100)
+  title      String    @db.VarChar(255)
+  message    String    @db.Text
+  isRead     Boolean   @default(false) @map("is_read")
+  entityType String?   @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.VarChar(255)
+  metadata   Json?
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(3)
+  failed     Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, type, entityId])
+  @@index([type, entityId])
+  @@map("notifications")
+}
+
+model SubAdminProfile {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  permissions      String[]
+  isActive         Boolean  @default(true) @map("is_active")
+  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user             User     @relation("SubAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdmin   User     @relation("SubAdminCreatedBy", fields: [createdByAdminId], references: [id])
+
+  @@index([userId])
+  @@index([createdByAdminId])
+  @@map("sub_admin_profiles")
+}
+
+model CommissionConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  rate             Decimal  @db.Decimal(5, 4)
+  effectiveFrom    DateTime @default(now()) @map("effective_from") @db.Timestamptz(3)
+  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdByAdmin   User     @relation(fields: [createdByAdminId], references: [id])
+
+  @@index([effectiveFrom])
+  @@index([createdByAdminId, effectiveFrom])
+  @@map("commission_configs")
+}
 
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
@@ -460,6 +520,7 @@ enum UserRole {
   customer
   therapist
   admin
+  sub_admin
 }
 
 enum CustomerType {

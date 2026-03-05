@@ -269,7 +269,8 @@ export const login = async ({ email, password }) => {
         where: { id: data.user.id },
         include: {
             customerProfile: true,
-            therapistProfile: true
+            therapistProfile: true,
+            subAdminProfile: true,
         }
     });
 
@@ -358,6 +359,12 @@ export const getCurrentUser = async (userId) => {
                     onboardingStep: true,
                     onboardingComplete: true
                 }
+            },
+            subAdminProfile: {
+                select: {
+                    permissions: true,
+                    isActive: true,
+                }
             }
         }
     });
@@ -375,7 +382,11 @@ export const getCurrentUser = async (userId) => {
         profile:
             user.role === "customer"
                 ? user.customerProfile
-                : user.therapistProfile
+                : user.role === "therapist"
+                    ? user.therapistProfile
+                    : user.role === "sub_admin"
+                        ? user.subAdminProfile
+                        : null
     };
 };
 

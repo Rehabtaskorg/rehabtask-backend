@@ -1,80 +1,156 @@
 import express from "express";
+import { authenticate, authorize } from "../middleware/auth.js";
+import { validate, validateMultiple } from "../middleware/validate.js";
+import { requirePermission } from "../middleware/permissions.js";
+
+// Validators
+import { createFaqSchema, updateFaqSchema, } from "../validators/faq.schema.js";
+import {
+    listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, rejectTherapistSchema,
+    adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
+    bookingIdParamSchema, adminCancelBookingSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema, adminListPaymentsQuerySchema,
+    paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
+    setCommissionRateSchema, broadcastNotificationSchema,
+} from "../validators/admin.schema.js";
+
+// Controllers
 import {
     adminGetAllFaqsController,
     adminCreateFaqController,
     adminUpdateFaqController,
-    adminDeleteFaqController,
-    adminGetAllDisputesController,
-    adminResolveDisputeController,
+    adminDeleteFaqController
 } from "../controllers/admin.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
-import { validate, validateMultiple } from "../middleware/validate.js";
+
 import {
-    createFaqSchema,
-    updateFaqSchema,
-    faqIdParamSchema,
-} from "../validators/faq.schema.js";
+    listUsersController,
+    getUserDetailController,
+    deactivateUserController,
+    reactivateUserController
+} from "../controllers/admin.user.controller.js";
+
 import {
-    updateDisputeSchema,
-    listDisputesQuerySchema,
-} from "../validators/dispute.schema.js";
+    listTherapistsController,
+    getTherapistDetailController,
+    approveTherapistController,
+    rejectTherapistController
+} from "../controllers/admin.therapist.controller.js";
+
+import {
+    adminListDisputesController,
+    adminGetDisputeController,
+    assignDisputeController,
+    adminUpdateDisputeController,
+    reopenDisputeController,
+} from "../controllers/admin.dispute.controller.js";
+
+import {
+    adminListBookingsController,
+    adminGetBookingController,
+    adminCancelBookingController,
+} from "../controllers/admin.booking.controller.js";
+
+import {
+    adminListSubscriptionsController,
+    adminGetSubscriptionController,
+    adminCancelSubscriptionController,
+    adminGetSubscriptionStatsController,
+} from "../controllers/admin.subscription.controller.js";
+
+import {
+    adminListPaymentsController,
+    adminGetPaymentController,
+    adminGetPaymentStatsController,
+    adminReleasePaymentController,
+    adminRefundPaymentController,
+} from "../controllers/admin.payment.controller.js";
+
+import {
+    listSubAdminsController,
+    getSubAdminDetailController,
+    createSubAdminController,
+    promoteToSubAdminController,
+    updateSubAdminPermissionsController,
+    deactivateSubAdminController,
+    reactivateSubAdminController,
+} from "../controllers/admin.subadmin.controller.js";
+
+import {
+    getCommissionRateController,
+    getCommissionHistoryController,
+    setCommissionRateController,
+} from "../controllers/admin.commission.controller.js";
+
+import {
+    adminGetAllNotificationsController,
+    adminBroadcastNotificationController,
+} from "../controllers/admin.notification.controller.js";
+
 
 const router = express.Router();
 
+// Middleware shorthand
+const adminOrSubAdmin = [authenticate, authorize(["admin", "sub_admin"])];
+const adminOnly = [authenticate, authorize(["admin"])];
+
 // ── FAQ Management ──
+router.get("/faqs", ...adminOrSubAdmin, requirePermission("faqs"), adminGetAllFaqsController);
+router.post("/faqs", ...adminOrSubAdmin, requirePermission("faqs"), validate(createFaqSchema), adminCreateFaqController);
+router.put("/faqs/:faqId", ...adminOrSubAdmin, requirePermission("faqs"), validate(updateFaqSchema), adminUpdateFaqController);
+router.delete("/faqs/:faqId", ...adminOrSubAdmin, requirePermission("faqs"), adminDeleteFaqController);
 
-// GET /api/admin/faqs — All FAQs including inactive
-router.get(
-    "/faqs",
-    authenticate,
-    authorize(["admin"]),
-    adminGetAllFaqsController
-);
+// User Management
+router.get("/users", ...adminOrSubAdmin, requirePermission("users"), validate(listUsersQuerySchema, "query"), listUsersController);
+router.get("/users/:userId", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), getUserDetailController);
+router.put("/users/:userId/deactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), deactivateUserController);
+router.put("/users/:userId/reactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), reactivateUserController);
 
-// POST /api/admin/faqs — Create FAQ
-router.post(
-    "/faqs",
-    authenticate,
-    authorize(["admin"]),
-    validate(createFaqSchema),
-    adminCreateFaqController
-);
+// Therapist Management
+router.get("/therapists", ...adminOrSubAdmin, requirePermission("therapists"), validate(listTherapistsQuerySchema, "query"), listTherapistsController);
+router.get("/therapists/:therapistUserId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), getTherapistDetailController);
+router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), approveTherapistController);
+router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);
 
-// PUT /api/admin/faqs/:faqId — Update FAQ
-router.put(
-    "/faqs/:faqId",
-    authenticate,
-    authorize(["admin"]),
-    validate(updateFaqSchema),
-    adminUpdateFaqController
-);
+// Dispute Management
+router.get("/disputes", ...adminOrSubAdmin, requirePermission("disputes"), validate(adminListDisputesQuerySchema, "query"), adminListDisputesController);
+router.get("/disputes/:disputeId", ...adminOrSubAdmin, requirePermission("disputes"), validate(disputeIdParamSchema, "params"), adminGetDisputeController);
+router.put("/disputes/:disputeId", ...adminOrSubAdmin, requirePermission("disputes"), validateMultiple({ params: disputeIdParamSchema, body: adminUpdateDisputeSchema }), adminUpdateDisputeController);
+router.put("/disputes/:disputeId/assign", ...adminOrSubAdmin, requirePermission("disputes"), validateMultiple({ params: disputeIdParamSchema, body: assignDisputeSchema }), assignDisputeController);
+router.put("/disputes/:disputeId/reopen", ...adminOrSubAdmin, requirePermission("disputes"), validate(disputeIdParamSchema, "params"), reopenDisputeController);
 
-// DELETE /api/admin/faqs/:faqId — Delete FAQ
-router.delete(
-    "/faqs/:faqId",
-    authenticate,
-    authorize(["admin"]),
-    adminDeleteFaqController
-);
+// Booking Management
+router.get("/bookings", ...adminOrSubAdmin, requirePermission("bookings"), validate(adminListBookingsQuerySchema, "query"), adminListBookingsController);
+router.get("/bookings/:bookingId", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminGetBookingController);
+router.put("/bookings/:bookingId/cancel", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminCancelBookingSchema }), adminCancelBookingController);
 
-// ── Dispute Management ──
+// Subscription Management
+router.get("/subscriptions/stats", ...adminOrSubAdmin, requirePermission("subscriptions"), adminGetSubscriptionStatsController);
+router.get("/subscriptions", ...adminOrSubAdmin, requirePermission("subscriptions"), validate(adminListSubscriptionsQuerySchema, "query"), adminListSubscriptionsController);
+router.get("/subscriptions/:subscriptionId", ...adminOrSubAdmin, requirePermission("subscriptions"), validate(subscriptionIdParamSchema, "params"), adminGetSubscriptionController);
+router.put("/subscriptions/:subscriptionId/cancel", ...adminOrSubAdmin, requirePermission("subscriptions"), validate(subscriptionIdParamSchema, "params"), adminCancelSubscriptionController);
 
-// GET /api/admin/disputes — All disputes (filterable)
-router.get(
-    "/disputes",
-    authenticate,
-    authorize(["admin"]),
-    validate(listDisputesQuerySchema, "query"),
-    adminGetAllDisputesController
-);
+// Payment Management
+router.get("/payments/stats", ...adminOrSubAdmin, requirePermission("payments"), adminGetPaymentStatsController);
+router.get("/payments", ...adminOrSubAdmin, requirePermission("payments"), validate(adminListPaymentsQuerySchema, "query"), adminListPaymentsController);
+router.get("/payments/:paymentId", ...adminOrSubAdmin, requirePermission("payments"), validate(paymentIdParamSchema, "params"), adminGetPaymentController);
+router.put("/payments/:paymentId/release", ...adminOrSubAdmin, requirePermission("payments"), validate(paymentIdParamSchema, "params"), adminReleasePaymentController);
+router.put("/payments/:paymentId/refund", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminRefundPaymentSchema }), adminRefundPaymentController);
 
-// PUT /api/admin/disputes/:disputeId — Resolve dispute
-router.put(
-    "/disputes/:disputeId",
-    authenticate,
-    authorize(["admin"]),
-    validate(updateDisputeSchema),
-    adminResolveDisputeController
-);
+// Commission Management
+router.get("/commission/history", ...adminOrSubAdmin, requirePermission("commission"), getCommissionHistoryController);
+router.get("/commission", ...adminOrSubAdmin, requirePermission("commission"), getCommissionRateController);
+router.post("/commission", ...adminOnly, validate(setCommissionRateSchema), setCommissionRateController);
+
+// Notifications (admin view + broadcast)
+router.get("/notifications", ...adminOrSubAdmin, requirePermission("notifications"), adminGetAllNotificationsController);
+router.post("/notifications/broadcast", ...adminOnly, validate(broadcastNotificationSchema), adminBroadcastNotificationController);
+
+// Sub-Admin Management (admin only)
+router.get("/sub-admins", ...adminOnly, listSubAdminsController);
+router.post("/sub-admins", ...adminOnly, validate(createSubAdminSchema), createSubAdminController);
+router.get("/sub-admins/:userId", ...adminOnly, validate(userIdParamSchema, "params"), getSubAdminDetailController);
+router.post("/sub-admins/:userId/promote", ...adminOnly, validateMultiple({ params: userIdParamSchema, body: promoteToSubAdminSchema }), promoteToSubAdminController);
+router.put("/sub-admins/:userId/permissions", ...adminOnly, validateMultiple({ params: userIdParamSchema, body: updateSubAdminPermissionsSchema }), updateSubAdminPermissionsController);
+router.put("/sub-admins/:userId/deactivate", ...adminOnly, validate(userIdParamSchema, "params"), deactivateSubAdminController);
+router.put("/sub-admins/:userId/reactivate", ...adminOnly, validate(userIdParamSchema, "params"), reactivateSubAdminController);
 
 export default router;
