@@ -5,7 +5,11 @@ import { createNotification } from "./notification.service.js";
 
 const DISPUTE_INCLUDE = {
     user: {
-        select: { id: true, email: true, role: true },
+        select: {
+            id: true, email: true, role: true,
+            customerProfile: { select: { fullName: true } },
+            therapistProfile: { select: { fullName: true } },
+        },
     },
     assignedAdmin: {
         select: { id: true, email: true },
