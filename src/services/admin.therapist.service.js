@@ -42,6 +42,7 @@ export const listTherapists = async ({
                         yearsOfExperience: true,
                         onboardingComplete: true,
                         backgroundCheckStatus: true,
+                        licenseDocuments: { select: { id: true } },
                     },
                 },
             },

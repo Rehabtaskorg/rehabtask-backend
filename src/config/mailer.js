@@ -1,10 +1,11 @@
 /**
  * Application mail transport.
  *
- * Picks the right transport automatically:
- *   - RESEND_API_KEY set     → Resend (production)
- *   - GMAIL_USER/PASS set    → nodemailer/Gmail (development)
- *   - Neither                → emails silently skipped
+ * Picks the right transport automatically (works in any environment):
+ *   - RESEND_API_KEY set              → Resend
+ *   - GMAIL_USER + GMAIL_APP_PASSWORD → nodemailer/Gmail
+ *   - Neither                         → emails silently skipped
+ *   - NODE_ENV === "test"             → emails skipped
  */
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
@@ -17,7 +18,7 @@ let nodemailerTransporter = null;
 
 if (env.RESEND_API_KEY) {
     resendClient = new Resend(env.RESEND_API_KEY);
-    logger.info('[Mailer] Using Resend transport (production)');
+    logger.info('[Mailer] Using Resend transport');
 } else if (env.GMAIL_USER && env.GMAIL_APP_PASSWORD) {
     nodemailerTransporter = nodemailer.createTransport({
         service: 'gmail',
@@ -26,7 +27,7 @@ if (env.RESEND_API_KEY) {
             pass: env.GMAIL_APP_PASSWORD,
         },
     });
-    logger.info('[Mailer] Using Gmail/nodemailer transport (development)');
+    logger.info('[Mailer] Using Gmail/nodemailer transport');
 } else {
     logger.warn('[Mailer] No email transport configured — emails will be skipped');
 }
@@ -36,13 +37,13 @@ if (env.RESEND_API_KEY) {
 // ---------------------------------------------------------------------------
 
 export const sendMail = async ({ to, subject, html, text, replyTo }) => {
-    // Skip all email sending outside of production
-    if (process.env.NODE_ENV !== "production") {
-        logger.info(`[mailer] Email skipped (NODE_ENV=${process.env.NODE_ENV}): "${subject}" → ${to}`);
-        return { success: false, error: "Email skipped in non-production environment" };
+    // Skip email sending only in test environment
+    if (process.env.NODE_ENV === "test") {
+        logger.info(`[mailer] Email skipped (NODE_ENV=test): "${subject}" → ${to}`);
+        return { success: false, error: "Email skipped in test environment" };
     }
 
-    // ── Resend (production) ─────────────────────────────────
+    // ── Resend ─────────────────────────────────────────────
     if (resendClient) {
         try {
             const response = await resendClient.emails.send({
@@ -61,7 +62,7 @@ export const sendMail = async ({ to, subject, html, text, replyTo }) => {
         }
     }
 
-    // ── Nodemailer / Gmail (development) ────────────────────
+    // ── Nodemailer / Gmail ──────────────────────────────────
     if (nodemailerTransporter) {
         try {
             const info = await nodemailerTransporter.sendMail({
