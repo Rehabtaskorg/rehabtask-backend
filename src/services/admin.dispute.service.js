@@ -25,11 +25,19 @@ export const adminListDisputes = async ({
     unassigned,
     page = 1,
     limit = 20,
+    callerRole,
+    callerUserId,
 } = {}) => {
     const where = {};
     if (status) where.status = status;
-    if (assignedAdminId) where.assignedAdminId = assignedAdminId;
-    if (unassigned === true) where.assignedAdminId = null;
+
+    // Sub-admins can only see disputes assigned to them
+    if (callerRole === "sub_admin") {
+        where.assignedAdminId = callerUserId;
+    } else {
+        if (assignedAdminId) where.assignedAdminId = assignedAdminId;
+        if (unassigned === true) where.assignedAdminId = null;
+    }
 
     const [disputes, total] = await Promise.all([
         prisma.dispute.findMany({
@@ -48,12 +56,20 @@ export const adminListDisputes = async ({
     };
 }
 
-export const adminGetDispute = async (disputeId) => {
+export const adminGetDispute = async (disputeId, callerRole, callerUserId) => {
     const dispute = await prisma.dispute.findUnique({
         where: { id: disputeId },
         include: DISPUTE_INCLUDE,
     });
     if (!dispute) throw new NotFoundError("Dispute not found");
+
+    if (callerRole === "sub_admin" && dispute.assignedAdminId !== callerUserId) {
+        throw new AuthorizationError(
+            "You can only view disputes assigned to you",
+            "DISPUTE_NOT_ASSIGNED"
+        );
+    }
+
     return dispute;
 }
 

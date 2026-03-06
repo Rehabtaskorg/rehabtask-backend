@@ -15,6 +15,8 @@ const adminListDisputesController = async (req, res, next) => {
             unassigned: unassigned === "true",
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
+            callerRole: req.user.role,
+            callerUserId: req.user.id,
         });
         res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -25,7 +27,7 @@ const adminListDisputesController = async (req, res, next) => {
 const adminGetDisputeController = async (req, res, next) => {
     try {
         const { disputeId } = req.params;
-        const dispute = await adminGetDisputeService(disputeId);
+        const dispute = await adminGetDisputeService(disputeId, req.user.role, req.user.id);
         res.status(200).json({ success: true, data: dispute });
     } catch (error) {
         next(error);
