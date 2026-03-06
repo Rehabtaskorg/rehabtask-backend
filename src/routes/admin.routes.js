@@ -10,7 +10,7 @@ import {
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
     bookingIdParamSchema, adminCancelBookingSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema, adminListPaymentsQuerySchema,
     paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
-    setCommissionRateSchema, broadcastNotificationSchema,
+    setCommissionRateSchema, broadcastNotificationSchema, updateUserSchema,
 } from "../validators/admin.schema.js";
 
 // Controllers
@@ -25,7 +25,8 @@ import {
     listUsersController,
     getUserDetailController,
     deactivateUserController,
-    reactivateUserController
+    reactivateUserController,
+    updateUserController,
 } from "../controllers/admin.user.controller.js";
 
 import {
@@ -101,6 +102,7 @@ router.delete("/faqs/:faqId", ...adminOrSubAdmin, requirePermission("faqs"), adm
 // User Management
 router.get("/users", ...adminOrSubAdmin, requirePermission("users"), validate(listUsersQuerySchema, "query"), listUsersController);
 router.get("/users/:userId", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), getUserDetailController);
+router.put("/users/:userId", ...adminOrSubAdmin, requirePermission("users"), validateMultiple({ params: userIdParamSchema, body: updateUserSchema }), updateUserController);
 router.put("/users/:userId/deactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), deactivateUserController);
 router.put("/users/:userId/reactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), reactivateUserController);
 

@@ -37,7 +37,7 @@ const assignDisputeController = async (req, res, next) => {
         const byAdminId = req.user.id;
         const { disputeId } = req.params;
         const { assignedAdminId } = req.body;
-        const dispute = await assignDisputeService(disputeId, assignedAdminId, byAdminId);
+        const dispute = await assignDisputeService(disputeId, assignedAdminId, byAdminId, req.user.role);
         res.status(200).json({ success: true, data: dispute });
     } catch (error) {
         next(error);
@@ -48,7 +48,7 @@ const adminUpdateDisputeController = async (req, res, next) => {
     try {
         const adminUserId = req.user.id;
         const { disputeId } = req.params;
-        const dispute = await adminUpdateDisputeService(disputeId, adminUserId, req.body);
+        const dispute = await adminUpdateDisputeService(disputeId, adminUserId, req.body, req.user.role);
         res.status(200).json({ success: true, data: dispute });
     } catch (error) {
         next(error);
@@ -59,7 +59,7 @@ const reopenDisputeController = async (req, res, next) => {
     try {
         const adminUserId = req.user.id;
         const { disputeId } = req.params;
-        const dispute = await reopenDisputeService(disputeId, adminUserId);
+        const dispute = await reopenDisputeService(disputeId, adminUserId, req.user.role);
         res.status(200).json({ success: true, data: dispute });
     } catch (error) {
         next(error);

@@ -22,7 +22,8 @@ import {
     offerChangeRequested,
     bookingRescheduleProposed,
     bookingRescheduleAccepted,
-    bookingRescheduleDeclined
+    bookingRescheduleDeclined,
+    accountDeactivated,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -163,4 +164,12 @@ export const sendBookingRescheduleAccepted = async ({ therapist, booking }) => {
 
 export const sendBookingRescheduleDeclined = async ({ therapist, booking, reason }) => {
     return dispatch(therapist.user.email, bookingRescheduleDeclined, { therapist, booking, reason });
+};
+
+export const sendAccountDeactivated = async ({ user }) => {
+    const displayName =
+        user.customerProfile?.fullName ||
+        user.therapistProfile?.fullName ||
+        user.email.split('@')[0];
+    return dispatch(user.email, accountDeactivated, { user: { ...user, displayName } });
 };

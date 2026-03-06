@@ -36,6 +36,16 @@ export const userIdParamSchema = z.object({
     userId: z.uuid("Invalid user ID"),
 });
 
+export const updateUserSchema = z.object({
+    email: z.email("Invalid email").optional(),
+    fullName: z.string().min(2).max(100).optional(),
+    phone: z.string().regex(/^\+1\d{10}$/, "Invalid phone format. Use +1XXXXXXXXXX").optional(),
+    customerType: z.enum(["individual", "agency"]).optional(),
+    agencyName: z.string().max(100).optional().nullable(),
+    primaryLicenseType: z.string().max(50).optional(),
+    bio: z.string().max(1000).optional().nullable(),
+}).refine(data => Object.keys(data).length > 0, { message: "At least one field must be provided" });
+
 // ── Therapist Management ─────────────────────────────────────────────────────
 
 export const listTherapistsQuerySchema = z.object({

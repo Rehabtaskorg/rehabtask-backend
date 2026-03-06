@@ -2,6 +2,8 @@ import { prisma } from "../config/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
+import { env } from "../config/env.js";
+import { sendAccountDeactivated } from "./email.service.js";
 
 export const VALID_PERMISSIONS = [
     "users",
@@ -93,6 +95,7 @@ export const createSubAdmin = async (email, permissions, adminId) => {
     const { data: inviteData, error: inviteError } =
         await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
             data: { role: "sub_admin" },
+            redirectTo: `${env.FRONTEND_URL}/invite/accept`,
         });
 
     if (inviteError) {
@@ -186,13 +189,22 @@ export const deactivateSubAdmin = async (userId, adminId) => {
     if (!profile) throw new NotFoundError("Sub-admin profile not found");
     if (!profile.isActive) throw new ConflictError("Sub-admin is already inactive");
 
-    const updated = await prisma.subAdminProfile.update({
-        where: { userId },
-        data: { isActive: false },
-    });
+    const [updatedProfile] = await prisma.$transaction([
+        prisma.subAdminProfile.update({ where: { userId }, data: { isActive: false } }),
+        prisma.user.update({ where: { id: userId }, data: { isActive: false, deactivatedAt: new Date() } }),
+    ]);
+
+    // Revoke Supabase session so existing tokens are invalidated
+    await supabaseAdmin.auth.admin.signOut(userId).catch(() => {});
+
+    // Send deactivation notification email
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (user) {
+        sendAccountDeactivated({ user }).catch(() => {});
+    }
 
     logger.info("[AdminSubAdminService] Sub-admin deactivated", { userId, byAdmin: adminId });
-    return updated;
+    return updatedProfile;
 }
 
 export const reactivateSubAdmin = async (userId, adminId) => {
@@ -200,11 +212,11 @@ export const reactivateSubAdmin = async (userId, adminId) => {
     if (!profile) throw new NotFoundError("Sub-admin profile not found");
     if (profile.isActive) throw new ConflictError("Sub-admin is already active");
 
-    const updated = await prisma.subAdminProfile.update({
-        where: { userId },
-        data: { isActive: true },
-    });
+    const [updatedProfile] = await prisma.$transaction([
+        prisma.subAdminProfile.update({ where: { userId }, data: { isActive: true } }),
+        prisma.user.update({ where: { id: userId }, data: { isActive: true, deactivatedAt: null } }),
+    ]);
 
     logger.info("[AdminSubAdminService] Sub-admin reactivated", { userId, byAdmin: adminId });
-    return updated;
+    return updatedProfile;
 }

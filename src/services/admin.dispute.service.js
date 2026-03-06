@@ -1,5 +1,5 @@
 import { prisma } from "../config/prisma.js";
-import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
+import { NotFoundError, ConflictError, BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { createNotification } from "./notification.service.js";
 
@@ -57,7 +57,11 @@ export const adminGetDispute = async (disputeId) => {
     return dispute;
 }
 
-export const assignDispute = async (disputeId, assignedAdminId, byAdminId) => {
+export const assignDispute = async (disputeId, assignedAdminId, byAdminId, callerRole) => {
+    if (callerRole === "sub_admin") {
+        throw new AuthorizationError("Only admins can assign disputes", "INSUFFICIENT_PERMISSIONS");
+    }
+
     const [dispute, admin] = await Promise.all([
         prisma.dispute.findUnique({ where: { id: disputeId } }),
         prisma.user.findUnique({ where: { id: assignedAdminId } }),
@@ -91,10 +95,18 @@ export const assignDispute = async (disputeId, assignedAdminId, byAdminId) => {
 export const adminUpdateDispute = async (
     disputeId,
     adminUserId,
-    { status, resolution, title }
+    { status, resolution, title },
+    callerRole
 ) => {
     const dispute = await prisma.dispute.findUnique({ where: { id: disputeId } });
     if (!dispute) throw new NotFoundError("Dispute not found");
+
+    if (callerRole === "sub_admin" && dispute.assignedAdminId !== adminUserId) {
+        throw new AuthorizationError(
+            "You can only update disputes assigned to you",
+            "DISPUTE_NOT_ASSIGNED"
+        );
+    }
 
     const updateData = {};
     if (status !== undefined) updateData.status = status;
@@ -137,9 +149,17 @@ export const adminUpdateDispute = async (
     return updated;
 }
 
-export const reopenDispute = async (disputeId, adminUserId) => {
+export const reopenDispute = async (disputeId, adminUserId, callerRole) => {
     const dispute = await prisma.dispute.findUnique({ where: { id: disputeId } });
     if (!dispute) throw new NotFoundError("Dispute not found");
+
+    if (callerRole === "sub_admin" && dispute.assignedAdminId !== adminUserId) {
+        throw new AuthorizationError(
+            "You can only reopen disputes assigned to you",
+            "DISPUTE_NOT_ASSIGNED"
+        );
+    }
+
     if (!["resolved", "closed"].includes(dispute.status)) {
         throw new ConflictError("Only resolved or closed disputes can be reopened");
     }

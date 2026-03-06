@@ -367,6 +367,15 @@ export const processOAuthController = async (req, res, next) => {
             });
         }
 
+        // Existing user - check if account is deactivated
+        if (!user.isActive) {
+            return res.status(401).json({
+                success: false,
+                code: "ACCOUNT_DEACTIVATED",
+                message: "Your account has been deactivated. Please contact support.",
+            });
+        }
+
         // Existing user - check if they need onboarding
         const needsOnboarding = user.role === "customer"
             ? !user.customerProfile

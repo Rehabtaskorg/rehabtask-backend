@@ -364,6 +364,18 @@ export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
     `),
 });
 
+// Account Deactivated
+export const accountDeactivated = ({ user }) => ({
+    subject: 'Your RehabTask account has been deactivated',
+    html: layout(`
+        ${heading('Account Deactivated')}
+        ${text(`Hi ${user.displayName || user.email},`)}
+        ${text('Your RehabTask account has been deactivated by an administrator. You will no longer be able to log in or access the platform.')}
+        ${text('If you believe this was done in error, please contact our support team for assistance.')}
+        ${button(`${FRONTEND_URL}/contact`, 'Contact Support')}
+    `),
+});
+
 // Booking Reschedule Declined (to therapist)
 export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
     subject: 'Session reschedule declined',

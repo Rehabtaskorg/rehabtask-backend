@@ -2,7 +2,8 @@ import {
     listUsers as listUsersService,
     getUserDetail as getUserDetailService,
     deactivateUser as deactivateUserService,
-    reactivateUser as reactivateUserService
+    reactivateUser as reactivateUserService,
+    updateUser as updateUserService,
 } from "../services/admin.user.service.js";
 
 const listUsersController = async (req, res, next) => {
@@ -35,7 +36,7 @@ const deactivateUserController = async (req, res, next) => {
     try {
         const adminId = req.user.id;
         const { userId } = req.params;
-        const user = await deactivateUserService(userId, adminId);
+        const user = await deactivateUserService(userId, adminId, req.user.role);
         res.status(200).json({ success: true, data: user });
     } catch (error) {
         next(error);
@@ -53,9 +54,21 @@ const reactivateUserController = async (req, res, next) => {
     }
 };
 
+const updateUserController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { userId } = req.params;
+        const user = await updateUserService(userId, req.body, adminId);
+        res.status(200).json({ success: true, data: user });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listUsersController,
     getUserDetailController,
     deactivateUserController,
-    reactivateUserController
+    reactivateUserController,
+    updateUserController,
 };
