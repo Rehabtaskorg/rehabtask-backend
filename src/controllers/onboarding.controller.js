@@ -103,14 +103,12 @@ export const saveCredentialsController = async (req, res, next) => {
  */
 export const saveAvailabilityController = async (req, res, next) => {
     try {
-        const { schedule, acceptingNewPatients, baseZipCode, serviceRadiusMiles, workArea } = req.body;
+        const { schedule, acceptingNewPatients, workAreas } = req.body;
 
         const result = await saveAvailability(req.user.id, {
             schedule,
             acceptingNewPatients,
-            baseZipCode,
-            serviceRadiusMiles,
-            workArea: workArea || null,
+            workAreas: workAreas || [],
         });
 
         res.status(200).json({

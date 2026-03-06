@@ -46,8 +46,7 @@ export const updateWorkAreasSchema = z.object({
                     .default(25),
             })
         )
-        .min(0)
-        .max(5, "Maximum of 5 work areas allowed"),
+        .min(0),
 });
 
 export const updateAvailabilitySchema = z.object({

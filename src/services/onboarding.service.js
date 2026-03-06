@@ -235,23 +235,23 @@ export const saveAvailability = async (userId, data) => {
         });
     }
 
-    // Create initial Work area from geocoded zip code (if provided)
-    if (data.workArea && data.workArea.latitude && data.workArea.longitude) {
+    // Create work areas from geocoded address data
+    if (data.workAreas && data.workAreas.length > 0) {
         // Delete any existing work areas from previous onboarding attempts
         // to ensure idempotency (re-submitting step 3 replaces, not duplicates)
         await prisma.workArea.deleteMany({
             where: { therapistId: therapist.id }
         });
 
-        await prisma.workArea.create({
-            data: {
+        await prisma.workArea.createMany({
+            data: data.workAreas.map(wa => ({
                 therapistId: therapist.id,
-                city: data.workArea.city,
-                state: data.workArea.state,
-                latitude: data.workArea.latitude,
-                longitude: data.workArea.longitude,
-                radiusMiles: Math.min(Math.max(data.workArea.radiusMiles || 25, 1), 100)
-            },
+                city: wa.city,
+                state: wa.state,
+                latitude: wa.latitude,
+                longitude: wa.longitude,
+                radiusMiles: Math.min(Math.max(wa.radiusMiles || 25, 1), 100),
+            })),
         });
     }
 
