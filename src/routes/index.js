@@ -18,6 +18,7 @@ import adminRoutes from "./admin.routes.js";
 import qaAdminRoutes from "./qaAdmin.routes.js"
 import agencyRoutes from "./agency.routes.js";
 import notificationRoutes from "./notification.routes.js";
+import requestOptionRoutes from "./requestOption.routes.js";
 
 const router = express.Router();
 
@@ -39,5 +40,6 @@ router.use("/admin", adminRoutes);
 router.use("/qa-admin", qaAdminRoutes);
 router.use("/agency", agencyRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/request-options", requestOptionRoutes);
 
 export default router;

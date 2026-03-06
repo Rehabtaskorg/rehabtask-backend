@@ -1,8 +1,9 @@
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
+import { ensureOption } from "./requestOption.service.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
-    const { serviceType, description, preferredDate, location, latitude, longitude, patientId } = data;
+    const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr } = data;
 
     // IF patientId is provided, validate the patient belongs to this agency
     if (patientId) {
@@ -29,8 +30,15 @@ export const createRequest = async (customerId, data, customerProfile) => {
             longitude,
             status: "created",
             ...(patientId && { patientId }),
+            ...(rate != null && { rate }),
+            ...(visitType && { visitType }),
+            ...(emr && { emr }),
         },
     });
+
+    // Auto-persist custom visit type and EMR values to the lookup table
+    if (visitType) await ensureOption("visit_type", visitType);
+    if (emr) await ensureOption("emr", emr);
 
     return request;
 }

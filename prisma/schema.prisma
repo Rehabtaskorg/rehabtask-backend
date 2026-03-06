@@ -200,6 +200,9 @@ model TherapyRequest {
   patientId     String?         @map("patient_id") @db.Uuid
   serviceType   String          @map("service_type") @db.VarChar(100)
   description   String
+  rate          Decimal?        @db.Decimal(10, 2)
+  visitType     String?         @map("visit_type") @db.VarChar(100)
+  emr           String?         @db.VarChar(100)
   preferredDate DateTime        @map("preferred_date") @db.Timestamptz(3)
   location      String
   latitude      Decimal         @db.Decimal(10, 8)
@@ -406,6 +409,18 @@ model FAQ {
   @@index([category, sortOrder])
   @@index([isActive])
   @@map("faqs")
+}
+
+model RequestOption {
+  id        String   @id @default(uuid()) @db.Uuid
+  type      String   @db.VarChar(50)
+  value     String   @db.VarChar(100)
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([type, value])
+  @@index([type])
+  @@map("request_options")
 }
 
 model Dispute {
