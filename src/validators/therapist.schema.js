@@ -27,6 +27,9 @@ export const updateWorkAreasSchema = z.object({
     workAreas: z
         .array(
             z.object({
+                zipCode: z
+                    .string()
+                    .regex(/^\d{5}$/, "ZIP code must be 5 digits"),
                 city: z
                     .string()
                     .min(1, "City is required")

@@ -59,6 +59,7 @@ export const updateWorkAreas = async (therapistId, workAreas) => {
                 tx.workArea.create({
                     data: {
                         therapistId,
+                        zipCode: area.zipCode,
                         city: area.city,
                         state: area.state,
                         latitude: area.latitude,
@@ -281,6 +282,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         professionalSummary: therapist.professionalSummary,
         workAreas: therapist.workAreas.map((wa) => ({
             id: wa.id,
+            zipCode: wa.zipCode,
             city: wa.city,
             state: wa.state,
             latitude: wa.latitude,

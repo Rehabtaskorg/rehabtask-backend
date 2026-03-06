@@ -246,6 +246,7 @@ export const saveAvailability = async (userId, data) => {
         await prisma.workArea.createMany({
             data: data.workAreas.map(wa => ({
                 therapistId: therapist.id,
+                zipCode: wa.zipCode,
                 city: wa.city,
                 state: wa.state,
                 latitude: wa.latitude,

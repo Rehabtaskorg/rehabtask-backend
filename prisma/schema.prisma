@@ -358,6 +358,7 @@ model Message {
 model WorkArea {
   id          String           @id @default(uuid()) @db.Uuid
   therapistId String           @map("therapist_id") @db.Uuid
+  zipCode     String           @map("zip_code") @db.VarChar(10)
   city        String           @db.VarChar(100)
   state       String           @db.VarChar(50)
   latitude    Decimal          @db.Decimal(10, 8)
