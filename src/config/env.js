@@ -45,6 +45,7 @@ const envSchema = z.object({
 
     // Email (Mailtrap — staging/testing transport)
     MAILTRAP_API_TOKEN: z.string().optional(),
+    MAILTRAP_INBOX_ID: z.string().optional(),
 
     // Email (Gmail — local development transport)
     GMAIL_USER: z.string().optional(),
@@ -118,6 +119,7 @@ export const {
     EMAIL_FROM,
     ADMIN_EMAIL,
     MAILTRAP_API_TOKEN,
+    MAILTRAP_INBOX_ID,
     GMAIL_USER,
     GMAIL_APP_PASSWORD,
     GOOGLE_MAPS_API_KEY,

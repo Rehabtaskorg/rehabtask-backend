@@ -79,7 +79,8 @@ export const sendMail = async ({ to, subject, html, text, replyTo }) => {
                 ? { name: fromParts[1], email: fromParts[2] }
                 : { name: 'RehabTask', email: fromEmail };
 
-            const response = await fetch('https://send.api.mailtrap.io/api/send', {
+            const inboxId = env.MAILTRAP_INBOX_ID;
+            const response = await fetch(`https://sandbox.api.mailtrap.io/api/send/${inboxId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
