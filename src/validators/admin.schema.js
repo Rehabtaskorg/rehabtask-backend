@@ -113,7 +113,7 @@ export const adminUpdateDisputeSchema = z.object({
     status: z.enum(["open", "under_review", "resolved", "closed"]).optional(),
     resolution: z.string().max(5000).optional(),
     title: z.string().max(255).optional(),
-    expectedUpdatedAt: z.datetime({ offset: true }).optional(),
+    expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
 
 // ── Booking Management ───────────────────────────────────────────────────────
