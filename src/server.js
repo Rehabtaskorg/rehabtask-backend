@@ -1,3 +1,6 @@
+import { setDefaultResultOrder } from "node:dns";
+setDefaultResultOrder("ipv4first");
+
 import "dotenv/config";
 import app from "./app.js";
 import { startScheduledJobs } from "./jobs/index.js";
