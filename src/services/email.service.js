@@ -27,6 +27,11 @@ import {
     disputeStatusUpdate,
     disputeReopened,
     accountDeactivated,
+    paymentFailed,
+    payoutFailed,
+    adminPaymentReleased,
+    adminPaymentRefunded,
+    bookingCancelledByAdmin,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -179,6 +184,41 @@ export const sendDisputeStatusUpdate = async ({ user, dispute, statusMessage }) 
  */
 export const sendDisputeReopened = async ({ user, dispute }) => {
     return dispatch(user.email, disputeReopened, { user, dispute });
+};
+
+/**
+ * Payment failed — notify customer
+ */
+export const sendPaymentFailed = async ({ customer, booking, reason }) => {
+    return dispatch(customer.user.email, paymentFailed, { customer, booking, reason });
+};
+
+/**
+ * Payout failed — notify therapist
+ */
+export const sendPayoutFailed = async ({ therapist, amount, reason }) => {
+    return dispatch(therapist.user.email, payoutFailed, { therapist, amount, reason });
+};
+
+/**
+ * Admin released payment — notify therapist
+ */
+export const sendAdminPaymentReleased = async ({ therapist, amount, booking }) => {
+    return dispatch(therapist.user.email, adminPaymentReleased, { therapist, amount, booking });
+};
+
+/**
+ * Admin refunded payment — notify customer
+ */
+export const sendAdminPaymentRefunded = async ({ customer, amount, booking, reason }) => {
+    return dispatch(customer.user.email, adminPaymentRefunded, { customer, amount, booking, reason });
+};
+
+/**
+ * Booking cancelled by admin — notify a participant
+ */
+export const sendBookingCancelledByAdmin = async ({ recipientEmail, recipientName, booking, reason, role }) => {
+    return dispatch(recipientEmail, bookingCancelledByAdmin, { recipientName, booking, reason, role });
 };
 
 export const sendAccountDeactivated = async ({ user }) => {

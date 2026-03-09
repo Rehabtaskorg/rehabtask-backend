@@ -2,7 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { stripe } from "../config/stripe.js";
-import { createNotification } from "./notification.service.js";
+import { sendAdminPaymentReleased, sendAdminPaymentRefunded } from "./email.service.js";
 
 const PAYMENT_INCLUDE = {
     booking: {
@@ -144,13 +144,10 @@ export const adminReleasePayment = async (paymentId, adminId) => {
         include: PAYMENT_INCLUDE,
     });
 
-    createNotification({
-        userId: payment.therapist.userId,
-        type: "payment_released",
-        title: "Payment Released",
-        message: `A payment of $${parseFloat(payment.therapistPayout).toFixed(2)} has been released to your account.`,
-        entityType: "payment",
-        entityId: paymentId,
+    sendAdminPaymentReleased({
+        therapist: updated.therapist,
+        amount: parseFloat(payment.therapistPayout),
+        booking: updated.booking,
     }).catch(() => { });
 
     logger.info("[AdminPaymentService] Payment released", {
@@ -169,7 +166,13 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         where: { id: paymentId },
         include: {
             booking: { include: { session: true } },
-            customer: { select: { userId: true } },
+            customer: {
+                select: {
+                    userId: true,
+                    fullName: true,
+                    user: { select: { email: true } },
+                },
+            },
         },
     });
     if (!payment) throw new NotFoundError("Payment not found");
@@ -220,13 +223,11 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
             : []),
     ]);
 
-    createNotification({
-        userId: payment.customer.userId,
-        type: "payment_refunded",
-        title: "Payment Refunded",
-        message: `A refund of $${parseFloat(payment.amount).toFixed(2)} has been processed for your booking.`,
-        entityType: "payment",
-        entityId: paymentId,
+    sendAdminPaymentRefunded({
+        customer: payment.customer,
+        amount: parseFloat(payment.amount),
+        booking: payment.booking,
+        reason,
     }).catch(() => { });
 
     logger.info("[AdminPaymentService] Payment refunded", {

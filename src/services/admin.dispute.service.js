@@ -1,7 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
-import { createNotification } from "./notification.service.js";
 import { sendDisputeStatusUpdate, sendDisputeReopened } from "./email.service.js";
 
 const DISPUTE_INCLUDE = {
@@ -169,15 +168,6 @@ export const adminUpdateDispute = async (
             dispute: updated,
             statusMessage: message,
         }).catch(() => { });
-
-        createNotification({
-            userId: dispute.userId,
-            type: "dispute_updated",
-            title: "Dispute Status Updated",
-            message,
-            entityType: "dispute",
-            entityId: disputeId,
-        }).catch(() => { });
     }
 
     logger.info("[AdminDisputeService] Dispute updated", {
@@ -220,15 +210,6 @@ export const reopenDispute = async (disputeId, adminUserId, callerRole) => {
     sendDisputeReopened({
         user: dispute.user,
         dispute: updated,
-    }).catch(() => { });
-
-    createNotification({
-        userId: dispute.userId,
-        type: "dispute_updated",
-        title: "Dispute Reopened",
-        message: "Your dispute has been reopened and is now under review.",
-        entityType: "dispute",
-        entityId: disputeId,
     }).catch(() => { });
 
     logger.info("[AdminDisputeService] Dispute reopened", {

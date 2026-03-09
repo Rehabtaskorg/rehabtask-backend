@@ -1,5 +1,7 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
+import { sendPaymentConfirmation, sendPayoutConfirmation } from "./email.service.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Create payment intent and escrow funds
@@ -154,6 +156,23 @@ const handlePaymentSuccess = async (paymentIntentId) => {
         },
     });
 
+    // Send payment confirmation email to customer
+    const bookingWithDetails = await prisma.booking.findUnique({
+        where: { id: payment.bookingId },
+        include: {
+            customer: { include: { user: { select: { email: true } } } },
+            therapist: { select: { fullName: true } },
+        },
+    });
+
+    if (bookingWithDetails) {
+        sendPaymentConfirmation({
+            customer: bookingWithDetails.customer,
+            booking: bookingWithDetails,
+            payment,
+        }).catch(() => { });
+    }
+
     return payment;
 }
 
@@ -220,7 +239,22 @@ const releasePayment = async (sessionId) => {
                 releasedAt: new Date(),
             },
         });
-        return updatedPayment
+
+        // Send payout confirmation email to therapist
+        const therapistWithEmail = await prisma.therapistProfile.findUnique({
+            where: { id: session.booking.therapist.id },
+            include: { user: { select: { email: true } } },
+        });
+
+        if (therapistWithEmail) {
+            sendPayoutConfirmation({
+                therapist: therapistWithEmail,
+                payment: updatedPayment,
+                booking: session.booking,
+            }).catch(() => { });
+        }
+
+        return updatedPayment;
     } catch (dbError) {
         console.error(`Critical: Transfer ${transfer.id} succeed but DB update failed`);
         throw new Error("Transfer succeeded but database update failed");

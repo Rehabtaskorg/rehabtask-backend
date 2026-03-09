@@ -41,10 +41,10 @@ export const createOffer = async (therapistId, data) => {
 
 
     // PRODUCTION: uncomment line below and remove the QA line before going live
-    // const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
+    const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
 
     // QA Testing only - expires in 5 minutes
-    const expiresAt = addMinutes(new Date(), 5);
+    // const expiresAt = addMinutes(new Date(), 5);
 
     const offer = await prisma.offer.create({
         data: {

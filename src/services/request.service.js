@@ -1,6 +1,8 @@
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
+import { sendNewRequestNotifications } from "./email.service.js";
+import { logger } from "../config/logger.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr } = data;
@@ -39,6 +41,35 @@ export const createRequest = async (customerId, data, customerProfile) => {
     // Auto-persist custom visit type and EMR values to the lookup table
     if (visitType) await ensureOption("visit_type", visitType);
     if (emr) await ensureOption("emr", emr);
+
+    // Notify matching therapists (fire-and-forget)
+    if (request.latitude && request.longitude) {
+        const workAreas = await prisma.workArea.findMany({
+            include: { therapist: { include: { user: { select: { email: true } } } } },
+        });
+
+        const matchingTherapists = [];
+        const seen = new Set();
+        for (const area of workAreas) {
+            if (seen.has(area.therapistId)) continue;
+            const distance = haversineDistance(
+                parseFloat(request.latitude), parseFloat(request.longitude),
+                parseFloat(area.latitude), parseFloat(area.longitude)
+            );
+            if (distance <= area.radiusMiles) {
+                seen.add(area.therapistId);
+                matchingTherapists.push(area.therapist);
+            }
+        }
+
+        if (matchingTherapists.length > 0) {
+            sendNewRequestNotifications({
+                therapists: matchingTherapists,
+                request,
+                customer: customerProfile,
+            }).catch(() => { });
+        }
+    }
 
     return request;
 }

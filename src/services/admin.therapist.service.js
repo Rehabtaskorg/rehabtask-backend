@@ -3,8 +3,6 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
-import { createNotification } from "./notification.service.js";
-
 export const listTherapists = async ({
     approvalStatus,
     search,
@@ -106,16 +104,6 @@ export const approveTherapist = async (therapistUserId, adminId) => {
 
     sendTherapistApproved({ therapist }).catch(() => { });
 
-    createNotification({
-        userId: therapistUserId,
-        type: "therapist_approved",
-        title: "Application Approved",
-        message:
-            "Congratulations! Your therapist application has been approved. You can now receive session requests.",
-        entityType: "therapistProfile",
-        entityId: therapist.id
-    }).catch(() => { });
-
     logger.info("[AdminTherapistService] Therapist approved", {
         therapistUserId,
         byAdmin: adminId,
@@ -150,15 +138,6 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
     });
 
     sendTherapistRejected({ therapist, reason: reason.trim() }).catch(() => { });
-
-    createNotification({
-        userId: therapistUserId,
-        type: "therapist_rejected",
-        title: "Application Not Approved",
-        message: `Your therapist application was not approved. Reason: ${reason.trim()}`,
-        entityType: "therapistProfile",
-        entityId: therapist.id,
-    }).catch(() => { });
 
     logger.info("[AdminTherapistService] Therapist rejected", {
         therapistUserId,

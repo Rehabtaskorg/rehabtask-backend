@@ -1,6 +1,8 @@
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
+import { sendPaymentFailed, sendPayoutFailed } from "../services/email.service.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Handle Stripe webhooks
@@ -126,8 +128,23 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                 data: { status: "cancelled" },
             });
 
-            // TODO: Send notification to customer about failed payment
-            console.log("Payment and booking marked as failed/cancelled")
+            // Notify customer about failed payment (email)
+            const failedBooking = await prisma.booking.findUnique({
+                where: { id: payment.bookingId },
+                include: {
+                    customer: { include: { user: { select: { email: true } } } },
+                },
+            });
+
+            if (failedBooking) {
+                sendPaymentFailed({
+                    customer: failedBooking.customer,
+                    booking: failedBooking,
+                    reason: paymentIntent.last_payment_error?.message,
+                }).catch(() => { });
+            }
+
+            console.log("Payment and booking marked as failed/cancelled");
         } else {
             console.log(`No payment record found for payment intent: ${paymentIntent.id}`);
         }
@@ -396,7 +413,6 @@ const handlePayoutPaid = async (payout, accountId) => {
 
         if (therapist) {
             console.log(`Payout of $${payout.amount / 100} delivered to ${therapist.fullName}`);
-            // TODO: Send notification: "Your payout of $X has arrived in your bank account!"
         }
     } catch (error) {
         console.error(`Error:`, error.message);
@@ -410,19 +426,21 @@ const handlePayoutFailed = async (payout, accountId) => {
 
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId: accountId },
+            include: { user: { select: { email: true } } },
         });
 
         if (therapist) {
             console.log(`Payout failed for therapist: ${therapist.fullName}`);
 
-            // TODO:
-            // 1. Notify therapist about failed payout
-            // 2. Request bank account verification
-            // 3. Alert admin to investigate
+            // Notify therapist about failed payout (email)
+            sendPayoutFailed({
+                therapist,
+                amount: payout.amount / 100,
+                reason: payout.failure_message,
+            }).catch(() => { });
 
             // NOTE: Payment status stays "released" - money is still in Stripe balance
             // Stripe will retry the payout automatically
-
         }
     } catch (error) {
         console.error(`Error handling payout failure:`, error.message);

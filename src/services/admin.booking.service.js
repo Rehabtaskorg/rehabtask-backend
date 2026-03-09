@@ -1,7 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
-import { createNotification } from "./notification.service.js";
+import { sendBookingCancelledByAdmin } from "./email.service.js";
 
 const BOOKING_INCLUDE = {
     customer: {
@@ -82,25 +82,20 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         include: BOOKING_INCLUDE
     });
 
-    const dateStr = new Date(booking.scheduledDate).toLocaleDateString();
-    const reasonText = reason ? ` Reason: ${reason}` : "";
-
-    createNotification({
-        userId: booking.customer.userId,
-        type: "booking_cancelled",
-        title: "Booking Cancelled",
-        message: `Your booking on ${dateStr} has been cancelled by an administrator.${reasonText}`,
-        entityType: "booking",
-        entityId: bookingId,
+    sendBookingCancelledByAdmin({
+        recipientEmail: booking.customer.user.email,
+        recipientName: booking.customer.fullName,
+        booking,
+        reason,
+        role: 'customer',
     }).catch(() => { });
 
-    createNotification({
-        userId: booking.therapist.userId,
-        type: "booking_cancelled",
-        title: "Booking Cancelled",
-        message: `A booking on ${dateStr} has been cancelled by an administrator.${reasonText}`,
-        entityType: "booking",
-        entityId: bookingId,
+    sendBookingCancelledByAdmin({
+        recipientEmail: booking.therapist.user.email,
+        recipientName: booking.therapist.fullName,
+        booking,
+        reason,
+        role: 'therapist',
     }).catch(() => { });
 
     logger.info("[AdminBookingService] Booking cancelled", {

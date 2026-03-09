@@ -472,3 +472,107 @@ export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
         ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
     `),
 });
+
+// Payment Failed (to customer)
+export const paymentFailed = ({ customer, booking, reason }) => ({
+    subject: 'Payment failed — action required',
+    html: layout(`
+        ${heading('Payment Failed')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Unfortunately, your payment could not be processed. Your booking has been cancelled.')}
+        ${hr()}
+        ${field('Session Date', formatDate(booking.scheduledDate))}
+        ${field('Session Type', booking.sessionType)}
+        ${reason ? `${field('Reason', reason)}` : ''}
+        ${hr()}
+        ${text('Please try again with a different payment method or contact your bank for more details.')}
+        ${button(`${FRONTEND_URL}/customer/bookings`, 'View Bookings')}
+    `),
+});
+
+// Payout Failed (to therapist)
+export const payoutFailed = ({ therapist, amount, reason }) => ({
+    subject: 'Payout could not be delivered',
+    html: layout(`
+        ${heading('Payout Failed')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('We were unable to deliver your payout to your bank account.')}
+        ${hr()}
+        ${amount ? `
+            <p style="color:#ef4444;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(amount)}</p>
+            <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Failed Payout</p>
+            ${hr()}
+        ` : ''}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('Please verify your bank account details in your Stripe dashboard. Stripe will automatically retry the payout.')}
+        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
+    `),
+});
+
+// Admin released payment — notify therapist
+export const adminPaymentReleased = ({ therapist, amount, booking }) => ({
+    subject: 'Payment released to your account',
+    html: layout(`
+        ${heading('Payment Released')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('A payment has been released to your Stripe account by an administrator.')}
+        ${hr()}
+        <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(amount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Released to your account</p>
+        ${hr()}
+        ${booking ? field('Session Date', formatDate(booking.scheduledDate)) : ''}
+        ${booking ? field('Session Type', booking.sessionType) : ''}
+        ${text('The funds will be deposited into your connected bank account according to your Stripe payout schedule.')}
+        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
+    `),
+});
+
+// Admin refunded payment — notify customer
+export const adminPaymentRefunded = ({ customer, amount, booking, reason }) => ({
+    subject: 'Your payment has been refunded',
+    html: layout(`
+        ${heading('Payment Refunded')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('A refund has been processed for your booking.')}
+        ${hr()}
+        <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(amount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Refund Amount</p>
+        ${hr()}
+        ${booking ? field('Session Date', formatDate(booking.scheduledDate)) : ''}
+        ${booking ? field('Session Type', booking.sessionType) : ''}
+        ${reason ? `
+            <div style="background-color:#eff6ff;border-left:4px solid #3b82f6;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#1e40af;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('The refund will appear on your original payment method within 5–10 business days.')}
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payments')}
+    `),
+});
+
+// Booking cancelled by admin — notify customer or therapist
+export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }) => ({
+    subject: 'Your booking has been cancelled',
+    html: layout(`
+        ${heading('Booking Cancelled')}
+        ${text(`Hi ${recipientName},`)}
+        ${text('An administrator has cancelled the following booking:')}
+        ${hr()}
+        ${field('Session Date', formatDate(booking.scheduledDate))}
+        ${field('Session Type', booking.sessionType)}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('If you have any questions about this cancellation, please contact our support team.')}
+        ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings`, 'View Bookings')}
+    `),
+});
