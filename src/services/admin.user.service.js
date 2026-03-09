@@ -42,6 +42,7 @@ export const listUsers = async ({
                         fullName: true,
                         approvalStatus: true,
                         approvedAt: true,
+                        primaryLicenseType: true,
                     },
                 },
                 subAdminProfile: {

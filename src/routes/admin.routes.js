@@ -6,7 +6,7 @@ import { requirePermission } from "../middleware/permissions.js";
 // Validators
 import { createFaqSchema, updateFaqSchema, } from "../validators/faq.schema.js";
 import {
-    listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, rejectTherapistSchema,
+    listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, therapistDocumentParamSchema, rejectTherapistSchema,
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
     bookingIdParamSchema, adminCancelBookingSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema, adminListPaymentsQuerySchema,
     paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
@@ -33,7 +33,8 @@ import {
     listTherapistsController,
     getTherapistDetailController,
     approveTherapistController,
-    rejectTherapistController
+    rejectTherapistController,
+    getDocumentSignedUrlController,
 } from "../controllers/admin.therapist.controller.js";
 
 import {
@@ -111,6 +112,7 @@ router.get("/therapists", ...adminOrSubAdmin, requirePermission("therapists"), v
 router.get("/therapists/:therapistUserId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), getTherapistDetailController);
 router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), approveTherapistController);
 router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);
+router.get("/therapists/:therapistUserId/documents/:documentId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistDocumentParamSchema, "params"), getDocumentSignedUrlController);
 
 // Dispute Management
 router.get("/disputes", ...adminOrSubAdmin, requirePermission("disputes"), validate(adminListDisputesQuerySchema, "query"), adminListDisputesController);

@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
@@ -42,7 +43,10 @@ export const listTherapists = async ({
                         yearsOfExperience: true,
                         onboardingComplete: true,
                         backgroundCheckStatus: true,
-                        licenseDocuments: { select: { id: true } },
+                        licenseDocuments: {
+                            where: { isDeleted: false },
+                            select: { id: true },
+                        },
                     },
                 },
             },
@@ -65,7 +69,10 @@ export const getTherapistDetail = async (therapistUserId) => {
         include: {
             therapistProfile: {
                 include: {
-                    licenseDocuments: true,
+                    licenseDocuments: {
+                        where: { isDeleted: false },
+                        orderBy: { uploadedAt: "desc" },
+                    },
                     workAreas: true,
                     availability: true,
                 },
@@ -158,4 +165,36 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
         byAdmin: adminId,
     });
     return therapist;
+}
+
+export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
+    const document = await prisma.licenseDocument.findUnique({
+        where: { id: documentId },
+        include: { therapist: true },
+    });
+
+    if (!document) throw new NotFoundError("Document not found");
+    if (document.isDeleted) throw new NotFoundError("Document has been deleted");
+
+    // Verify document belongs to the specified therapist
+    if (document.therapist.userId !== therapistUserId) {
+        throw new BadRequestError("Document does not belong to this therapist");
+    }
+
+    const { data, error } = await supabaseAdmin.storage
+        .from(document.bucket)
+        .createSignedUrl(document.documentUrl, 60);
+
+    if (error) {
+        logger.error("[AdminTherapistService] Signed URL error", { documentId, error: error.message });
+        throw new BadRequestError("Failed to generate document URL");
+    }
+
+    return {
+        signedUrl: data.signedUrl,
+        expiresIn: 60,
+        fileName: document.fileName,
+        fileSize: document.fileSize,
+        mimeType: document.mimeType,
+    };
 }

@@ -69,6 +69,11 @@ export const therapistUserIdParamSchema = z.object({
     therapistUserId: z.uuid("Invalid therapist user ID"),
 });
 
+export const therapistDocumentParamSchema = z.object({
+    therapistUserId: z.uuid("Invalid therapist user ID"),
+    documentId: z.uuid("Invalid document ID"),
+});
+
 export const rejectTherapistSchema = z.object({
     reason: z
         .string()

@@ -7,12 +7,42 @@ import {
     formatDate, formatCurrency, FRONTEND_URL
 } from './layout.js';
 
-// Therapist Registration Pending (admin + therapist versions)
-export const therapistRegistrationPendingAdmin = ({ therapist }) => ({
-    subject: 'New Therapist Registration — Review Required',
+// Therapist Welcome (sent on account creation, before onboarding)
+export const therapistWelcome = ({ therapist }) => ({
+    subject: 'Welcome to RehabTask — Let\'s get you started',
     html: layout(`
-        ${heading('New Therapist Registration')}
-        ${text('A new therapist has submitted a registration and is awaiting your review.')}
+        ${heading(`Welcome, ${therapist.fullName}!`)}
+        ${text('Thank you for creating your RehabTask account. You\'re one step closer to connecting with customers who need your services.')}
+        ${text('To complete your application, you\'ll need to:')}
+        <ul style="color:#4a4a4a;font-size:14px;line-height:24px;margin:12px 0 20px 20px;">
+            <li>Fill in your professional profile</li>
+            <li>Upload your license credentials</li>
+            <li>Set your availability and work areas</li>
+            <li>Complete a background check consent</li>
+        </ul>
+        ${text('Once submitted, our team will review your application within <strong>2–5 business days</strong>.')}
+        ${button(`${FRONTEND_URL}/therapist/onboarding/profile`, 'Start Your Application')}
+    `),
+});
+
+// Therapist Application Submitted (sent after onboarding complete — to therapist)
+export const therapistApplicationSubmitted = ({ therapist }) => ({
+    subject: 'Your RehabTask application has been received',
+    html: layout(`
+        ${heading('Application Received')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('Thank you for completing your application. Our team has received it and will review your credentials shortly.')}
+        ${text('This process typically takes <strong>2–5 business days</strong>. We\'ll email you as soon as a decision has been made.')}
+        ${muted('No further action is needed from you at this time. You can set up your Stripe payment account in the meantime to get paid faster once approved.')}
+    `),
+});
+
+// Therapist Application Submitted (sent after onboarding complete — to admin)
+export const therapistApplicationSubmittedAdmin = ({ therapist }) => ({
+    subject: 'New Therapist Application — Review Required',
+    html: layout(`
+        ${heading('New Therapist Application')}
+        ${text('A therapist has completed their application and is awaiting your review.')}
         ${hr()}
         ${field('Name', therapist.fullName)}
         ${field('License Type', therapist.primaryLicenseType || 'Not provided')}
@@ -23,18 +53,6 @@ export const therapistRegistrationPendingAdmin = ({ therapist }) => ({
     `),
 });
 
-export const therapistRegistrationPendingTherapist = ({ therapist }) => ({
-    subject: 'Your RehabTask application has been received',
-    html: layout(`
-        ${heading('Application Received')}
-        ${text(`Hi ${therapist.fullName},`)}
-        ${text('Thank you for applying to join RehabTask. We\'ve received your registration and our team is reviewing your application.')}
-        ${text('This process typically takes <strong>2–5 business days</strong>. We\'ll email you as soon as a decision has been made.')}
-        ${text('In the meantime, you can continue completing your profile to speed up the process.')}
-        ${button(`${FRONTEND_URL}/therapist/onboarding`, 'Complete Your Profile')}
-    `),
-});
-
 // Therapist Approved
 export const therapistApproved = ({ therapist }) => ({
     subject: 'Congratulations — Your RehabTask profile is approved',
@@ -42,7 +60,7 @@ export const therapistApproved = ({ therapist }) => ({
         ${heading(`Congratulations, ${therapist.fullName}!`)}
         ${text('Great news — your RehabTask profile has been reviewed and <strong>approved</strong>. Your profile is now live and visible to customers looking for therapy services.')}
         ${text('To start receiving payments for your sessions, please complete your Stripe Connect setup. This only takes a few minutes and is required before you can accept bookings.')}
-        ${button(`${FRONTEND_URL}/therapist/onboarding`, 'Set Up Payments')}
+        ${button(`${FRONTEND_URL}/therapist/onboarding/stripe`, 'Set Up Payments')}
         ${muted('If you have any questions about getting started, visit our Help Center or contact support.')}
     `),
 });
@@ -61,7 +79,7 @@ export const therapistRejected = ({ therapist, reason }) => ({
             </div>
         ` : ''}
         ${text('If you believe this was made in error or have questions, please don\'t hesitate to reach out to our support team.')}
-        ${button(`${FRONTEND_URL}/contact`, 'Contact Support')}
+        ${button(`mailto:support@rehabtask.com`, 'Contact Support')}
     `),
 });
 
@@ -76,7 +94,7 @@ export const subscriptionActivated = ({ customer, subscription }) => ({
         ${field('Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
         ${field('Renewal Date', formatDate(subscription.currentPeriodEnd))}
         ${hr()}
-        ${button(`${FRONTEND_URL}/requests/new`, 'Post a Request')}
+        ${button(`${FRONTEND_URL}/customer/requests/new`, 'Post a Request')}
     `),
 });
 
@@ -98,7 +116,7 @@ export const newRequestNotification = ({ therapist, request }) => {
             ${field('Preferred Date', formatDate(request.preferredDate))}
             ${truncatedDesc ? `${field('Description', truncatedDesc)}` : ''}
             ${hr()}
-            ${button(`${FRONTEND_URL}/requests`, 'View Request')}
+            ${button(`${FRONTEND_URL}/therapist/requests`, 'View Request')}
         `),
     };
 };
@@ -125,7 +143,7 @@ export const newOfferNotification = ({ customer, therapist, offer }) => {
                     This offer expires on ${expiryDate}.
                 </p>
             ` : ''}
-            ${button(`${FRONTEND_URL}/requests`, 'Review Offer')}
+            ${button(`${FRONTEND_URL}/customer/requests`, 'Review Offer')}
         `),
     };
 };
@@ -164,7 +182,7 @@ export const paymentConfirmation = ({ customer, booking, payment }) => ({
         ${field('Session Type', booking.sessionType)}
         ${field('Payment Date', formatDate(payment.createdAt))}
         ${hr()}
-        ${button(`${FRONTEND_URL}/bookings/${booking.id}`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
         ${payment.stripePaymentIntentId ? `<p style="color:#8898aa;font-size:11px;text-align:center;margin-top:24px;">Transaction ID: ${payment.stripePaymentIntentId}</p>` : ''}
     `),
 });
@@ -195,7 +213,7 @@ export const sessionReminder = ({ recipient, booking, role }) => {
             ${sessionTime ? field('Time', sessionTime) : ''}
             ${field('Session Type', booking.sessionType)}
             ${hr()}
-            ${button(`${FRONTEND_URL}/bookings/${booking.id}`, 'View Details')}
+            ${button(`${FRONTEND_URL}/${role}/bookings/${booking.id}`, 'View Details')}
         `),
     };
 };
@@ -212,7 +230,7 @@ export const sessionCompletionRequest = ({ customer, therapist, session, booking
         ${field('Rate', formatCurrency(booking.rate))}
         ${field('Completed', formatDate(session.completedAt))}
         ${hr()}
-        ${button(`${FRONTEND_URL}/bookings/${booking.id}`, 'Confirm Session')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Confirm Session')}
         ${muted('If not confirmed within 72 hours, the session will be auto-confirmed.')}
     `),
 });
@@ -254,10 +272,12 @@ export const payoutConfirmation = ({ therapist, payment, booking }) => ({
 });
 
 // New Message Notification
-export const newMessageNotification = ({ senderName, message, contextType, contextId }) => {
+export const newMessageNotification = ({ recipient, senderName, message, contextType, contextId }) => {
     const truncatedContent = message.content && message.content.length > 200
         ? message.content.slice(0, 200) + '...'
         : message.content;
+
+    const messagesPath = recipient?.role === 'therapist' ? '/therapist/messages' : '/customer/messages';
 
     return {
         subject: `New message from ${senderName}`,
@@ -268,7 +288,7 @@ export const newMessageNotification = ({ senderName, message, contextType, conte
                 <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${truncatedContent}</p>
             </div>
             ${message.patientId ? muted('Regarding a patient — view the full conversation in the app for details.') : ''}
-            ${button(`${FRONTEND_URL}/messages/${contextType}/${contextId}`, 'Reply to Message')}
+            ${button(`${FRONTEND_URL}${messagesPath}`, 'Reply to Message')}
             ${hr()}
             <p style="color:#8898aa;font-size:11px;text-align:center;">
                 You received this because you had no unread messages in this conversation.
@@ -306,7 +326,7 @@ export const offerWithdrawn = ({ customer, therapist, offer }) => ({
         ${field('Rate', formatCurrency(offer.rate))}
         ${hr()}
         ${text('Other therapists may still submit offers on your request.')}
-        ${button(`${FRONTEND_URL}/requests`, 'View Your Requests')}
+        ${button(`${FRONTEND_URL}/customer/requests`, 'View Your Requests')}
     `),
 });
 
@@ -345,7 +365,7 @@ export const bookingRescheduleProposed = ({ customer, therapist, booking, newDat
         ${field('Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${text('Please review and accept or decline the new proposed date.')}
-        ${button(`${FRONTEND_URL}/bookings/${booking.id}`, 'Review Reschedule')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Review Reschedule')}
     `),
 });
 
@@ -372,7 +392,7 @@ export const accountDeactivated = ({ user }) => ({
         ${text(`Hi ${user.displayName || user.email},`)}
         ${text('Your RehabTask account has been deactivated by an administrator. You will no longer be able to log in or access the platform.')}
         ${text('If you believe this was done in error, please contact our support team for assistance.')}
-        ${button(`${FRONTEND_URL}/contact`, 'Contact Support')}
+        ${button(`mailto:support@rehabtask.com`, 'Contact Support')}
     `),
 });
 

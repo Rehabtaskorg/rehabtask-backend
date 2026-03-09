@@ -3,8 +3,9 @@ import { logger } from "../config/logger.js";
 import { env } from "../config/env.js";
 
 import {
-    therapistRegistrationPendingAdmin,
-    therapistRegistrationPendingTherapist,
+    therapistWelcome,
+    therapistApplicationSubmitted,
+    therapistApplicationSubmittedAdmin,
     therapistApproved,
     therapistRejected,
     subscriptionActivated,
@@ -37,21 +38,19 @@ const dispatch = async (to, templateFn, props) => {
     }
 };
 
-export const sendTherapistRegistrationPendingAdmin = async ({ therapist, adminEmails }) => {
-    const results = [];
-    for (const email of adminEmails) {
-        const result = await dispatch(email, therapistRegistrationPendingAdmin, { therapist });
-        results.push(result);
-    }
-    return results;
-}
+/**
+ * Therapist created account — welcome email (no admin notification yet)
+ */
+export const sendTherapistWelcome = async ({ therapist }) => {
+    return dispatch(therapist.user.email, therapistWelcome, { therapist });
+};
 
 /**
- * Therapist submitted registration
+ * Therapist completed onboarding — notify both therapist and admin
  */
-export const sendTherapistRegistrationPending = async ({ therapist }) => {
-    dispatch(env.ADMIN_EMAIL, therapistRegistrationPendingAdmin, { therapist }).catch(() => { });
-    return dispatch(therapist.user.email, therapistRegistrationPendingTherapist, { therapist });
+export const sendTherapistApplicationSubmitted = async ({ therapist }) => {
+    dispatch(env.ADMIN_EMAIL, therapistApplicationSubmittedAdmin, { therapist }).catch(() => { });
+    return dispatch(therapist.user.email, therapistApplicationSubmitted, { therapist });
 };
 
 /**

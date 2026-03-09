@@ -3,6 +3,7 @@ import {
     getTherapistDetail as getTherapistDetailService,
     approveTherapist as approveTherapistService,
     rejectTherapist as rejectTherapistService,
+    getDocumentSignedUrl as getDocumentSignedUrlService,
 } from "../services/admin.therapist.service.js";
 
 const listTherapistsController = async (req, res, next) => {
@@ -53,9 +54,20 @@ const rejectTherapistController = async (req, res, next) => {
     }
 };
 
+const getDocumentSignedUrlController = async (req, res, next) => {
+    try {
+        const { therapistUserId, documentId } = req.params;
+        const result = await getDocumentSignedUrlService(therapistUserId, documentId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listTherapistsController,
     getTherapistDetailController,
     approveTherapistController,
     rejectTherapistController,
+    getDocumentSignedUrlController,
 };

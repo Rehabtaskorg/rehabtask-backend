@@ -1,6 +1,7 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
+import { sendTherapistApplicationSubmitted } from "./email.service.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -150,11 +151,15 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         });
     });
 
-    // Soft delete existing documents (don't actually delete from storage)
+    // Reconcile documents: keep submitted ones, soft-delete any removed ones
+    const submittedPaths = new Set(data.licenseDocuments.map(doc => doc.path));
+
+    // Soft-delete active documents NOT in the submitted list (user removed them)
     await prisma.licenseDocument.updateMany({
         where: {
             therapistId: therapist.id,
-            isDeleted: false
+            isDeleted: false,
+            documentUrl: { notIn: [...submittedPaths] },
         },
         data: {
             isDeleted: true,
@@ -162,25 +167,14 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         },
     });
 
-    // Create new license document records
-    const documentRecords = await Promise.all(
-        data.licenseDocuments.map(async (doc) => {
-            return prisma.licenseDocument.create({
-                data: {
-                    therapistId: therapist.id,
-                    userId: userId,
-                    documentUrl: doc.path,
-                    bucket: "license-documents",
-                    documentType: doc.documentType,
-                    fileName: doc.fileName,
-                    fileSize: doc.fileSize,
-                    mimeType: doc.mimetype || "application/pdf",
-                    status: "pending",
-                    uploadIp: uploadIp,
-                },
-            });
-        })
-    );
+    // Fetch the remaining active documents (already created during upload)
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
 
     return {
         message: "Credentials saved successfully",
@@ -188,10 +182,9 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
             id: updated.id,
             onboardingStep: updated.onboardingStep,
         },
-        documents: documentRecords.map(doc => ({
+        documents: activeDocuments.map(doc => ({
             id: doc.id,
             fileName: doc.fileName,
-            status: doc.status
         })),
     };
 };
@@ -360,6 +353,7 @@ export const completeOnboarding = async (userId) => {
     // Only move to "review" if the therapist has not already been approved or rejected
     // An already-approved therapist connecting Stripe post-approval must NOT be sent back to review
     const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
+    const wasAlreadyComplete = therapist.onboardingComplete;
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -368,8 +362,14 @@ export const completeOnboarding = async (userId) => {
                 onboardingComplete: true,
                 ...(!alreadyDecided && { approvalStatus: "review" }),
             },
+            include: { user: { select: { email: true } } },
         });
     });
+
+    // Notify therapist + admin only on first-time completion (not on Stripe re-calls)
+    if (!wasAlreadyComplete) {
+        sendTherapistApplicationSubmitted({ therapist: updated }).catch(() => { });
+    }
 
     return {
         message: alreadyDecided

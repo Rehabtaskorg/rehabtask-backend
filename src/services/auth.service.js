@@ -1,6 +1,7 @@
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
+import { sendTherapistWelcome } from "./email.service.js";
 
 /**
  * Register a new customer
@@ -391,19 +392,45 @@ export const getCurrentUser = async (userId) => {
 };
 
 /**
- * Mark a user as emai verified in your database
+ * Mark a user as email verified in your database
  * Called by the frontend after Supabase session exists
+ * Sends welcome email to therapists on first verification
  */
 export const markEmailVerified = async ({ userId }) => {
     if (!userId) throw new BadRequestError("User ID is required");
 
     try {
+        // Fetch user before update to check previous verification state
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                emailVerified: true,
+                therapistProfile: {
+                    select: { id: true, fullName: true }
+                }
+            }
+        });
+
+        if (!user) throw new NotFoundError("User not found");
+
+        const wasAlreadyVerified = user.emailVerified;
+
         await withAdminAccess(async (db) => {
             await db.user.update({
                 where: { id: userId },
                 data: { emailVerified: true }
             });
         });
+
+        // Send welcome email to therapists on first verification only
+        if (!wasAlreadyVerified && user.role === "therapist" && user.therapistProfile) {
+            sendTherapistWelcome({
+                therapist: { ...user.therapistProfile, user: { email: user.email } },
+            }).catch(() => { });
+        }
 
         return { message: "Email verified in database" };
     } catch (error) {
@@ -590,6 +617,9 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
 
     if (role === "therapist") {
         message += ". Your account is pending admin approval.";
+        sendTherapistWelcome({
+            therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } },
+        }).catch(() => { });
     }
 
     return {
