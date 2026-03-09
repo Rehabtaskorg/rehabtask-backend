@@ -24,6 +24,8 @@ import {
     bookingRescheduleProposed,
     bookingRescheduleAccepted,
     bookingRescheduleDeclined,
+    disputeStatusUpdate,
+    disputeReopened,
     accountDeactivated,
 } from '../../emails/templates.js';
 
@@ -163,6 +165,20 @@ export const sendBookingRescheduleAccepted = async ({ therapist, booking }) => {
 
 export const sendBookingRescheduleDeclined = async ({ therapist, booking, reason }) => {
     return dispatch(therapist.user.email, bookingRescheduleDeclined, { therapist, booking, reason });
+};
+
+/**
+ * Dispute status changed — notify the filer
+ */
+export const sendDisputeStatusUpdate = async ({ user, dispute, statusMessage }) => {
+    return dispatch(user.email, disputeStatusUpdate, { user, dispute, statusMessage });
+};
+
+/**
+ * Dispute reopened — notify the filer
+ */
+export const sendDisputeReopened = async ({ user, dispute }) => {
+    return dispatch(user.email, disputeReopened, { user, dispute });
 };
 
 export const sendAccountDeactivated = async ({ user }) => {

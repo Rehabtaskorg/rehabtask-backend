@@ -384,6 +384,63 @@ export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
     `),
 });
 
+// Dispute Status Update (to filer)
+export const disputeStatusUpdate = ({ user, dispute, statusMessage }) => {
+    const displayName =
+        user.customerProfile?.fullName ||
+        user.therapistProfile?.fullName ||
+        user.email;
+
+    const statusColors = {
+        under_review: { bg: '#eff6ff', border: '#3b82f6', text: '#1e40af', label: 'Under Review' },
+        resolved: { bg: '#f0fdf4', border: '#22c55e', text: '#166534', label: 'Resolved' },
+        closed: { bg: '#f8fafc', border: '#94a3b8', text: '#475569', label: 'Closed' },
+    };
+    const colors = statusColors[dispute.status] || statusColors.closed;
+
+    return {
+        subject: `Dispute #${dispute.ticketId} — ${colors.label}`,
+        html: layout(`
+            ${heading('Dispute Update')}
+            ${text(`Hi ${displayName},`)}
+            ${text(statusMessage)}
+            ${hr()}
+            ${field('Ticket ID', `#${dispute.ticketId}`)}
+            ${field('Status', colors.label)}
+            ${dispute.resolution ? `
+                <div style="background-color:${colors.bg};border-left:4px solid ${colors.border};padding:16px;border-radius:4px;margin:20px 0;">
+                    <p style="color:${colors.text};font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Resolution</p>
+                    <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${dispute.resolution}</p>
+                </div>
+            ` : ''}
+            ${hr()}
+            ${button(`${FRONTEND_URL}/customer/disputes/${dispute.id}`, 'View Dispute')}
+            ${muted('If you have further questions about this dispute, please contact our support team.')}
+        `),
+    };
+};
+
+// Dispute Reopened (to filer)
+export const disputeReopened = ({ user, dispute }) => {
+    const displayName =
+        user.customerProfile?.fullName ||
+        user.therapistProfile?.fullName ||
+        user.email;
+
+    return {
+        subject: `Dispute #${dispute.ticketId} — Reopened`,
+        html: layout(`
+            ${heading('Dispute Reopened')}
+            ${text(`Hi ${displayName},`)}
+            ${text('Your dispute has been reopened and is now under review by our team. We\'ll follow up once we have an update.')}
+            ${hr()}
+            ${field('Ticket ID', `#${dispute.ticketId}`)}
+            ${hr()}
+            ${button(`${FRONTEND_URL}/customer/disputes/${dispute.id}`, 'View Dispute')}
+        `),
+    };
+};
+
 // Account Deactivated
 export const accountDeactivated = ({ user }) => ({
     subject: 'Your RehabTask account has been deactivated',

@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { createNotification } from "./notification.service.js";
+import { sendDisputeStatusUpdate, sendDisputeReopened } from "./email.service.js";
 
 const DISPUTE_INCLUDE = {
     user: {
@@ -111,10 +112,13 @@ export const assignDispute = async (disputeId, assignedAdminId, byAdminId, calle
 export const adminUpdateDispute = async (
     disputeId,
     adminUserId,
-    { status, resolution, title },
+    { status, resolution, title, expectedUpdatedAt },
     callerRole
 ) => {
-    const dispute = await prisma.dispute.findUnique({ where: { id: disputeId } });
+    const dispute = await prisma.dispute.findUnique({
+        where: { id: disputeId },
+        include: DISPUTE_INCLUDE,
+    });
     if (!dispute) throw new NotFoundError("Dispute not found");
 
     if (callerRole === "sub_admin" && dispute.assignedAdminId !== adminUserId) {
@@ -122,6 +126,17 @@ export const adminUpdateDispute = async (
             "You can only update disputes assigned to you",
             "DISPUTE_NOT_ASSIGNED"
         );
+    }
+
+    // Concurrency guard: reject if dispute was modified since the admin loaded it
+    if (expectedUpdatedAt) {
+        const expected = new Date(expectedUpdatedAt).getTime();
+        const actual = new Date(dispute.updatedAt).getTime();
+        if (actual !== expected) {
+            throw new ConflictError(
+                "This dispute was modified by another admin. Please refresh and try again."
+            );
+        }
     }
 
     const updateData = {};
@@ -146,12 +161,20 @@ export const adminUpdateDispute = async (
             resolved: "Your dispute has been resolved.",
             closed: "Your dispute has been closed."
         };
+        const message = statusMessages[status] || `Your dispute status changed to: ${status}`;
+
+        // Send email notification to the filer
+        sendDisputeStatusUpdate({
+            user: dispute.user,
+            dispute: updated,
+            statusMessage: message,
+        }).catch(() => { });
+
         createNotification({
             userId: dispute.userId,
             type: "dispute_updated",
             title: "Dispute Status Updated",
-            message:
-                statusMessages[status] || `Your dispute status changed to: ${status}`,
+            message,
             entityType: "dispute",
             entityId: disputeId,
         }).catch(() => { });
@@ -166,7 +189,10 @@ export const adminUpdateDispute = async (
 }
 
 export const reopenDispute = async (disputeId, adminUserId, callerRole) => {
-    const dispute = await prisma.dispute.findUnique({ where: { id: disputeId } });
+    const dispute = await prisma.dispute.findUnique({
+        where: { id: disputeId },
+        include: DISPUTE_INCLUDE,
+    });
     if (!dispute) throw new NotFoundError("Dispute not found");
 
     if (callerRole === "sub_admin" && dispute.assignedAdminId !== adminUserId) {
@@ -190,6 +216,12 @@ export const reopenDispute = async (disputeId, adminUserId, callerRole) => {
         include: DISPUTE_INCLUDE,
     });
 
+    // Send email notification to the filer
+    sendDisputeReopened({
+        user: dispute.user,
+        dispute: updated,
+    }).catch(() => { });
+
     createNotification({
         userId: dispute.userId,
         type: "dispute_updated",
@@ -204,5 +236,4 @@ export const reopenDispute = async (disputeId, adminUserId, callerRole) => {
         byAdmin: adminUserId,
     });
     return updated;
-
 }
