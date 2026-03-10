@@ -1,10 +1,11 @@
 import {
     createPaymentIntent, getCustomerPaymentHistory,
     getTherapistPayoutHistory, createConnectAccountLink,
-    getConnectAccountStatus, releasePayment,
+    getConnectAccountStatus,
     processRefund,
     createDashboardLink
 } from "../services/payment.service.js";
+import { logAction } from "../services/audit.service.js";
 
 /**
  * Create payment intent for booking
@@ -85,26 +86,27 @@ const getConnectAccountStatusController = async (req, res, next) => {
 }
 
 /**
- * Release payment after session confirmation
- */
-const releasePaymentController = async (req, res, next) => {
-    try {
-        const { sessionId } = req.body;
-        const payment = await releasePayment(sessionId);
-
-        res.status(200).json({ success: true, data: payment });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
  * Process refund
  */
 const processRefundController = async (req, res, next) => {
     try {
         const { bookingId, reason } = req.body;
-        const refund = await processRefund(bookingId, reason);
+        const { refund, paymentId, amount } = await processRefund(bookingId, req.user.id, reason);
+
+        // Audit: customer-initiated refund
+        logAction({
+            actorId: req.user.id,
+            action: "payment.refunded",
+            entityType: "payment",
+            entityId: paymentId,
+            changes: {
+                trigger: "customer_request",
+                bookingId,
+                amount,
+                reason,
+                stripeRefundId: refund.id,
+            },
+        });
 
         res.status(200).json({ success: true, data: refund });
     } catch (error) {
@@ -133,7 +135,6 @@ export {
     getPayoutHistoryController,
     createConnectAccountController,
     getConnectAccountStatusController,
-    releasePaymentController,
     processRefundController,
     createDashboardLinkController
 };

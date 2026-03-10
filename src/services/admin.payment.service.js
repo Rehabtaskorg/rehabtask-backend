@@ -182,6 +182,8 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
                 partial: isPartial ? "true" : "false",
             },
             description: `${isPartial ? "Partial admin" : "Admin-forced"} payout for booking ${payment.bookingId}`,
+        }, {
+            idempotencyKey: `admin-release-${paymentId}-${adminId}`,
         });
     } catch (stripeError) {
         logger.error("[AdminPaymentService] Stripe transfer failed", {
@@ -240,6 +242,14 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
     if (!["escrowed", "intent_created"].includes(payment.status)) {
         throw new ConflictError(
             `Payment cannot be refunded in status '${payment.status}'`
+        );
+    }
+    // Defense-in-depth: if a Stripe transfer already exists (e.g. partial release),
+    // refunding the full PaymentIntent would return $100 to the customer while the
+    // therapist has already received part of those funds — causing a net loss.
+    if (payment.stripeTransferId) {
+        throw new ConflictError(
+            "Payment cannot be refunded because funds have already been transferred to the therapist"
         );
     }
     if (!payment.stripePaymentIntentId) {

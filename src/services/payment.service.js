@@ -1,6 +1,6 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
-import { sendPaymentConfirmation, sendPayoutConfirmation } from "./email.service.js";
+import { sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { getCommissionRateByTier } from "./commission.service.js";
 
@@ -202,7 +202,8 @@ const releasePayment = async (sessionId) => {
             booking: {
                 include: {
                     payment: true,
-                    therapist: true,
+                    therapist: { include: { user: { select: { email: true } } } },
+                    customer: { include: { user: { select: { email: true } } } },
                 },
             },
         },
@@ -240,6 +241,8 @@ const releasePayment = async (sessionId) => {
                 bookingId: session.bookingId,
             },
             description: `Payout for session ${session.id}`,
+        }, {
+            idempotencyKey: `release-${payment.id}`,
         });
     } catch (stripeError) {
         console.error(`Transfer creation failed:`, stripeError.message);
@@ -257,18 +260,19 @@ const releasePayment = async (sessionId) => {
         });
 
         // Send payout confirmation email to therapist
-        const therapistWithEmail = await prisma.therapistProfile.findUnique({
-            where: { id: session.booking.therapist.id },
-            include: { user: { select: { email: true } } },
-        });
+        sendPayoutConfirmation({
+            therapist: session.booking.therapist,
+            payment: updatedPayment,
+            booking: session.booking,
+        }).catch(() => { });
 
-        if (therapistWithEmail) {
-            sendPayoutConfirmation({
-                therapist: therapistWithEmail,
-                payment: updatedPayment,
-                booking: session.booking,
-            }).catch(() => { });
-        }
+        // Notify customer that their payment has been released
+        sendPaymentReleasedToCustomer({
+            customer: session.booking.customer,
+            therapist: session.booking.therapist,
+            payment: updatedPayment,
+            booking: session.booking,
+        }).catch(() => { });
 
         return updatedPayment;
     } catch (dbError) {
@@ -280,12 +284,13 @@ const releasePayment = async (sessionId) => {
 /**
  * Process refund
  */
-const processRefund = async (bookingId, reason) => {
+const processRefund = async (bookingId, userId, reason) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
             payment: true,
             session: true,
+            customer: { select: { userId: true } },
         },
     });
 
@@ -293,10 +298,23 @@ const processRefund = async (bookingId, reason) => {
         throw new Error("Booking or payment not found");
     }
 
+    // Ownership check: only the customer who owns this booking can request a refund
+    if (booking.customer.userId !== userId) {
+        throw new Error("Unauthorized: you can only refund your own bookings");
+    }
+
     const payment = booking.payment;
 
     if (!["escrowed", "intent_created"].includes(payment.status)) {
         throw new Error("Payment cannot be refunded");
+    }
+
+    // Defense-in-depth: block refund if funds were already transferred to therapist.
+    // Without this, customer gets full refund while therapist keeps the transfer — net loss.
+    if (payment.stripeTransferId) {
+        throw new Error(
+            "Payment cannot be refunded because funds have already been transferred to the therapist. Please contact support."
+        );
     }
 
     const refund = await stripe.refunds.create({
@@ -331,7 +349,7 @@ const processRefund = async (bookingId, reason) => {
         });
     }
 
-    return refund;
+    return { refund, paymentId: payment.id, amount: parseFloat(payment.amount) };
 }
 
 /**

@@ -3,7 +3,7 @@ import {
     createConnectAccountController, createPaymentIntentController,
     getConnectAccountStatusController, getPaymentHistoryController,
     getPayoutHistoryController, processRefundController,
-    releasePaymentController, createDashboardLinkController
+    createDashboardLinkController
 } from "../controllers/payment.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -20,7 +20,8 @@ router.get("/connect/status", authenticate, authorize(["therapist"]), getConnect
 router.get("/payouts", authenticate, authorize(["therapist"]), getPayoutHistoryController);
 router.post("/dashboard/create", authenticate, authorize(["therapist"]), createDashboardLinkController);
 
-// Admin/System Route
-router.post("/release", authenticate, releasePaymentController);
+// NOTE: Payment release is handled exclusively through the session confirmation flow:
+//   POST /sessions/:sessionId/confirm → confirmByCustomerController → releasePayment()
+// No standalone release endpoint is exposed — this prevents IDOR attacks.
 
 export default router;

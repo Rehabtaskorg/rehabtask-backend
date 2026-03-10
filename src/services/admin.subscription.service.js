@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { stripe } from "../config/stripe.js";
+import { sendSubscriptionCancelledByAdmin } from "./email.service.js";
 
 // Valid sortBy fields for subscriptions
 const VALID_SORT_FIELDS = ["createdAt", "currentPeriodStart", "currentPeriodEnd"];
@@ -93,6 +94,14 @@ export const adminGetSubscription = async (subscriptionId) => {
 export const adminCancelSubscription = async (subscriptionId, adminId) => {
     const subscription = await prisma.subscription.findUnique({
         where: { id: subscriptionId },
+        include: {
+            customer: {
+                select: {
+                    fullName: true,
+                    user: { select: { email: true } },
+                },
+            },
+        },
     });
     if (!subscription) throw new NotFoundError("Subscription not found");
     if (subscription.status === "cancelled") {
@@ -115,6 +124,11 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
         where: { id: subscriptionId },
         data: { status: "cancelled" },
     });
+
+    sendSubscriptionCancelledByAdmin({
+        customer: subscription.customer,
+        subscription: updated,
+    }).catch(() => {});
 
     logger.info("[AdminSubscriptionService] Subscription cancelled", {
         subscriptionId,

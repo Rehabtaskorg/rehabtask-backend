@@ -2,7 +2,8 @@ import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
     getSessionById, getCustomerSessions, getTherapistSessions
 } from "../services/session.service.js";
-import { releasePayment } from "../services/payment.service.js"
+import { releasePayment } from "../services/payment.service.js";
+import { logAction } from "../services/audit.service.js";
 
 /**
  * Complete session by therapist
@@ -27,6 +28,21 @@ const confirmByCustomerController = async (req, res, next) => {
         const customerId = req.user.customerProfile.id;
         const session = await confirmSessionByCustomer(sessionId, customerId);
         const payment = await releasePayment(sessionId);
+
+        // Audit: customer-initiated payment release (most common payment flow)
+        logAction({
+            actorId: req.user.id,
+            action: "payment.released",
+            entityType: "payment",
+            entityId: payment.id,
+            changes: {
+                trigger: "customer_confirmation",
+                sessionId,
+                amount: parseFloat(payment.therapistPayout),
+                stripeTransferId: payment.stripeTransferId,
+            },
+        });
+
         res.status(200).json({ success: true, data: { session, payment } });
     } catch (error) {
         next(error);

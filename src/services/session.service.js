@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
+import { logger } from "../config/logger.js";
 import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
 
 /**

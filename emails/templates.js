@@ -271,6 +271,26 @@ export const payoutConfirmation = ({ therapist, payment, booking }) => ({
     `),
 });
 
+// Payment released — notify customer that their payment has been transferred to the therapist
+export const paymentReleasedToCustomer = ({ customer, therapist, payment, booking }) => ({
+    subject: 'Your payment has been released',
+    html: layout(`
+        ${heading('Payment Released')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`Your session with ${therapist.fullName} has been confirmed and the payment has been released.`)}
+        ${hr()}
+        <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(payment.amount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Payment Released</p>
+        ${hr()}
+        ${field('Session Type', booking.sessionType)}
+        ${field('Session Date', formatDate(booking.scheduledDate))}
+        ${field('Therapist', therapist.fullName)}
+        ${hr()}
+        ${text('Thank you for using RehabTask. We hope your session went well!')}
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payments')}
+    `),
+});
+
 // New Message Notification
 export const newMessageNotification = ({ recipient, senderName, message, contextType, contextId }) => {
     const truncatedContent = message.content && message.content.length > 200
@@ -574,6 +594,38 @@ export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }
         ` : ''}
         ${text('If you have any questions about this cancellation, please contact our support team.')}
         ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings`, 'View Bookings')}
+    `),
+});
+
+// Subscription cancelled by admin — notify customer
+export const subscriptionCancelledByAdmin = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask subscription has been cancelled',
+    html: layout(`
+        ${heading('Subscription Cancelled')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your RehabTask subscription has been cancelled by an administrator.')}
+        ${hr()}
+        ${field('Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${text('You will retain access to your account but will no longer have an active subscription. If you believe this was done in error or have questions, please contact our support team.')}
+        ${button(`${FRONTEND_URL}/customer/requests`, 'Go to Dashboard')}
+    `),
+});
+
+// Commission rate changed — notify therapist
+export const commissionRateChanged = ({ therapist, tier, oldRate, newRate, effectiveFrom }) => ({
+    subject: 'Platform commission rate update',
+    html: layout(`
+        ${heading('Commission Rate Updated')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text('The platform commission rate for your plan tier has been updated. This will apply to all future payments.')}
+        ${hr()}
+        ${field('Plan Tier', tier.charAt(0).toUpperCase() + tier.slice(1))}
+        ${field('Previous Rate', `${(oldRate * 100).toFixed(1)}%`)}
+        ${field('New Rate', `${(newRate * 100).toFixed(1)}%`)}
+        ${field('Effective From', formatDate(effectiveFrom))}
+        ${hr()}
+        ${text('Payments that have already been created are not affected — only new payments from the effective date onward will use the updated rate.')}
+        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
     `),
 });
 

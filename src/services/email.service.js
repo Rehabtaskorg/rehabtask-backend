@@ -33,6 +33,9 @@ import {
     adminPaymentRefunded,
     bookingCancelledByAdmin,
     subAdminWelcome,
+    subscriptionCancelledByAdmin,
+    commissionRateChanged,
+    paymentReleasedToCustomer,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -143,6 +146,13 @@ export const sendPayoutConfirmation = async ({ therapist, payment, booking }) =>
 };
 
 /**
+ * Payment released — notify customer that funds have been transferred to therapist
+ */
+export const sendPaymentReleasedToCustomer = async ({ customer, therapist, payment, booking }) => {
+    return dispatch(customer.user.email, paymentReleasedToCustomer, { customer, therapist, payment, booking });
+};
+
+/**
  * New message notification (anti-spam: first-unread only)
  */
 export const sendNewMessageNotification = async ({ recipient, senderName, message, contextType, contextId }) => {
@@ -232,4 +242,16 @@ export const sendAccountDeactivated = async ({ user }) => {
 
 export const sendSubAdminWelcome = async ({ user }) => {
     return dispatch(user.email, subAdminWelcome, { user });
+};
+
+export const sendSubscriptionCancelledByAdmin = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionCancelledByAdmin, { customer, subscription });
+};
+
+export const sendCommissionRateChanged = async ({ therapists, tier, oldRate, newRate, effectiveFrom }) => {
+    return Promise.allSettled(
+        therapists.map((therapist) =>
+            dispatch(therapist.user.email, commissionRateChanged, { therapist, tier, oldRate, newRate, effectiveFrom })
+        )
+    );
 };
