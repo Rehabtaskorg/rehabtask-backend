@@ -10,7 +10,8 @@ import {
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
     bookingIdParamSchema, adminCancelBookingSchema, adminDenyRescheduleSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema,
     adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, adminReleasePaymentSchema,
-    createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema, setCommissionRateSchema,
+    createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
+    setTierCommissionRateSchema, adminListCommissionHistoryQuerySchema, updateTherapistPlanSchema,
     broadcastNotificationSchema, updateUserSchema, adminListAuditLogsQuerySchema,
     adminReportQuerySchema, adminUserReportQuerySchema,
 } from "../validators/admin.schema.js";
@@ -37,6 +38,7 @@ import {
     approveTherapistController,
     rejectTherapistController,
     getDocumentSignedUrlController,
+    updateTherapistPlanController,
 } from "../controllers/admin.therapist.controller.js";
 
 import {
@@ -83,9 +85,9 @@ import {
 } from "../controllers/admin.subadmin.controller.js";
 
 import {
-    getCommissionRateController,
+    getAllTierRatesController,
+    setTierCommissionRateController,
     getCommissionHistoryController,
-    setCommissionRateController,
 } from "../controllers/admin.commission.controller.js";
 
 import {
@@ -126,6 +128,7 @@ router.get("/therapists", ...adminOrSubAdmin, requirePermission("therapists"), v
 router.get("/therapists/:therapistUserId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), getTherapistDetailController);
 router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), approveTherapistController);
 router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);
+router.put("/therapists/:therapistUserId/plan", ...adminOnly, validateMultiple({ params: therapistUserIdParamSchema, body: updateTherapistPlanSchema }), updateTherapistPlanController);
 router.get("/therapists/:therapistUserId/documents/:documentId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistDocumentParamSchema, "params"), getDocumentSignedUrlController);
 
 // Dispute Management
@@ -157,9 +160,9 @@ router.put("/payments/:paymentId/release", ...adminOrSubAdmin, requirePermission
 router.put("/payments/:paymentId/refund", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminRefundPaymentSchema }), adminRefundPaymentController);
 
 // Commission Management
-router.get("/commission/history", ...adminOrSubAdmin, requirePermission("commission"), getCommissionHistoryController);
-router.get("/commission", ...adminOrSubAdmin, requirePermission("commission"), getCommissionRateController);
-router.post("/commission", ...adminOnly, validate(setCommissionRateSchema), setCommissionRateController);
+router.get("/commission/rates", ...adminOrSubAdmin, requirePermission("commission"), getAllTierRatesController);
+router.get("/commission/history", ...adminOrSubAdmin, requirePermission("commission"), validate(adminListCommissionHistoryQuerySchema, "query"), getCommissionHistoryController);
+router.post("/commission/rates", ...adminOnly, validate(setTierCommissionRateSchema), setTierCommissionRateController);
 
 // Notifications (admin view + broadcast)
 router.get("/notifications", ...adminOrSubAdmin, requirePermission("notifications"), adminGetAllNotificationsController);

@@ -4,6 +4,7 @@ import {
     approveTherapist as approveTherapistService,
     rejectTherapist as rejectTherapistService,
     getDocumentSignedUrl as getDocumentSignedUrlService,
+    adminUpdateTherapistPlan as adminUpdateTherapistPlanService,
 } from "../services/admin.therapist.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -79,10 +80,30 @@ const getDocumentSignedUrlController = async (req, res, next) => {
     }
 };
 
+const updateTherapistPlanController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { therapistUserId } = req.params;
+        const { planTier } = req.body;
+        const { updated, previousTier } = await adminUpdateTherapistPlanService(therapistUserId, planTier, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "therapist.plan_updated",
+            entityType: "therapist",
+            entityId: therapistUserId,
+            changes: { planTier: { from: previousTier, to: planTier } },
+        });
+        res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listTherapistsController,
     getTherapistDetailController,
     approveTherapistController,
     rejectTherapistController,
     getDocumentSignedUrlController,
+    updateTherapistPlanController,
 };

@@ -177,3 +177,47 @@ export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
         mimeType: document.mimeType,
     };
 }
+
+const VALID_PLAN_TIERS = ["basic", "pro", "elite"];
+
+/**
+ * Update the subscription plan tier for a therapist.
+ * This controls the commission rate applied to their future payments.
+ *
+ * @param {string} therapistUserId - The therapist's User.id
+ * @param {string} planTier - "basic" | "pro" | "elite"
+ * @param {string} adminId - Admin performing the update (for audit)
+ */
+export const adminUpdateTherapistPlan = async (therapistUserId, planTier, adminId) => {
+    if (!VALID_PLAN_TIERS.includes(planTier)) {
+        throw new BadRequestError(`Invalid plan tier '${planTier}'. Must be one of: ${VALID_PLAN_TIERS.join(", ")}`);
+    }
+
+    const profile = await prisma.therapistProfile.findUnique({
+        where: { userId: therapistUserId },
+        select: { id: true, planTier: true },
+    });
+    if (!profile) throw new NotFoundError("Therapist not found");
+
+    const previousTier = profile.planTier;
+
+    const updated = await prisma.therapistProfile.update({
+        where: { userId: therapistUserId },
+        data: { planTier },
+        select: {
+            id: true,
+            fullName: true,
+            planTier: true,
+            userId: true,
+        },
+    });
+
+    logger.info("[AdminTherapistService] Therapist plan tier updated", {
+        therapistUserId,
+        from: previousTier,
+        to: planTier,
+        byAdmin: adminId,
+    });
+
+    return { updated, previousTier };
+};

@@ -109,6 +109,7 @@ model TherapistProfile {
   rejectionReason          String?                @map("rejection_reason")
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
+  planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   availability             Availability[]
@@ -122,6 +123,7 @@ model TherapistProfile {
 
   @@index([userId])
   @@index([approvalStatus, createdAt])
+  @@index([planTier, approvalStatus])
   @@index([stripeAccountId])
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
@@ -490,13 +492,15 @@ model SubAdminProfile {
 }
 
 model CommissionConfig {
-  id               String   @id @default(uuid()) @db.Uuid
-  rate             Decimal  @db.Decimal(5, 4)
-  effectiveFrom    DateTime @default(now()) @map("effective_from") @db.Timestamptz(3)
-  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  createdByAdmin   User     @relation(fields: [createdByAdminId], references: [id])
+  id               String         @id @default(uuid()) @db.Uuid
+  tier             TherapistPlan? // null = legacy global record; non-null = tier-specific rate
+  rate             Decimal        @db.Decimal(5, 4)
+  effectiveFrom    DateTime       @default(now()) @map("effective_from") @db.Timestamptz(3)
+  createdByAdminId String         @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdByAdmin   User           @relation(fields: [createdByAdminId], references: [id])
 
+  @@index([tier, effectiveFrom])
   @@index([effectiveFrom])
   @@index([createdByAdminId, effectiveFrom])
   @@map("commission_configs")
@@ -554,7 +558,14 @@ enum ApprovalStatus {
 
 enum SubscriptionPlan {
   free
+  standard
   premium
+}
+
+enum TherapistPlan {
+  basic
+  pro
+  elite
 }
 
 enum SubscriptionStatus {
