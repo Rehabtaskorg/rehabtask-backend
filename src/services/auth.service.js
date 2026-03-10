@@ -1,7 +1,7 @@
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
-import { sendTherapistWelcome } from "./email.service.js";
+import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
 
 /**
  * Register a new customer
@@ -396,7 +396,7 @@ export const getCurrentUser = async (userId) => {
  * Called by the frontend after Supabase session exists
  * Sends welcome email to therapists on first verification
  */
-export const markEmailVerified = async ({ userId }) => {
+export const markEmailVerified = async ({ userId, fullName }) => {
     if (!userId) throw new BadRequestError("User ID is required");
 
     try {
@@ -423,6 +423,14 @@ export const markEmailVerified = async ({ userId }) => {
                 where: { id: userId },
                 data: { emailVerified: true }
             });
+
+            // Persist the sub-admin's chosen display name on invite acceptance
+            if (user.role === "sub_admin" && fullName?.trim()) {
+                await db.subAdminProfile.update({
+                    where: { userId },
+                    data: { fullName: fullName.trim() },
+                });
+            }
         });
 
         // Send welcome email to therapists on first verification only
@@ -430,6 +438,11 @@ export const markEmailVerified = async ({ userId }) => {
             sendTherapistWelcome({
                 therapist: { ...user.therapistProfile, user: { email: user.email } },
             }).catch(() => { });
+        }
+
+        // Send welcome email to sub-admins on first verification only
+        if (!wasAlreadyVerified && user.role === "sub_admin") {
+            sendSubAdminWelcome({ user }).catch(() => { });
         }
 
         return { message: "Email verified in database" };

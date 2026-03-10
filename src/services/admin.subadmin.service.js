@@ -41,10 +41,14 @@ export const listSubAdmins = async ({ isActive, page = 1, limit = 20 } = {}) => 
                 id: true,
                 email: true,
                 isActive: true,
+                emailVerified: true,
                 createdAt: true,
+                customerProfile: { select: { fullName: true } },
+                therapistProfile: { select: { fullName: true } },
                 subAdminProfile: {
                     select: {
                         id: true,
+                        fullName: true,
                         permissions: true,
                         isActive: true,
                         createdAt: true,
@@ -219,4 +223,22 @@ export const reactivateSubAdmin = async (userId, adminId) => {
 
     logger.info("[AdminSubAdminService] Sub-admin reactivated", { userId, byAdmin: adminId });
     return updatedProfile;
+}
+
+export const resendSubAdminInvite = async (userId) => {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { subAdminProfile: true },
+    });
+    if (!user || !user.subAdminProfile) throw new NotFoundError("Sub-admin not found");
+    if (user.emailVerified) throw new ConflictError("Sub-admin has already accepted their invite");
+
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(user.email, {
+        data: { role: "sub_admin" },
+        redirectTo: `${env.FRONTEND_URL}/invite/accept`,
+    });
+    if (error) throw new BadRequestError(`Failed to resend invite: ${error.message}`);
+
+    logger.info("[AdminSubAdminService] Invite resent", { userId });
+    return { resent: true };
 }

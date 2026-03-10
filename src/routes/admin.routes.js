@@ -74,6 +74,7 @@ import {
     updateSubAdminPermissionsController,
     deactivateSubAdminController,
     reactivateSubAdminController,
+    resendSubAdminInviteController,
 } from "../controllers/admin.subadmin.controller.js";
 
 import {
@@ -156,5 +157,6 @@ router.post("/sub-admins/:userId/promote", ...adminOnly, validateMultiple({ para
 router.put("/sub-admins/:userId/permissions", ...adminOnly, validateMultiple({ params: userIdParamSchema, body: updateSubAdminPermissionsSchema }), updateSubAdminPermissionsController);
 router.put("/sub-admins/:userId/deactivate", ...adminOnly, validate(userIdParamSchema, "params"), deactivateSubAdminController);
 router.put("/sub-admins/:userId/reactivate", ...adminOnly, validate(userIdParamSchema, "params"), reactivateSubAdminController);
+router.post("/sub-admins/:userId/resend-invite", ...adminOnly, validate(userIdParamSchema, "params"), resendSubAdminInviteController);
 
 export default router;

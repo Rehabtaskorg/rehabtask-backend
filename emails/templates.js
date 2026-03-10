@@ -576,3 +576,16 @@ export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }
         ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings`, 'View Bookings')}
     `),
 });
+
+// Sub-Admin Welcome (sent when invite is accepted and account is activated)
+export const subAdminWelcome = ({ user }) => ({
+    subject: 'Your RehabTask admin account is ready',
+    html: layout(`
+        ${heading('Welcome to the Admin Team')}
+        ${text(`Hi ${user.email},`)}
+        ${text('Your RehabTask sub-admin account has been successfully set up. You now have access to the admin dashboard.')}
+        ${text('You can log in at any time using your email address and the password you just created.')}
+        ${button(`${FRONTEND_URL}/login`, 'Go to Dashboard')}
+        ${muted('If you have any questions or need help getting started, contact your administrator.')}
+    `),
+});

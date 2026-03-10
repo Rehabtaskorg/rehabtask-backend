@@ -9,6 +9,8 @@ const BOOKING_INCLUDE = {
             id: true,
             userId: true,
             fullName: true,
+            customerType: true,
+            agencyName: true,
             user: { select: { email: true } },
         },
     },
@@ -30,6 +32,9 @@ const BOOKING_INCLUDE = {
         },
     },
     session: { select: { id: true, status: true, completedAt: true } },
+    patient: {
+        select: { id: true, fullName: true, email: true, phone: true },
+    },
 };
 
 export const adminListBookings = async ({ status, page = 1, limit = 20 } = {}) => {

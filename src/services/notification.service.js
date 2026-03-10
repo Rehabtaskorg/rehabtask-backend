@@ -168,7 +168,15 @@ export const getAllNotifications = async ({
         prisma.notification.findMany({
             where,
             include: {
-                user: { select: { id: true, email: true, role: true } },
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true,
+                        customerProfile: { select: { fullName: true } },
+                        therapistProfile: { select: { fullName: true } },
+                    },
+                },
             },
             orderBy: { createdAt: "desc" },
             skip: (page - 1) * limit,
@@ -193,8 +201,11 @@ export const broadcastNotification = async ({
     message,
     metadata = null,
 }) => {
+    const where = { isActive: true };
+    if (role !== "all") where.role = role;
+
     const users = await prisma.user.findMany({
-        where: { role, isActive: true },
+        where,
         select: { id: true },
     });
 

@@ -6,6 +6,7 @@ import {
     updateSubAdminPermissions as updateSubAdminPermissionsService,
     deactivateSubAdmin as deactivateSubAdminService,
     reactivateSubAdmin as reactivateSubAdminService,
+    resendSubAdminInvite as resendSubAdminInviteService,
 } from "../services/admin.subadmin.service.js";
 
 const listSubAdminsController = async (req, res, next) => {
@@ -89,6 +90,16 @@ const reactivateSubAdminController = async (req, res, next) => {
     }
 };
 
+const resendSubAdminInviteController = async (req, res, next) => {
+    try {
+        const { userId } = req.params;
+        const result = await resendSubAdminInviteService(userId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listSubAdminsController,
     getSubAdminDetailController,
@@ -97,4 +108,5 @@ export {
     updateSubAdminPermissionsController,
     deactivateSubAdminController,
     reactivateSubAdminController,
+    resendSubAdminInviteController,
 };

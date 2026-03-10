@@ -177,7 +177,7 @@ export const getCurrentUserController = async (req, res, next) => {
  */
 export const verifyEmailController = async (req, res, next) => {
     try {
-        const { userId } = req.body;
+        const { userId, fullName } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -186,7 +186,7 @@ export const verifyEmailController = async (req, res, next) => {
             });
         }
 
-        const result = await markEmailVerified({ userId });
+        const result = await markEmailVerified({ userId, fullName });
 
         res.status(200).json({
             success: true,

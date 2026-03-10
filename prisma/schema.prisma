@@ -475,6 +475,7 @@ model Notification {
 model SubAdminProfile {
   id               String   @id @default(uuid()) @db.Uuid
   userId           String   @unique @map("user_id") @db.Uuid
+  fullName         String?  @map("full_name") @db.VarChar(255)
   permissions      String[]
   isActive         Boolean  @default(true) @map("is_active")
   createdByAdminId String   @map("created_by_admin_id") @db.Uuid

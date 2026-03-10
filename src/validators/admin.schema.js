@@ -239,7 +239,7 @@ export const setCommissionRateSchema = z.object({
 // ── Notification Broadcast ────────────────────────────────────────────────────
 
 export const broadcastNotificationSchema = z.object({
-    role: z.enum(["customer", "therapist", "admin", "sub_admin"]),
+    role: z.enum(["all", "customer", "therapist", "admin", "sub_admin"]),
     type: z.string().min(1).max(100),
     title: z.string().min(1).max(255),
     message: z.string().min(1).max(5000),

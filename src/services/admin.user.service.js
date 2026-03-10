@@ -34,7 +34,7 @@ export const listUsers = async ({
                 deactivatedAt: true,
                 createdAt: true,
                 customerProfile: {
-                    select: { id: true, fullName: true, customerType: true },
+                    select: { id: true, fullName: true, customerType: true, agencyName: true },
                 },
                 therapistProfile: {
                     select: {

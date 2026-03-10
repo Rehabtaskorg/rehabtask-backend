@@ -32,6 +32,7 @@ import {
     adminPaymentReleased,
     adminPaymentRefunded,
     bookingCancelledByAdmin,
+    subAdminWelcome,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -227,4 +228,8 @@ export const sendAccountDeactivated = async ({ user }) => {
         user.therapistProfile?.fullName ||
         user.email.split('@')[0];
     return dispatch(user.email, accountDeactivated, { user: { ...user, displayName } });
+};
+
+export const sendSubAdminWelcome = async ({ user }) => {
+    return dispatch(user.email, subAdminWelcome, { user });
 };
