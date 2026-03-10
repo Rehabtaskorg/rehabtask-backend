@@ -129,6 +129,11 @@ export const adminListBookingsQuerySchema = z.object({
             "reschedule_requested",
         ])
         .optional(),
+    search: z.string().max(200).optional(),
+    sortBy: z.enum(["scheduledDate", "createdAt", "rate", "status"]).optional().default("createdAt"),
+    sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD").optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD").optional(),
     page: z
         .string()
         .transform(Number)
@@ -151,11 +156,20 @@ export const adminCancelBookingSchema = z.object({
     reason: z.string().min(5).max(500).optional(),
 });
 
+export const adminDenyRescheduleSchema = z.object({
+    reason: z.string().min(5).max(500).optional(),
+});
+
 // ── Subscription Management ──────────────────────────────────────────────────
 
 export const adminListSubscriptionsQuerySchema = z.object({
     status: z.enum(["active", "inactive", "cancelled", "past_due"]).optional(),
     planType: z.enum(["free", "premium"]).optional(),
+    search: z.string().max(200).optional(),
+    sortBy: z.enum(["createdAt", "currentPeriodStart", "currentPeriodEnd"]).optional().default("createdAt"),
+    sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD").optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD").optional(),
     page: z
         .string()
         .transform(Number)

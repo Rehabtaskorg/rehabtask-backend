@@ -8,9 +8,9 @@ import { createFaqSchema, updateFaqSchema, } from "../validators/faq.schema.js";
 import {
     listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, therapistDocumentParamSchema, rejectTherapistSchema,
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
-    bookingIdParamSchema, adminCancelBookingSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema, adminListPaymentsQuerySchema,
-    paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
-    setCommissionRateSchema, broadcastNotificationSchema, updateUserSchema,
+    bookingIdParamSchema, adminCancelBookingSchema, adminDenyRescheduleSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema,
+    adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema,
+    updateSubAdminPermissionsSchema, setCommissionRateSchema, broadcastNotificationSchema, updateUserSchema,
 } from "../validators/admin.schema.js";
 
 // Controllers
@@ -49,6 +49,9 @@ import {
     adminListBookingsController,
     adminGetBookingController,
     adminCancelBookingController,
+    adminGetBookingStatsController,
+    adminApproveRescheduleController,
+    adminDenyRescheduleController,
 } from "../controllers/admin.booking.controller.js";
 
 import {
@@ -123,9 +126,12 @@ router.put("/disputes/:disputeId/assign", ...adminOrSubAdmin, requirePermission(
 router.put("/disputes/:disputeId/reopen", ...adminOrSubAdmin, requirePermission("disputes"), validate(disputeIdParamSchema, "params"), reopenDisputeController);
 
 // Booking Management
+router.get("/bookings/stats", ...adminOrSubAdmin, requirePermission("bookings"), adminGetBookingStatsController);
 router.get("/bookings", ...adminOrSubAdmin, requirePermission("bookings"), validate(adminListBookingsQuerySchema, "query"), adminListBookingsController);
 router.get("/bookings/:bookingId", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminGetBookingController);
 router.put("/bookings/:bookingId/cancel", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminCancelBookingSchema }), adminCancelBookingController);
+router.put("/bookings/:bookingId/approve-reschedule", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminApproveRescheduleController);
+router.put("/bookings/:bookingId/deny-reschedule", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminDenyRescheduleSchema }), adminDenyRescheduleController);
 
 // Subscription Management
 router.get("/subscriptions/stats", ...adminOrSubAdmin, requirePermission("subscriptions"), adminGetSubscriptionStatsController);

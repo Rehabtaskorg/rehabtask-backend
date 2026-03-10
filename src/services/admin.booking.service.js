@@ -37,15 +37,56 @@ const BOOKING_INCLUDE = {
     },
 };
 
-export const adminListBookings = async ({ status, page = 1, limit = 20 } = {}) => {
+// Valid sortBy fields mapped to their Prisma field names
+const VALID_SORT_FIELDS = ["scheduledDate", "createdAt", "rate", "status"];
+
+export const adminListBookings = async ({
+    status,
+    search,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    startDate,
+    endDate,
+    page = 1,
+    limit = 20,
+} = {}) => {
     const where = {};
+
     if (status) where.status = status;
+
+    // Date range filter on scheduledDate
+    if (startDate || endDate) {
+        where.scheduledDate = {};
+        if (startDate) {
+            where.scheduledDate.gte = new Date(startDate);
+        }
+        if (endDate) {
+            const end = new Date(endDate);
+            end.setUTCHours(23, 59, 59, 999);
+            where.scheduledDate.lte = end;
+        }
+    }
+
+    // Full-text search across customer name, therapist name, and emails
+    if (search && search.trim()) {
+        const term = search.trim();
+        where.OR = [
+            { customer: { fullName: { contains: term, mode: "insensitive" } } },
+            { customer: { user: { email: { contains: term, mode: "insensitive" } } } },
+            { therapist: { fullName: { contains: term, mode: "insensitive" } } },
+            { therapist: { user: { email: { contains: term, mode: "insensitive" } } } },
+        ];
+    }
+
+    // Guard against invalid sort field (validator should catch this, but be defensive)
+    const resolvedSortBy = VALID_SORT_FIELDS.includes(sortBy) ? sortBy : "createdAt";
+    const orderBy = { [resolvedSortBy]: sortOrder === "asc" ? "asc" : "desc" };
 
     const [bookings, total] = await Promise.all([
         prisma.booking.findMany({
             where,
             include: BOOKING_INCLUDE,
-            orderBy: { createdAt: "desc" },
+            orderBy,
             skip: (page - 1) * limit,
             take: limit,
         }),
@@ -56,7 +97,30 @@ export const adminListBookings = async ({ status, page = 1, limit = 20 } = {}) =
         bookings,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
-}
+};
+
+export const adminGetBookingStats = async () => {
+    const [total, pending, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
+        await Promise.all([
+            prisma.booking.count(),
+            prisma.booking.count({ where: { status: "pending" } }),
+            prisma.booking.count({ where: { status: "confirmed" } }),
+            prisma.booking.count({ where: { status: "in_progress" } }),
+            prisma.booking.count({ where: { status: "completed" } }),
+            prisma.booking.count({ where: { status: "cancelled" } }),
+            prisma.booking.count({ where: { status: "reschedule_requested" } }),
+        ]);
+
+    return {
+        total,
+        pending,
+        confirmed,
+        inProgress,
+        completed,
+        cancelled,
+        rescheduleRequested,
+    };
+};
 
 export const adminGetBooking = async (bookingId) => {
     const booking = await prisma.booking.findUnique({
@@ -65,7 +129,7 @@ export const adminGetBooking = async (bookingId) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
     return booking;
-}
+};
 
 export const adminCancelBooking = async (bookingId, adminId, reason) => {
     const booking = await prisma.booking.findUnique({
@@ -84,7 +148,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     const updated = await prisma.booking.update({
         where: { id: bookingId },
         data: { status: "cancelled" },
-        include: BOOKING_INCLUDE
+        include: BOOKING_INCLUDE,
     });
 
     sendBookingCancelledByAdmin({
@@ -92,16 +156,16 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         recipientName: booking.customer.fullName,
         booking,
         reason,
-        role: 'customer',
-    }).catch(() => { });
+        role: "customer",
+    }).catch(() => {});
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.therapist.user.email,
         recipientName: booking.therapist.fullName,
         booking,
         reason,
-        role: 'therapist',
-    }).catch(() => { });
+        role: "therapist",
+    }).catch(() => {});
 
     logger.info("[AdminBookingService] Booking cancelled", {
         bookingId,
@@ -109,4 +173,60 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         reason,
     });
     return updated;
-}
+};
+
+export const adminApproveReschedule = async (bookingId, adminId) => {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundError("Booking not found");
+    if (booking.status !== "reschedule_requested") {
+        throw new ConflictError("Booking is not awaiting a reschedule decision");
+    }
+    if (!booking.proposedNewDate) {
+        throw new ConflictError("No proposed new date found on this booking");
+    }
+
+    const updated = await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+            scheduledDate: booking.proposedNewDate,
+            proposedNewDate: null,
+            status: "confirmed",
+        },
+        include: BOOKING_INCLUDE,
+    });
+
+    logger.info("[AdminBookingService] Reschedule approved", {
+        bookingId,
+        newDate: booking.proposedNewDate,
+        byAdmin: adminId,
+    });
+    return updated;
+};
+
+export const adminDenyReschedule = async (bookingId, adminId, reason) => {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundError("Booking not found");
+    if (booking.status !== "reschedule_requested") {
+        throw new ConflictError("Booking is not awaiting a reschedule decision");
+    }
+
+    const updated = await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+            proposedNewDate: null,
+            status: "confirmed",
+        },
+        include: BOOKING_INCLUDE,
+    });
+
+    logger.info("[AdminBookingService] Reschedule denied", {
+        bookingId,
+        byAdmin: adminId,
+        reason,
+    });
+    return updated;
+};

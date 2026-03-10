@@ -7,10 +7,15 @@ import {
 
 const adminListSubscriptionsController = async (req, res, next) => {
     try {
-        const { status, planType, page, limit } = req.query;
+        const { status, planType, search, sortBy, sortOrder, startDate, endDate, page, limit } = req.query;
         const result = await adminListSubscriptionsService({
             status,
             planType,
+            search,
+            sortBy,
+            sortOrder,
+            startDate,
+            endDate,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
         });

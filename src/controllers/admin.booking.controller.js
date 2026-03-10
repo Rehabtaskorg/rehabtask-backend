@@ -2,13 +2,21 @@ import {
     adminListBookings as adminListBookingsService,
     adminGetBooking as adminGetBookingService,
     adminCancelBooking as adminCancelBookingService,
+    adminGetBookingStats as adminGetBookingStatsService,
+    adminApproveReschedule as adminApproveRescheduleService,
+    adminDenyReschedule as adminDenyRescheduleService,
 } from "../services/admin.booking.service.js";
 
 const adminListBookingsController = async (req, res, next) => {
     try {
-        const { status, page, limit } = req.query;
+        const { status, search, sortBy, sortOrder, startDate, endDate, page, limit } = req.query;
         const result = await adminListBookingsService({
             status,
+            search,
+            sortBy,
+            sortOrder,
+            startDate,
+            endDate,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
         });
@@ -40,8 +48,43 @@ const adminCancelBookingController = async (req, res, next) => {
     }
 };
 
+const adminGetBookingStatsController = async (req, res, next) => {
+    try {
+        const stats = await adminGetBookingStatsService();
+        res.status(200).json({ success: true, data: stats });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const adminApproveRescheduleController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { bookingId } = req.params;
+        const booking = await adminApproveRescheduleService(bookingId, adminId);
+        res.status(200).json({ success: true, data: booking });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const adminDenyRescheduleController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { bookingId } = req.params;
+        const { reason } = req.body;
+        const booking = await adminDenyRescheduleService(bookingId, adminId, reason);
+        res.status(200).json({ success: true, data: booking });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     adminListBookingsController,
     adminGetBookingController,
     adminCancelBookingController,
+    adminGetBookingStatsController,
+    adminApproveRescheduleController,
+    adminDenyRescheduleController,
 };
