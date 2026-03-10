@@ -4,6 +4,7 @@ import {
     adminCancelSubscription as adminCancelSubscriptionService,
     adminGetSubscriptionStats as adminGetSubscriptionStatsService,
 } from "../services/admin.subscription.service.js";
+import { logAction } from "../services/audit.service.js";
 
 const adminListSubscriptionsController = async (req, res, next) => {
     try {
@@ -40,6 +41,13 @@ const adminCancelSubscriptionController = async (req, res, next) => {
         const adminId = req.user.id;
         const { subscriptionId } = req.params;
         const subscription = await adminCancelSubscriptionService(subscriptionId, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "subscription.cancelled",
+            entityType: "subscription",
+            entityId: subscriptionId,
+            changes: { status: { to: "cancelled" } },
+        });
         res.status(200).json({ success: true, data: subscription });
     } catch (error) {
         next(error);

@@ -9,8 +9,10 @@ import {
     listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, therapistDocumentParamSchema, rejectTherapistSchema,
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
     bookingIdParamSchema, adminCancelBookingSchema, adminDenyRescheduleSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema,
-    adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, createSubAdminSchema, promoteToSubAdminSchema,
-    updateSubAdminPermissionsSchema, setCommissionRateSchema, broadcastNotificationSchema, updateUserSchema,
+    adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, adminReleasePaymentSchema,
+    createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema, setCommissionRateSchema,
+    broadcastNotificationSchema, updateUserSchema, adminListAuditLogsQuerySchema,
+    adminReportQuerySchema, adminUserReportQuerySchema,
 } from "../validators/admin.schema.js";
 
 // Controllers
@@ -91,6 +93,14 @@ import {
     adminBroadcastNotificationController,
 } from "../controllers/admin.notification.controller.js";
 
+import { adminListAuditLogsController } from "../controllers/admin.audit.controller.js";
+
+import {
+    bookingsReportController,
+    paymentsReportController,
+    usersReportController,
+} from "../controllers/admin.report.controller.js";
+
 
 const router = express.Router();
 
@@ -143,7 +153,7 @@ router.put("/subscriptions/:subscriptionId/cancel", ...adminOrSubAdmin, requireP
 router.get("/payments/stats", ...adminOrSubAdmin, requirePermission("payments"), adminGetPaymentStatsController);
 router.get("/payments", ...adminOrSubAdmin, requirePermission("payments"), validate(adminListPaymentsQuerySchema, "query"), adminListPaymentsController);
 router.get("/payments/:paymentId", ...adminOrSubAdmin, requirePermission("payments"), validate(paymentIdParamSchema, "params"), adminGetPaymentController);
-router.put("/payments/:paymentId/release", ...adminOrSubAdmin, requirePermission("payments"), validate(paymentIdParamSchema, "params"), adminReleasePaymentController);
+router.put("/payments/:paymentId/release", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminReleasePaymentSchema }), adminReleasePaymentController);
 router.put("/payments/:paymentId/refund", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminRefundPaymentSchema }), adminRefundPaymentController);
 
 // Commission Management
@@ -164,5 +174,13 @@ router.put("/sub-admins/:userId/permissions", ...adminOnly, validateMultiple({ p
 router.put("/sub-admins/:userId/deactivate", ...adminOnly, validate(userIdParamSchema, "params"), deactivateSubAdminController);
 router.put("/sub-admins/:userId/reactivate", ...adminOnly, validate(userIdParamSchema, "params"), reactivateSubAdminController);
 router.post("/sub-admins/:userId/resend-invite", ...adminOnly, validate(userIdParamSchema, "params"), resendSubAdminInviteController);
+
+// Audit Logs — full admins only (append-only, no sub-admin access)
+router.get("/audit-logs", ...adminOnly, validate(adminListAuditLogsQuerySchema, "query"), adminListAuditLogsController);
+
+// Reports — full admins only
+router.get("/reports/bookings", ...adminOnly, validate(adminReportQuerySchema, "query"), bookingsReportController);
+router.get("/reports/payments", ...adminOnly, validate(adminReportQuerySchema, "query"), paymentsReportController);
+router.get("/reports/users", ...adminOnly, validate(adminUserReportQuerySchema, "query"), usersReportController);
 
 export default router;

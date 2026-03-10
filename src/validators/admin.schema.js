@@ -194,6 +194,11 @@ export const adminListPaymentsQuerySchema = z.object({
     status: z
         .enum(["intent_created", "escrowed", "released", "refunded", "failed"])
         .optional(),
+    search: z.string().max(200).optional(),
+    sortBy: z.enum(["createdAt", "amount"]).optional().default("createdAt"),
+    sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD").optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD").optional(),
     page: z
         .string()
         .transform(Number)
@@ -217,6 +222,46 @@ export const adminRefundPaymentSchema = z.object({
         .string()
         .min(5, "Reason must be at least 5 characters")
         .max(500),
+});
+
+export const adminReleasePaymentSchema = z.object({
+    // Minimum $0.01 — sub-cent amounts round to 0 Stripe cents and are rejected
+    amount: z.coerce.number().min(0.01, "Amount must be at least $0.01").optional(),
+});
+
+// ── Audit Logs ───────────────────────────────────────────────────────────────
+
+export const adminListAuditLogsQuerySchema = z.object({
+    entityType: z.string().max(50).optional(),
+    action: z.string().max(100).optional(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD").optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD").optional(),
+    page: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1))
+        .optional()
+        .default("1"),
+    limit: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1).max(100))
+        .optional()
+        .default("50"),
+});
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+export const adminReportQuerySchema = z.object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD"),
+    status: z.string().max(50).optional(),
+});
+
+export const adminUserReportQuerySchema = z.object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be YYYY-MM-DD"),
+    role: z.enum(["customer", "therapist", "admin", "sub_admin"]).optional(),
 });
 
 // ── Sub-Admin Management ─────────────────────────────────────────────────────

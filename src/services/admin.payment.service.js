@@ -27,15 +27,53 @@ const PAYMENT_INCLUDE = {
     },
 };
 
-export const adminListPayments = async ({ status, page = 1, limit = 20 } = {}) => {
+const VALID_SORT_FIELDS = ["createdAt", "amount"];
+
+export const adminListPayments = async ({
+    status,
+    search,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    startDate,
+    endDate,
+    page = 1,
+    limit = 20,
+} = {}) => {
     const where = {};
     if (status) where.status = status;
+
+    // Date range filter on createdAt
+    if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) {
+            where.createdAt.gte = new Date(startDate);
+        }
+        if (endDate) {
+            const end = new Date(endDate);
+            end.setUTCHours(23, 59, 59, 999);
+            where.createdAt.lte = end;
+        }
+    }
+
+    // Full-text search across customer name, therapist name, and emails
+    if (search && search.trim()) {
+        const term = search.trim();
+        where.OR = [
+            { customer: { fullName: { contains: term, mode: "insensitive" } } },
+            { customer: { user: { email: { contains: term, mode: "insensitive" } } } },
+            { therapist: { fullName: { contains: term, mode: "insensitive" } } },
+            { therapist: { user: { email: { contains: term, mode: "insensitive" } } } },
+        ];
+    }
+
+    const resolvedSortBy = VALID_SORT_FIELDS.includes(sortBy) ? sortBy : "createdAt";
+    const orderBy = { [resolvedSortBy]: sortOrder === "asc" ? "asc" : "desc" };
 
     const [payments, total] = await Promise.all([
         prisma.payment.findMany({
             where,
             include: PAYMENT_INCLUDE,
-            orderBy: { createdAt: "desc" },
+            orderBy,
             skip: (page - 1) * limit,
             take: limit,
         }),
@@ -46,7 +84,7 @@ export const adminListPayments = async ({ status, page = 1, limit = 20 } = {}) =
         payments,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
-}
+};
 
 export const adminGetPayment = async (paymentId) => {
     const payment = await prisma.payment.findUnique({
@@ -88,13 +126,14 @@ export const adminGetPaymentStats = async () => {
         totalRefunded: parseFloat(refunded._sum.amount ?? 0),
         escrowedFunds: parseFloat(escrowed._sum.amount ?? 0),
     };
-}
+};
 
 /**
- * Admin-forced released of an escrowed payment.
- * Bypasses the "confirmed_by_therapist" session requirement.
+ * Admin-forced release of an escrowed payment.
+ * Supports full release (default) or partial release via optional `partialAmount`.
+ * Bypasses the "confirmed_by_customer" session requirement.
  */
-export const adminReleasePayment = async (paymentId, adminId) => {
+export const adminReleasePayment = async (paymentId, adminId, partialAmount) => {
     const payment = await prisma.payment.findUnique({
         where: { id: paymentId },
         include: {
@@ -113,19 +152,37 @@ export const adminReleasePayment = async (paymentId, adminId) => {
         throw new BadRequestError("Therapist has not connected a Stripe account");
     }
 
+    const fullPayout = parseFloat(payment.therapistPayout);
+
+    // Validate partial amount if provided
+    if (partialAmount !== undefined && partialAmount !== null) {
+        if (partialAmount <= 0) {
+            throw new BadRequestError("Release amount must be greater than zero");
+        }
+        if (partialAmount > fullPayout) {
+            throw new BadRequestError(
+                `Release amount ($${partialAmount}) cannot exceed therapist payout ($${fullPayout})`
+            );
+        }
+    }
+
+    const releaseAmount = partialAmount ?? fullPayout;
+    const isPartial = partialAmount !== undefined && partialAmount !== null && partialAmount < fullPayout;
+
     let transfer;
     try {
         transfer = await stripe.transfers.create({
-            amount: Math.round(parseFloat(payment.therapistPayout) * 100),
+            amount: Math.round(releaseAmount * 100),
             currency: "usd",
             destination: payment.therapist.stripeAccountId,
             metadata: {
                 paymentId: payment.id,
                 bookingId: payment.bookingId,
                 releasedByAdmin: adminId,
+                partial: isPartial ? "true" : "false",
             },
-            description: `Admin-forced payout for booking ${payment.bookingId}`,
-        })
+            description: `${isPartial ? "Partial admin" : "Admin-forced"} payout for booking ${payment.bookingId}`,
+        });
     } catch (stripeError) {
         logger.error("[AdminPaymentService] Stripe transfer failed", {
             paymentId,
@@ -140,23 +197,27 @@ export const adminReleasePayment = async (paymentId, adminId) => {
             status: "released",
             stripeTransferId: transfer.id,
             releasedAt: new Date(),
+            // Update therapistPayout to the actual released amount for accurate stats
+            ...(isPartial && { therapistPayout: releaseAmount }),
         },
         include: PAYMENT_INCLUDE,
     });
 
     sendAdminPaymentReleased({
         therapist: updated.therapist,
-        amount: parseFloat(payment.therapistPayout),
+        amount: releaseAmount,
         booking: updated.booking,
-    }).catch(() => { });
+    }).catch(() => {});
 
     logger.info("[AdminPaymentService] Payment released", {
         paymentId,
         byAdmin: adminId,
         transferId: transfer.id,
+        amount: releaseAmount,
+        partial: isPartial,
     });
     return updated;
-}
+};
 
 /**
  * Admin refund - Handles Stripe + DB + booking/session cancellation atomically
@@ -185,20 +246,30 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         throw new BadRequestError("No Stripe payment intent associated with this payment");
     }
 
+    // intent_created = PaymentIntent created but not yet captured — must cancel, not refund.
+    // escrowed       = Card charged/captured — must refund.
     let refund;
     try {
-        refund = await stripe.refunds.create({
-            payment_intent: payment.stripePaymentIntentId,
-            reason: "requested_by_customer",
-            metadata: {
-                paymentId: payment.id,
-                refundReason: reason,
-                refundedByAdmin: adminId,
-            },
-        });
+        if (payment.status === "intent_created") {
+            // Cancel the uncaptured PaymentIntent; no money was moved so no refund needed.
+            refund = await stripe.paymentIntents.cancel(payment.stripePaymentIntentId, {
+                cancellation_reason: "abandoned",
+            });
+        } else {
+            refund = await stripe.refunds.create({
+                payment_intent: payment.stripePaymentIntentId,
+                reason: "requested_by_customer",
+                metadata: {
+                    paymentId: payment.id,
+                    refundReason: reason,
+                    refundedByAdmin: adminId,
+                },
+            });
+        }
     } catch (stripeError) {
-        logger.error("[AdminPaymentService] Stripe refund failed", {
+        logger.error("[AdminPaymentService] Stripe refund/cancel failed", {
             paymentId,
+            status: payment.status,
             error: stripeError.message,
         });
         throw stripeError;
@@ -217,7 +288,7 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
             ? [
                 prisma.session.update({
                     where: { id: payment.booking.session.id },
-                    data: { status: "cancelled", cancellationReason: reason }
+                    data: { status: "cancelled", cancellationReason: reason },
                 }),
             ]
             : []),
@@ -228,7 +299,7 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         amount: parseFloat(payment.amount),
         booking: payment.booking,
         reason,
-    }).catch(() => { });
+    }).catch(() => {});
 
     logger.info("[AdminPaymentService] Payment refunded", {
         paymentId,
@@ -236,4 +307,4 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         refundId: refund.id,
     });
     return refund;
-}
+};

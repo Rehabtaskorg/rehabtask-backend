@@ -6,6 +6,7 @@ import {
     adminApproveReschedule as adminApproveRescheduleService,
     adminDenyReschedule as adminDenyRescheduleService,
 } from "../services/admin.booking.service.js";
+import { logAction } from "../services/audit.service.js";
 
 const adminListBookingsController = async (req, res, next) => {
     try {
@@ -42,6 +43,13 @@ const adminCancelBookingController = async (req, res, next) => {
         const { bookingId } = req.params;
         const { reason } = req.body;
         const booking = await adminCancelBookingService(bookingId, adminId, reason);
+        await logAction({
+            actorId: adminId,
+            action: "booking.cancelled",
+            entityType: "booking",
+            entityId: bookingId,
+            changes: { status: { to: "cancelled" }, reason },
+        });
         res.status(200).json({ success: true, data: booking });
     } catch (error) {
         next(error);
@@ -62,6 +70,13 @@ const adminApproveRescheduleController = async (req, res, next) => {
         const adminId = req.user.id;
         const { bookingId } = req.params;
         const booking = await adminApproveRescheduleService(bookingId, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "booking.reschedule_approved",
+            entityType: "booking",
+            entityId: bookingId,
+            changes: { newDate: booking.scheduledDate },
+        });
         res.status(200).json({ success: true, data: booking });
     } catch (error) {
         next(error);
@@ -74,6 +89,13 @@ const adminDenyRescheduleController = async (req, res, next) => {
         const { bookingId } = req.params;
         const { reason } = req.body;
         const booking = await adminDenyRescheduleService(bookingId, adminId, reason);
+        await logAction({
+            actorId: adminId,
+            action: "booking.reschedule_denied",
+            entityType: "booking",
+            entityId: bookingId,
+            changes: { reason },
+        });
         res.status(200).json({ success: true, data: booking });
     } catch (error) {
         next(error);

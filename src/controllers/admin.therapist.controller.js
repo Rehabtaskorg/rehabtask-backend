@@ -5,6 +5,7 @@ import {
     rejectTherapist as rejectTherapistService,
     getDocumentSignedUrl as getDocumentSignedUrlService,
 } from "../services/admin.therapist.service.js";
+import { logAction } from "../services/audit.service.js";
 
 const listTherapistsController = async (req, res, next) => {
     try {
@@ -36,6 +37,13 @@ const approveTherapistController = async (req, res, next) => {
         const adminId = req.user.id;
         const { therapistUserId } = req.params;
         const therapist = await approveTherapistService(therapistUserId, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "therapist.approved",
+            entityType: "therapist",
+            entityId: therapistUserId,
+            changes: { approvalStatus: { to: "approved" } },
+        });
         res.status(200).json({ success: true, data: therapist });
     } catch (error) {
         next(error);
@@ -48,6 +56,13 @@ const rejectTherapistController = async (req, res, next) => {
         const { therapistUserId } = req.params;
         const { reason } = req.body;
         const therapist = await rejectTherapistService(therapistUserId, reason, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "therapist.rejected",
+            entityType: "therapist",
+            entityId: therapistUserId,
+            changes: { approvalStatus: { to: "rejected" }, reason },
+        });
         res.status(200).json({ success: true, data: therapist });
     } catch (error) {
         next(error);
