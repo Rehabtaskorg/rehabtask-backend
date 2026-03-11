@@ -50,6 +50,7 @@ export const updateUserSchema = z.object({
 
 export const listTherapistsQuerySchema = z.object({
     approvalStatus: z.enum(["review", "pending", "approved", "rejected"]).optional(),
+    planTier: z.enum(["basic", "pro", "elite"]).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()

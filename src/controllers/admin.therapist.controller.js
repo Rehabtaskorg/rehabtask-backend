@@ -5,19 +5,30 @@ import {
     rejectTherapist as rejectTherapistService,
     getDocumentSignedUrl as getDocumentSignedUrlService,
     adminUpdateTherapistPlan as adminUpdateTherapistPlanService,
+    getTherapistPlanStats as getTherapistPlanStatsService,
 } from "../services/admin.therapist.service.js";
 import { logAction } from "../services/audit.service.js";
 
 const listTherapistsController = async (req, res, next) => {
     try {
-        const { approvalStatus, search, page, limit } = req.query;
+        const { approvalStatus, planTier, search, page, limit } = req.query;
         const result = await listTherapistsService({
             approvalStatus,
+            planTier,
             search,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
         });
         res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getTherapistPlanStatsController = async (_req, res, next) => {
+    try {
+        const stats = await getTherapistPlanStatsService();
+        res.status(200).json({ success: true, data: stats });
     } catch (error) {
         next(error);
     }
@@ -106,4 +117,5 @@ export {
     rejectTherapistController,
     getDocumentSignedUrlController,
     updateTherapistPlanController,
+    getTherapistPlanStatsController,
 };

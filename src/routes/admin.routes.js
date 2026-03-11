@@ -39,6 +39,7 @@ import {
     rejectTherapistController,
     getDocumentSignedUrlController,
     updateTherapistPlanController,
+    getTherapistPlanStatsController,
 } from "../controllers/admin.therapist.controller.js";
 
 import {
@@ -125,6 +126,7 @@ router.put("/users/:userId/reactivate", ...adminOrSubAdmin, requirePermission("u
 
 // Therapist Management
 router.get("/therapists", ...adminOrSubAdmin, requirePermission("therapists"), validate(listTherapistsQuerySchema, "query"), listTherapistsController);
+router.get("/therapists/plan-stats", ...adminOrSubAdmin, requirePermission("therapists"), getTherapistPlanStatsController);
 router.get("/therapists/:therapistUserId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), getTherapistDetailController);
 router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), approveTherapistController);
 router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);

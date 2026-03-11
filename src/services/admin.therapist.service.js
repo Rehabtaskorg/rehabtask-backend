@@ -5,14 +5,16 @@ import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
 export const listTherapists = async ({
     approvalStatus,
+    planTier,
     search,
     page = 1,
     limit = 20,
 } = {}) => {
     const where = { therapistProfile: { isNot: null } };
-    if (approvalStatus) {
-        where.therapistProfile = { approvalStatus };
-    }
+    const profileFilter = {};
+    if (approvalStatus) profileFilter.approvalStatus = approvalStatus;
+    if (planTier) profileFilter.planTier = planTier;
+    if (Object.keys(profileFilter).length) where.therapistProfile = profileFilter;
     if (search) {
         where.OR = [
             { email: { contains: search, mode: "insensitive" } },
@@ -41,6 +43,7 @@ export const listTherapists = async ({
                         yearsOfExperience: true,
                         onboardingComplete: true,
                         backgroundCheckStatus: true,
+                        planTier: true,
                         licenseDocuments: {
                             where: { isDeleted: false },
                             select: { id: true },
@@ -220,4 +223,26 @@ export const adminUpdateTherapistPlan = async (therapistUserId, planTier, adminI
     });
 
     return { updated, previousTier };
+};
+
+export const getTherapistPlanStats = async () => {
+    const approvedFilter = { approvalStatus: "approved" };
+    const [total, byTier, approved] = await Promise.all([
+        prisma.therapistProfile.count(),
+        prisma.therapistProfile.groupBy({
+            by: ["planTier"],
+            where: approvedFilter,
+            _count: { id: true },
+        }),
+        prisma.therapistProfile.count({ where: approvedFilter }),
+    ]);
+
+    return {
+        total,
+        approved,
+        byTier: byTier.reduce((acc, row) => {
+            acc[row.planTier] = row._count.id;
+            return acc;
+        }, {}),
+    };
 };
