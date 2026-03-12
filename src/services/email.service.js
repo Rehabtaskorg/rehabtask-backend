@@ -36,6 +36,7 @@ import {
     subscriptionCancelledByAdmin,
     commissionRateChanged,
     paymentReleasedToCustomer,
+    paymentReminder,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -254,4 +255,8 @@ export const sendCommissionRateChanged = async ({ therapists, tier, oldRate, new
             dispatch(therapist.user.email, commissionRateChanged, { therapist, tier, oldRate, newRate, effectiveFrom })
         )
     );
+};
+
+export const sendPaymentReminder = async ({ customer, therapist, booking, hoursUntilSession }) => {
+    return dispatch(customer.user.email, paymentReminder, { customer, therapist, booking, hoursUntilSession });
 };

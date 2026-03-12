@@ -5,9 +5,54 @@ import { logger } from "../config/logger.js";
 import { getCommissionRateByTier } from "./commission.service.js";
 
 /**
- * Create payment intent and escrow funds
+ * Get or create a Stripe customer for a given user.
+ * Reusable across payment intent creation and saved payment methods.
  */
-const createPaymentIntent = async (bookingId, userId) => {
+const getOrCreateStripeCustomer = async (userId) => {
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { user: true },
+    });
+
+    if (!customerProfile) {
+        throw new Error("Customer profile not found");
+    }
+
+    if (customerProfile.stripeCustomerId) {
+        return { stripeCustomerId: customerProfile.stripeCustomerId, customerProfile };
+    }
+
+    // Check if customer already exists in Stripe by email
+    const existingCustomers = await stripe.customers.list({
+        email: customerProfile.user.email,
+        limit: 1,
+    });
+
+    let stripeCustomerId;
+    if (existingCustomers.data.length > 0) {
+        stripeCustomerId = existingCustomers.data[0].id;
+    } else {
+        const customer = await stripe.customers.create({
+            email: customerProfile.user.email,
+            name: customerProfile.fullName,
+            metadata: { customerId: customerProfile.id },
+        });
+        stripeCustomerId = customer.id;
+    }
+
+    await prisma.customerProfile.update({
+        where: { id: customerProfile.id },
+        data: { stripeCustomerId },
+    });
+
+    return { stripeCustomerId, customerProfile };
+};
+
+/**
+ * Create payment intent and escrow funds.
+ * If paymentMethodId is provided, charges the saved card immediately.
+ */
+const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
@@ -25,14 +70,13 @@ const createPaymentIntent = async (bookingId, userId) => {
         throw new Error("Unauthorized");
     }
 
-    if (booking.status !== "pending") {
-        throw new Error("Booking must be in pending status");
+    if (!["pending", "accepted"].includes(booking.status)) {
+        throw new Error("Booking must be in pending or accepted status");
     }
 
     const amount = parseFloat(booking.rate);
 
     // Resolve commission rate from therapist's subscription tier.
-    // Falls back to env var PLATFORM_FEE_PERCENTAGE only if commission service itself fails.
     let feePercent;
     try {
         feePercent = await getCommissionRateByTier(booking.therapist.planTier ?? "basic");
@@ -65,36 +109,10 @@ const createPaymentIntent = async (bookingId, userId) => {
         };
     }
 
-    // Create stripe customer if not exists
-    let stripeCustomerId = booking.customer.stripeCustomerId;
+    // Get or create Stripe customer
+    const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
 
-    if (!stripeCustomerId) {
-        // Check if customer already exists in Stripe by email
-        const existingCustomers = await stripe.customers.list({
-            email: booking.customer.user.email,
-            limit: 1
-        });
-
-        if (existingCustomers.data.length > 0) {
-            stripeCustomerId = existingCustomers.data[0].id;
-        } else {
-            const customer = await stripe.customers.create({
-                email: booking.customer.user.email,
-                name: booking.customer.fullName,
-                metadata: { customerId: booking.customer.id },
-            });
-
-            stripeCustomerId = customer.id;
-        }
-
-        await prisma.customerProfile.update({
-            where: { id: booking.customer.id },
-            data: { stripeCustomerId },
-        });
-    }
-
-    // Create payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
+    const intentParams = {
         amount: Math.round(amount * 100),
         currency: "usd",
         customer: stripeCustomerId,
@@ -104,7 +122,6 @@ const createPaymentIntent = async (bookingId, userId) => {
                 request_three_d_secure: "automatic",
             },
         },
-        setup_future_usage: "off_session",
         metadata: {
             bookingId: booking.id,
             customerId: booking.customer.id,
@@ -114,7 +131,20 @@ const createPaymentIntent = async (bookingId, userId) => {
         },
         description: `Therapy session with ${booking.therapist.fullName}`,
         capture_method: 'automatic',
-    });
+    };
+
+    // If paying with a saved card, confirm immediately
+    if (paymentMethodId) {
+        intentParams.payment_method = paymentMethodId;
+        intentParams.confirm = true;
+        intentParams.return_url = `${process.env.FRONTEND_URL}/customer/bookings/${bookingId}`;
+    } else {
+        // New card flow: save the card for future use
+        intentParams.setup_future_usage = "off_session";
+    }
+
+    // Create payment intent
+    const paymentIntent = await stripe.paymentIntents.create(intentParams);
 
     // Create payment record
     const payment = await prisma.payment.create({
@@ -129,6 +159,16 @@ const createPaymentIntent = async (bookingId, userId) => {
             status: "intent_created"
         },
     });
+
+    // If confirmed immediately and succeeded, the webhook will handle status transitions
+    if (paymentIntent.status === "succeeded") {
+        return { status: "succeeded", payment };
+    }
+
+    // If 3D Secure is required, return clientSecret for frontend to handle
+    if (paymentIntent.status === "requires_action") {
+        return { status: "requires_action", clientSecret: paymentIntent.client_secret, payment };
+    }
 
     return {
         clientSecret: paymentIntent.client_secret,
@@ -519,6 +559,98 @@ const createDashboardLink = async (therapistId, userId) => {
     };
 }
 
+/**
+ * List customer's saved payment methods from Stripe
+ */
+const getPaymentMethods = async (userId) => {
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customerProfile?.stripeCustomerId) {
+        return [];
+    }
+
+    const paymentMethods = await stripe.paymentMethods.list({
+        customer: customerProfile.stripeCustomerId,
+        type: "card",
+    });
+
+    // Get customer's default payment method
+    const customer = await stripe.customers.retrieve(customerProfile.stripeCustomerId);
+    const defaultPmId = customer.invoice_settings?.default_payment_method;
+
+    return paymentMethods.data.map((pm) => ({
+        id: pm.id,
+        brand: pm.card.brand,
+        last4: pm.card.last4,
+        expMonth: pm.card.exp_month,
+        expYear: pm.card.exp_year,
+        isDefault: pm.id === defaultPmId,
+    }));
+};
+
+/**
+ * Create a Stripe SetupIntent for saving a card without charging
+ */
+const createSetupIntent = async (userId) => {
+    const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
+
+    const setupIntent = await stripe.setupIntents.create({
+        customer: stripeCustomerId,
+        payment_method_types: ["card"],
+    });
+
+    return { clientSecret: setupIntent.client_secret };
+};
+
+/**
+ * Detach a saved payment method from the customer
+ */
+const removePaymentMethod = async (userId, paymentMethodId) => {
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customerProfile?.stripeCustomerId) {
+        throw new Error("No Stripe customer found");
+    }
+
+    // Verify the payment method belongs to this customer
+    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+    if (pm.customer !== customerProfile.stripeCustomerId) {
+        throw new Error("Payment method does not belong to this customer");
+    }
+
+    await stripe.paymentMethods.detach(paymentMethodId);
+    return { success: true };
+};
+
+/**
+ * Set a payment method as the customer's default
+ */
+const setDefaultPaymentMethod = async (userId, paymentMethodId) => {
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customerProfile?.stripeCustomerId) {
+        throw new Error("No Stripe customer found");
+    }
+
+    // Verify the payment method belongs to this customer
+    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+    if (pm.customer !== customerProfile.stripeCustomerId) {
+        throw new Error("Payment method does not belong to this customer");
+    }
+
+    await stripe.customers.update(customerProfile.stripeCustomerId, {
+        invoice_settings: { default_payment_method: paymentMethodId },
+    });
+
+    return { success: true };
+};
+
 export {
     createPaymentIntent,
     handlePaymentSuccess,
@@ -528,5 +660,10 @@ export {
     getTherapistPayoutHistory,
     createConnectAccountLink,
     getConnectAccountStatus,
-    createDashboardLink
+    createDashboardLink,
+    getOrCreateStripeCustomer,
+    getPaymentMethods,
+    createSetupIntent,
+    removePaymentMethod,
+    setDefaultPaymentMethod,
 }

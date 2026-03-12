@@ -641,3 +641,28 @@ export const subAdminWelcome = ({ user }) => ({
         ${muted('If you have any questions or need help getting started, contact your administrator.')}
     `),
 });
+
+// Payment reminder — sent when booking is "accepted" (unpaid) and session date approaches
+export const paymentReminder = ({ customer, therapist, booking, hoursUntilSession }) => {
+    const timeLabel = hoursUntilSession <= 24 ? 'tomorrow' : 'in 2 days';
+    const urgency = hoursUntilSession <= 24
+        ? 'Please complete payment as soon as possible to confirm your session.'
+        : 'Complete payment to confirm your upcoming session.';
+
+    return {
+        subject: `Payment needed — Your session is ${timeLabel}`,
+        html: layout(`
+            ${heading('Payment Reminder')}
+            ${text(`Hi ${customer.fullName},`)}
+            ${text(`Your session with ${therapist.fullName} is scheduled for <strong>${timeLabel}</strong> but payment has not been completed yet.`)}
+            ${hr()}
+            ${field('Therapist', therapist.fullName)}
+            ${field('Session Date', formatDate(booking.scheduledDate))}
+            ${field('Rate', formatCurrency(booking.rate))}
+            ${hr()}
+            ${text(urgency)}
+            ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Complete Payment')}
+            ${muted('Your payment will be held securely in escrow until you confirm session completion. If you need to reschedule, you can do so from the booking detail page.')}
+        `),
+    };
+};

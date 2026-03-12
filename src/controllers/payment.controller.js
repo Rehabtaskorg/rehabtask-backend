@@ -3,7 +3,11 @@ import {
     getTherapistPayoutHistory, createConnectAccountLink,
     getConnectAccountStatus,
     processRefund,
-    createDashboardLink
+    createDashboardLink,
+    getPaymentMethods,
+    createSetupIntent,
+    removePaymentMethod,
+    setDefaultPaymentMethod,
 } from "../services/payment.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -12,9 +16,9 @@ import { logAction } from "../services/audit.service.js";
  */
 const createPaymentIntentController = async (req, res, next) => {
     try {
-        const { bookingId } = req.body;
+        const { bookingId, paymentMethodId } = req.body;
         const userId = req.user.id;
-        const result = await createPaymentIntent(bookingId, userId);
+        const result = await createPaymentIntent(bookingId, userId, paymentMethodId || null);
 
         res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -129,6 +133,54 @@ const createDashboardLinkController = async (req, res, next) => {
     }
 }
 
+/**
+ * List saved payment methods
+ */
+const getPaymentMethodsController = async (req, res, next) => {
+    try {
+        const methods = await getPaymentMethods(req.user.id);
+        res.status(200).json({ success: true, data: methods });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Create SetupIntent for saving a card
+ */
+const createSetupIntentController = async (req, res, next) => {
+    try {
+        const result = await createSetupIntent(req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Remove a saved payment method
+ */
+const removePaymentMethodController = async (req, res, next) => {
+    try {
+        const result = await removePaymentMethod(req.user.id, req.params.paymentMethodId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Set default payment method
+ */
+const setDefaultPaymentMethodController = async (req, res, next) => {
+    try {
+        const result = await setDefaultPaymentMethod(req.user.id, req.params.paymentMethodId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     createPaymentIntentController,
     getPaymentHistoryController,
@@ -136,5 +188,9 @@ export {
     createConnectAccountController,
     getConnectAccountStatusController,
     processRefundController,
-    createDashboardLinkController
+    createDashboardLinkController,
+    getPaymentMethodsController,
+    createSetupIntentController,
+    removePaymentMethodController,
+    setDefaultPaymentMethodController,
 };

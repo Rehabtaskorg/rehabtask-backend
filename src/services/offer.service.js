@@ -211,7 +211,7 @@ export const acceptOffer = async (offerId, customerId) => {
             scheduledDate: offer.proposedDate,
             rate: offer.rate,
             sessionType: offer.sessionType,
-            status: "pending",
+            status: "accepted",
             patientId: offer.request.patientId || null,
         },
         include: {

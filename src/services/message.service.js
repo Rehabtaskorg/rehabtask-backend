@@ -470,7 +470,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
                 stitched.push({
                     id: `system:booking-created:${msg.booking.id}`,
                     type: "system",
-                    content: "Offer accepted — Booking created",
+                    content: "Offer accepted — Booking created. Payment pending.",
                     createdAt: booking?.createdAt ?? msg.createdAt,
                     _context: "booking",
                 });
@@ -500,7 +500,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
                 stitched.push({
                     id: `system:booking-created:${offer.booking.id}`,
                     type: "system",
-                    content: "Offer accepted — Booking created",
+                    content: "Offer accepted — Booking created. Payment pending.",
                     createdAt: offer.booking.createdAt,
                     _context: "booking",
                 });
@@ -580,7 +580,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
             stitched.push({
                 id: `system:booking-created:${contextId}`,
                 type: "system",
-                content: "Offer accepted — Booking created",
+                content: "Offer accepted — Booking created. Payment pending.",
                 createdAt: contextData.createdAt,
                 _context: "booking",
             });

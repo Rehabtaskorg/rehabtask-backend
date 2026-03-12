@@ -263,9 +263,10 @@ model Booking {
   rate            Decimal          @db.Decimal(10, 2)
   sessionType     String           @map("session_type") @db.VarChar(20)
   status          BookingStatus
-  proposedNewDate DateTime?        @map("proposed_new_date") @db.Timestamptz(3)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposedNewDate         DateTime?  @map("proposed_new_date") @db.Timestamptz(3)
+  paymentReminderSentAt   DateTime?  @map("payment_reminder_sent_at") @db.Timestamptz(3)
+  createdAt               DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer        CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   offer           Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
   patient         Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
@@ -616,6 +617,7 @@ enum OfferStatus {
 
 enum BookingStatus {
   pending
+  accepted
   confirmed
   in_progress
   completed

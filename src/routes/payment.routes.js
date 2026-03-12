@@ -3,9 +3,14 @@ import {
     createConnectAccountController, createPaymentIntentController,
     getConnectAccountStatusController, getPaymentHistoryController,
     getPayoutHistoryController, processRefundController,
-    createDashboardLinkController
+    createDashboardLinkController,
+    getPaymentMethodsController,
+    createSetupIntentController,
+    removePaymentMethodController,
+    setDefaultPaymentMethodController,
 } from "../controllers/payment.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
+import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
@@ -13,6 +18,12 @@ const router = express.Router();
 router.post("/create-intent", authenticate, authorize(["customer"]), createPaymentIntentController);
 router.get("/history", authenticate, authorize(["customer"]), getPaymentHistoryController);
 router.post("/refund", authenticate, authorize(["customer"]), processRefundController);
+
+// Saved payment methods
+router.get("/methods", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, getPaymentMethodsController);
+router.post("/methods/setup", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createSetupIntentController);
+router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, removePaymentMethodController);
+router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, setDefaultPaymentMethodController);
 
 // Therapist routes
 router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);

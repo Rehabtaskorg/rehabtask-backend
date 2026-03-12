@@ -117,8 +117,8 @@ export const rescheduleBooking = async (bookingId, therapistId, newDate) => {
         throw err;
     }
 
-    if (!["pending", "confirmed"].includes(booking.status)) {
-        throw new Error("Cannot reschedule a booking that is not pending or confirmed");
+    if (!["pending", "accepted", "confirmed"].includes(booking.status)) {
+        throw new Error("Cannot reschedule a booking that is not pending, accepted, or confirmed");
     }
 
     const proposedDate = new Date(newDate);
@@ -179,7 +179,9 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
     }
 
     // Determine which status to restore based on whether payment was made
-    const restoreStatus = booking.session ? "confirmed" : "pending";
+    // If session exists, payment was made → restore to "confirmed"
+    // If no session, booking is pre-payment → restore to "accepted" (new flow) or "pending" (legacy)
+    const restoreStatus = booking.session ? "confirmed" : "accepted";
     const newScheduledDate = booking.proposedNewDate;
 
     if (accept) {
