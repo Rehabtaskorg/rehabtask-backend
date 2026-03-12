@@ -57,11 +57,16 @@ export const emailVerificationRateLimiter = createRateLimiter({
 
 /**
  * General API rate limiter
+ * Sized for a polling-based messaging app:
+ * ~25 req/min from messages page alone × 15 min = 375 baseline
  */
 export const apiRateLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // 200 requests per 15 minutes,
+    max: 600, // 600 requests per 15 minutes
     message: "Too many requests, please try again later",
+    keyGenerator: (req) => {
+        return req.user?.id || ipKeyGenerator(req);
+    },
     validate: { xForwardedForHeader: true }
 });
 
@@ -92,4 +97,17 @@ export const messagingRateLimiter = createRateLimiter({
         return req.user?.id || ipKeyGenerator(req);
     }
 
+})
+
+/**
+ * Conversations polling rate limiter
+ * Frontend polls every 10s (6/min) + invalidations after sends + page loads
+ */
+export const conversationsRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: "Too many requests. Please wait a moment.",
+    keyGenerator: (req) => {
+        return req.user?.id || ipKeyGenerator(req);
+    }
 })

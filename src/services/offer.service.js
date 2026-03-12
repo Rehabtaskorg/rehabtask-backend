@@ -141,12 +141,11 @@ export const getOfferById = async (offerId, userId) => {
         throw err;
     }
 
-    // Access check: the authenticated user must be the therapist who created this offer
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { userId }
-    });
+    // Access check: the authenticated user must be either the therapist or the customer on this offer
+    const isTherapist = offer.therapist.userId === userId;
+    const isCustomer = offer.request.customer.userId === userId;
 
-    if (!therapist || offer.therapistId !== therapist.id) {
+    if (!isTherapist && !isCustomer) {
         const err = new Error("Forbidden");
         err.statusCode = 403;
         throw err;

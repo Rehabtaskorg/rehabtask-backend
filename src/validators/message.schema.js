@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+const contextTypeEnum = z.enum(["offer", "booking", "direct"], {
+    errorMap: () => ({ message: "Invalid context type" }),
+});
+
 export const sendMessageSchema = z.object({
     content: z
         .string()
@@ -7,19 +11,24 @@ export const sendMessageSchema = z.object({
         .min(1, "Message cannot be empty")
         .max(2000, "Message too long (max 2000 characters)"),
 
-    contextType: z.enum(["offer", "booking"], {
-        errorMap: () => ({ message: "Invalid context type" }),
-    }),
+    contextType: contextTypeEnum,
 
     contextId: z
         .uuid("Invalid context ID format"),
 });
 
+export const sendDirectMessageSchema = z.object({
+    recipientId: z.uuid("Invalid recipient ID format"),
+    content: z
+        .string()
+        .trim()
+        .min(1, "Message cannot be empty")
+        .max(2000, "Message too long (max 2000 characters)"),
+});
+
 export const getMessagesSchema = {
     params: z.object({
-        contextType: z.enum(["offer", "booking"], {
-            errorMap: () => ({ message: "Invalid context type" }),
-        }),
+        contextType: contextTypeEnum,
         contextId: z.uuid("Invalid context ID format"),
     }),
     query: z.object({
@@ -36,9 +45,14 @@ export const getMessagesSchema = {
 
 export const markAsReadSchema = {
     params: z.object({
-        contextType: z.enum(["offer", "booking"], {
-            errorMap: () => ({ message: "Invalid context type" }),
-        }),
+        contextType: contextTypeEnum,
+        contextId: z.uuid("Invalid context ID format"),
+    }),
+};
+
+export const getContextSchema = {
+    params: z.object({
+        contextType: contextTypeEnum,
         contextId: z.uuid("Invalid context ID format"),
     }),
 };

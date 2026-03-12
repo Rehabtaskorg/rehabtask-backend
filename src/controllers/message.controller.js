@@ -1,4 +1,4 @@
-import { createMessage, getConversationMessages, markMessagesAsRead, getUnreadCount, getUserConversations, getConversationContext } from "../services/message.service.js";
+import { createMessage, createDirectMessage, getConversationMessages, markMessagesAsRead, getUnreadCount, getUserConversations, getConversationContext } from "../services/message.service.js";
 
 /**
  * Send a new message
@@ -13,6 +13,30 @@ export const sendMessageController = async (req, res, next) => {
             content,
             contextType,
             contextId
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Message sent successfully",
+            data: { message },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Send a direct message (get-or-create conversation + send)
+ */
+export const sendDirectMessageController = async (req, res, next) => {
+    try {
+        const { recipientId, content } = req.body;
+        const senderId = req.user.id;
+
+        const message = await createDirectMessage({
+            senderId,
+            recipientId,
+            content,
         });
 
         res.status(201).json({
@@ -44,11 +68,16 @@ export const getConversationMessagesController = async (req, res, next) => {
             }
         );
 
+        // For stitched threads (direct/booking), _totalRealMessages tracks actual message count
+        // excluding system dividers. For standard queries, use array length.
+        const realCount = messages._totalRealMessages ?? messages.length;
+        const parsedLimit = limit ? parseInt(limit) : 50;
+
         res.status(200).json({
             success: true,
             data: {
                 messages,
-                hasMore: messages.length === parseInt(limit || 50),
+                hasMore: realCount >= parsedLimit,
             },
         });
     } catch (error) {

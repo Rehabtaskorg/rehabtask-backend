@@ -273,6 +273,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
 
     return {
         id: therapist.id,
+        userId: therapist.userId,
         fullName: therapist.fullName,
         phone: therapist.phone,
         specialization: therapist.specialization,

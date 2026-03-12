@@ -1,6 +1,7 @@
 import express from "express";
 import {
     sendMessageController,
+    sendDirectMessageController,
     getConversationMessagesController,
     markAsReadController,
     getUnreadCountController,
@@ -11,10 +12,12 @@ import { authenticate } from "../middleware/auth.js"
 import { validate, validateMultiple } from "../middleware/validate.js"
 import {
     sendMessageSchema,
+    sendDirectMessageSchema,
     markAsReadSchema,
-    getMessagesSchema
+    getMessagesSchema,
+    getContextSchema
 } from "../validators/message.schema.js";
-import { messagingRateLimiter } from "../middleware/rateLimiter.js";
+import { messagingRateLimiter, conversationsRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
@@ -31,10 +34,21 @@ router.post(
     sendMessageController
 );
 /**
+ * POST /api/messages/direct
+ * Send a direct message (creates conversation if needed)
+ */
+router.post(
+    "/direct",
+    messagingRateLimiter,
+    validate(sendDirectMessageSchema, "body"),
+    sendDirectMessageController
+);
+
+/**
  * GET /api/messages/conversations
  * Get all conversations for current user
  */
-router.get("/conversations", getConversationsController);
+router.get("/conversations", conversationsRateLimiter, getConversationsController);
 
 /**
  * GET /api/messages/unread-count
@@ -47,7 +61,11 @@ router.get("/unread-count", getUnreadCountController);
  * Get the other party's info for a conversation (used when no messages exist yet)
  * IMPORTANT: must be registered BEFORE /:contextType/:contextId to avoid being swallowed
  */
-router.get("/:contextType/:contextId/context", getConversationContextController);
+router.get(
+    "/:contextType/:contextId/context",
+    validateMultiple(getContextSchema),
+    getConversationContextController
+);
 
 /**
  * GET /api/messages/:contextType/:contextId

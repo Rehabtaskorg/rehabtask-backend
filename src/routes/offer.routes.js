@@ -15,7 +15,7 @@ const router = express.Router();
 // Therapist routes
 router.post("/", authenticate, authorize(["therapist"]), createOfferController);
 router.get("/my-offers", authenticate, authorize(["therapist"]), getTherapistOffersController);
-router.get("/:offerId", authenticate, authorize(["therapist"]), getOfferByIdController)
+router.get("/:offerId", authenticate, authorize(["therapist", "customer"]), getOfferByIdController)
 router.put("/:offerId/revise", authenticate, authorize(["therapist"]), reviseOfferController);
 router.post("/:offerId/withdraw", authenticate, authorize(["therapist"]), withdrawOfferController);
 

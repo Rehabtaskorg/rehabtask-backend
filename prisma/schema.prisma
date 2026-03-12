@@ -31,6 +31,8 @@ model User {
   subAdminProfile   SubAdminProfile?   @relation("SubAdminUser")
   createdSubAdmins  SubAdminProfile[]  @relation("SubAdminCreatedBy")
   commissionConfigs CommissionConfig[]
+  directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
+  directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
 
   @@index([email])
   @@index([role, isActive])
@@ -328,15 +330,33 @@ model Payment {
   @@map("payments")
 }
 
+model DirectConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  user1Id   String   @map("user1_id") @db.Uuid
+  user2Id   String   @map("user2_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user1    User      @relation("DirectConvUser1", fields: [user1Id], references: [id])
+  user2    User      @relation("DirectConvUser2", fields: [user2Id], references: [id])
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@map("direct_conversations")
+}
+
 model Message {
   id          String @id @default(uuid()) @db.Uuid
   senderId    String @map("sender_id") @db.Uuid
   recipientId String @map("recipient_id") @db.Uuid
 
-  requestId String? @map("request_id") @db.Uuid
-  offerId   String? @map("offer_id") @db.Uuid
-  bookingId String? @map("booking_id") @db.Uuid
-  patientId String? @map("patient_id") @db.Uuid
+  requestId      String? @map("request_id") @db.Uuid
+  offerId        String? @map("offer_id") @db.Uuid
+  bookingId      String? @map("booking_id") @db.Uuid
+  patientId      String? @map("patient_id") @db.Uuid
+  conversationId String? @map("conversation_id") @db.Uuid
 
   content String    @db.Text
   readAt  DateTime? @map("read_at") @db.Timestamptz(3)
@@ -344,12 +364,13 @@ model Message {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  sender    User            @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User            @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
-  request   TherapyRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  offer     Offer?          @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  booking   Booking?        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  patient   Patient?        @relation("PatientMessages", fields: [patientId], references: [id])
+  sender       User                @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient    User                @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  request      TherapyRequest?     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  offer        Offer?              @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  booking      Booking?            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  patient      Patient?            @relation("PatientMessages", fields: [patientId], references: [id])
+  conversation DirectConversation? @relation(fields: [conversationId], references: [id])
 
   @@index([senderId, recipientId, createdAt])
   @@index([recipientId, readAt])
@@ -357,6 +378,7 @@ model Message {
   @@index([offerId, createdAt])
   @@index([bookingId, createdAt])
   @@index([patientId, createdAt])
+  @@index([conversationId, createdAt])
   @@map("messages")
 }
 
