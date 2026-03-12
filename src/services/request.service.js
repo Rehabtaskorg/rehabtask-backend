@@ -137,7 +137,11 @@ export const getAvailableRequests = async (therapistId) => {
     // Fetch all open requests
     const requests = await prisma.therapyRequest.findMany({
         where: { status: { in: ["created", "offers_received"] } },
-        include: { customer: true, offers: { where: { therapistId } } },
+        include: {
+            customer: true,
+            patient: { select: { id: true, fullName: true, email: true, phone: true } },
+            offers: { where: { therapistId } },
+        },
         orderBy: { createdAt: "desc" }
     });
 
