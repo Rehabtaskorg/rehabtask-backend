@@ -5,6 +5,24 @@ import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 
 /**
+ * Generate the booking divider text based on the booking's current status.
+ */
+const getBookingDividerText = (bookingStatus) => {
+    switch (bookingStatus) {
+        case "confirmed":
+        case "in_progress":
+            return "Offer accepted — Session confirmed.";
+        case "completed":
+            return "Offer accepted — Session completed.";
+        case "cancelled":
+            return "Offer accepted — Booking cancelled.";
+        default:
+            // accepted or pending — payment not yet made
+            return "Offer accepted — Booking created. Awaiting payment.";
+    }
+};
+
+/**
  * Supabase Realtime broadcast helper
  * Channels must be subscribed before sending — .send() without subscribing silently fails.
  * This helper subscribes, waits for confirmation, sends, then cleans up.
@@ -400,7 +418,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
                     { therapist: { userId }, request: { customer: { userId: otherUserId } } },
                 ],
             },
-            select: { id: true, createdAt: true, status: true, booking: { select: { id: true, createdAt: true } } },
+            select: { id: true, createdAt: true, status: true, booking: { select: { id: true, createdAt: true, status: true } } },
             orderBy: { createdAt: "asc" },
         });
 
@@ -470,7 +488,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
                 stitched.push({
                     id: `system:booking-created:${msg.booking.id}`,
                     type: "system",
-                    content: "Offer accepted — Booking created. Payment pending.",
+                    content: getBookingDividerText(booking?.status),
                     createdAt: booking?.createdAt ?? msg.createdAt,
                     _context: "booking",
                 });
@@ -500,7 +518,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
                 stitched.push({
                     id: `system:booking-created:${offer.booking.id}`,
                     type: "system",
-                    content: "Offer accepted — Booking created. Payment pending.",
+                    content: getBookingDividerText(offer.booking.status),
                     createdAt: offer.booking.createdAt,
                     _context: "booking",
                 });
@@ -580,7 +598,7 @@ export const getConversationMessages = async (userId, contextType, contextId, op
             stitched.push({
                 id: `system:booking-created:${contextId}`,
                 type: "system",
-                content: "Offer accepted — Booking created. Payment pending.",
+                content: getBookingDividerText(contextData.status),
                 createdAt: contextData.createdAt,
                 _context: "booking",
             });
