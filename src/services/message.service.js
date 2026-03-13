@@ -622,7 +622,41 @@ export const getConversationMessages = async (userId, contextType, contextId, op
         include: { sender: senderSelect },
     });
 
-    return order === "desc" ? messages.reverse() : messages;
+    const sorted = order === "desc" ? messages.reverse() : messages;
+
+    // For offer context, inject the offer widget divider at the top
+    if (contextType === "offer") {
+        const offer = await prisma.offer.findUnique({
+            where: { id: contextId },
+            select: { id: true, createdAt: true, booking: { select: { id: true, createdAt: true, status: true } } },
+        });
+        if (offer) {
+            const dividers = [
+                {
+                    id: `system:offer-sent:${offer.id}`,
+                    type: "system",
+                    content: "Offer sent",
+                    createdAt: offer.createdAt,
+                    _context: "offer",
+                },
+            ];
+            if (offer.booking) {
+                dividers.push({
+                    id: `system:booking-created:${offer.booking.id}`,
+                    type: "system",
+                    content: getBookingDividerText(offer.booking.status),
+                    createdAt: offer.booking.createdAt,
+                    _context: "booking",
+                });
+            }
+            // Insert dividers at the correct chronological positions
+            const all = [...dividers, ...sorted];
+            all.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            return all;
+        }
+    }
+
+    return sorted;
 };
 
 /**
