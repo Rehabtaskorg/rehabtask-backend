@@ -97,16 +97,39 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         where: { bookingId: booking.id }
     });
 
+    let stalePaymentToReuse = null;
+
     if (existingPayment) {
-        // return existing payment intent
+        // Retrieve the Stripe PaymentIntent to check its current status
         const paymentIntent = await stripe.paymentIntents.retrieve(
             existingPayment.stripePaymentIntentId
         );
 
-        return {
-            clientSecret: paymentIntent.client_secret,
-            payment: existingPayment
-        };
+        switch (paymentIntent.status) {
+            case "succeeded":
+                return { status: "succeeded", payment: existingPayment };
+
+            case "processing":
+                return { status: "processing", payment: existingPayment };
+
+            case "requires_action":
+                return { status: "requires_action", clientSecret: paymentIntent.client_secret, payment: existingPayment };
+
+            case "canceled":
+            case "requires_payment_method":
+                // Intent is expired, failed, or canceled — reuse the record with a new intent
+                if (paymentIntent.status !== "canceled") {
+                    await stripe.paymentIntents.cancel(paymentIntent.id).catch((err) => {
+                        logger.warn("[PaymentService] Failed to cancel stale intent", { intentId: paymentIntent.id, error: err.message });
+                    });
+                }
+                stalePaymentToReuse = existingPayment;
+                break;
+
+            default:
+                // e.g. requires_confirmation — return clientSecret as normal
+                return { clientSecret: paymentIntent.client_secret, payment: existingPayment };
+        }
     }
 
     // Get or create Stripe customer
@@ -146,19 +169,52 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
     // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create(intentParams);
 
-    // Create payment record
-    const payment = await prisma.payment.create({
-        data: {
-            bookingId: booking.id,
-            customerId: booking.customer.id,
-            therapistId: booking.therapist.id,
-            stripePaymentIntentId: paymentIntent.id,
-            amount,
-            platformFee,
-            therapistPayout,
-            status: "intent_created"
-        },
-    });
+    // Create or update payment record
+    let payment;
+    if (stalePaymentToReuse) {
+        // Reuse the existing record — preserves audit trail and avoids unique constraint issues
+        payment = await prisma.payment.update({
+            where: { id: stalePaymentToReuse.id },
+            data: {
+                stripePaymentIntentId: paymentIntent.id,
+                amount,
+                platformFee,
+                therapistPayout,
+                status: "intent_created",
+            },
+        });
+    } else {
+        try {
+            payment = await prisma.payment.create({
+                data: {
+                    bookingId: booking.id,
+                    customerId: booking.customer.id,
+                    therapistId: booking.therapist.id,
+                    stripePaymentIntentId: paymentIntent.id,
+                    amount,
+                    platformFee,
+                    therapistPayout,
+                    status: "intent_created"
+                },
+            });
+        } catch (err) {
+            // Unique constraint violation on bookingId — a concurrent request already created the payment
+            if (err.code === "P2002") {
+                // Cancel the Stripe intent we just created since it's now orphaned
+                await stripe.paymentIntents.cancel(paymentIntent.id).catch((cancelErr) => {
+                    logger.warn("[PaymentService] Failed to cancel orphaned intent after P2002", { intentId: paymentIntent.id, error: cancelErr.message });
+                });
+                // Return the payment that the other request created
+                const existingPayment = await prisma.payment.findUnique({ where: { bookingId: booking.id } });
+                if (existingPayment) {
+                    const existingIntent = await stripe.paymentIntents.retrieve(existingPayment.stripePaymentIntentId);
+                    return { clientSecret: existingIntent.client_secret, payment: existingPayment };
+                }
+                throw new Error("Payment creation conflict — please retry");
+            }
+            throw err;
+        }
+    }
 
     // If confirmed immediately and succeeded, the webhook will handle status transitions
     if (paymentIntent.status === "succeeded") {
@@ -191,25 +247,35 @@ const handlePaymentSuccess = async (paymentIntentId) => {
         throw new Error("Payment not found");
     }
 
-    await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-            status: "escrowed",
-            escrowedAt: new Date(),
-        },
-    });
+    // Idempotency: if already processed, return early to prevent duplicate side effects
+    if (payment.status === "escrowed") {
+        return payment;
+    }
 
-    await prisma.booking.update({
-        where: { id: payment.bookingId },
-        data: { status: "confirmed" },
-    });
+    await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+                status: "escrowed",
+                escrowedAt: new Date(),
+            },
+        });
 
-    await prisma.session.create({
-        data: {
-            bookingId: payment.bookingId,
-            scheduledDate: payment.booking.scheduledDate,
-            status: "scheduled",
-        },
+        await tx.booking.update({
+            where: { id: payment.bookingId },
+            data: { status: "confirmed" },
+        });
+
+        // Upsert session to avoid duplicates from webhook retries
+        await tx.session.upsert({
+            where: { bookingId: payment.bookingId },
+            update: {},
+            create: {
+                bookingId: payment.bookingId,
+                scheduledDate: payment.booking.scheduledDate,
+                status: "scheduled",
+            },
+        });
     });
 
     // Send payment confirmation email to customer
@@ -259,6 +325,11 @@ const releasePayment = async (sessionId) => {
 
     const payment = session.booking.payment;
 
+    // Idempotent: if already released, return as-is (safe retry after partial failure)
+    if (payment && payment.status === "released") {
+        return payment;
+    }
+
     if (!payment || payment.status !== "escrowed") {
         throw new Error("Payment not in escrowed state");
     }
@@ -285,8 +356,29 @@ const releasePayment = async (sessionId) => {
             idempotencyKey: `release-${payment.id}`,
         });
     } catch (stripeError) {
-        console.error(`Transfer creation failed:`, stripeError.message);
+        logger.error(`Transfer creation failed:`, stripeError.message);
         throw new Error(`Failed to transfer payment: ${stripeError.message}`)
+    }
+
+    // Immediately persist the transfer ID so we never lose track of it.
+    // This prevents double-pay: if the full status update below fails,
+    // processRefund will still see stripeTransferId and block the refund.
+    try {
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { stripeTransferId: transfer.id },
+        });
+    } catch (saveTransferIdError) {
+        // CRITICAL: Transfer was created in Stripe but we cannot record it.
+        // Log everything needed for manual reconciliation.
+        logger.error(`CRITICAL: Stripe transfer ${transfer.id} succeeded but failed to save stripeTransferId to payment ${payment.id}. Manual reconciliation required.`, {
+            transferId: transfer.id,
+            paymentId: payment.id,
+            sessionId: session.id,
+            bookingId: session.bookingId,
+            error: saveTransferIdError.message,
+        });
+        throw new Error("Transfer succeeded but database update failed. Support has been notified.");
     }
 
     try {
@@ -294,7 +386,6 @@ const releasePayment = async (sessionId) => {
             where: { id: payment.id },
             data: {
                 status: "released",
-                stripeTransferId: transfer.id,
                 releasedAt: new Date(),
             },
         });
@@ -316,8 +407,12 @@ const releasePayment = async (sessionId) => {
 
         return updatedPayment;
     } catch (dbError) {
-        console.error(`Critical: Transfer ${transfer.id} succeed but DB update failed`);
-        throw new Error("Transfer succeeded but database update failed");
+        logger.error(`CRITICAL: Transfer ${transfer.id} succeeded but status update to 'released' failed for payment ${payment.id}. stripeTransferId was saved. Manual status update required.`, {
+            transferId: transfer.id,
+            paymentId: payment.id,
+            error: dbError.message,
+        });
+        throw new Error("Transfer succeeded but database update failed. Support has been notified.");
     }
 }
 
@@ -357,37 +452,55 @@ const processRefund = async (bookingId, userId, reason) => {
         );
     }
 
-    const refund = await stripe.refunds.create({
-        payment_intent: payment.stripePaymentIntentId,
-        reason: "requested_by_customer",
-        metadata: {
-            bookingId: booking.id,
-            refundReason: reason,
-        },
-    });
+    let refund = null;
 
-    await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-            status: "refunded",
-            refundedAt: new Date(),
-        },
-    });
-
-    await prisma.booking.update({
-        where: { id: bookingId },
-        data: { status: "cancelled" }
-    });
-
-    if (booking.session) {
-        await prisma.session.update({
-            where: { id: booking.session.id },
-            data: {
-                status: "cancelled",
-                cancellationReason: reason,
+    if (payment.status === "intent_created") {
+        // Payment was never charged — cancel the PaymentIntent instead of refunding
+        try {
+            await stripe.paymentIntents.cancel(payment.stripePaymentIntentId, {
+                cancellation_reason: "requested_by_customer",
+            });
+        } catch (cancelErr) {
+            logger.warn("[PaymentService] Failed to cancel intent during refund", {
+                intentId: payment.stripePaymentIntentId,
+                error: cancelErr.message,
+            });
+        }
+    } else {
+        // Payment was charged (escrowed) — issue a Stripe refund
+        refund = await stripe.refunds.create({
+            payment_intent: payment.stripePaymentIntentId,
+            reason: "requested_by_customer",
+            metadata: {
+                bookingId: booking.id,
+                refundReason: reason,
             },
         });
     }
+
+    await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+            where: { id: payment.id },
+            data: payment.status === "intent_created"
+                ? { status: "failed" }
+                : { status: "refunded", refundedAt: new Date() },
+        });
+
+        await tx.booking.update({
+            where: { id: bookingId },
+            data: { status: "cancelled" },
+        });
+
+        if (booking.session) {
+            await tx.session.update({
+                where: { id: booking.session.id },
+                data: {
+                    status: "cancelled",
+                    cancellationReason: reason,
+                },
+            });
+        }
+    });
 
     return { refund, paymentId: payment.id, amount: parseFloat(payment.amount) };
 }
@@ -580,7 +693,39 @@ const getPaymentMethods = async (userId) => {
     const customer = await stripe.customers.retrieve(customerProfile.stripeCustomerId);
     const defaultPmId = customer.invoice_settings?.default_payment_method;
 
-    return paymentMethods.data.map((pm) => ({
+    // Deduplicate by card fingerprint — keep the default or most recent, detach extras
+    const seen = new Map(); // fingerprint -> paymentMethod
+    const duplicates = [];
+
+    for (const pm of paymentMethods.data) {
+        const fingerprint = pm.card.fingerprint;
+        const existing = seen.get(fingerprint);
+
+        if (!existing) {
+            seen.set(fingerprint, pm);
+        } else {
+            // Keep the default one, or the newer one
+            const existingIsDefault = existing.id === defaultPmId;
+            const currentIsDefault = pm.id === defaultPmId;
+
+            if (currentIsDefault || (!existingIsDefault && pm.created > existing.created)) {
+                duplicates.push(existing.id);
+                seen.set(fingerprint, pm);
+            } else {
+                duplicates.push(pm.id);
+            }
+        }
+    }
+
+    // Detach duplicates in background (don't block the response)
+    if (duplicates.length > 0) {
+        Promise.allSettled(
+            duplicates.map((id) => stripe.paymentMethods.detach(id))
+        ).catch(() => {});
+    }
+
+    const unique = Array.from(seen.values());
+    return unique.map((pm) => ({
         id: pm.id,
         brand: pm.card.brand,
         last4: pm.card.last4,

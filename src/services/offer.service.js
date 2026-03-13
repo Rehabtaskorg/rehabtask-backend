@@ -30,7 +30,7 @@ export const createOffer = async (therapistId, data) => {
         where: {
             requestId,
             therapistId,
-            status: { in: ["pending", "accepted"] },
+            status: { in: ["pending", "accepted", "change_requested"] },
         },
     });
 
@@ -158,6 +158,7 @@ export const getOfferById = async (offerId, userId) => {
  * Accept offer (customer)
  */
 export const acceptOffer = async (offerId, customerId) => {
+    // Validate offer exists and belongs to this customer before starting transaction
     const offer = await prisma.offer.findUnique({
         where: { id: offerId },
         include: {
@@ -174,60 +175,90 @@ export const acceptOffer = async (offerId, customerId) => {
     }
 
     if (offer.status !== "pending") {
-        throw new Error("Offer is not longer available");
+        throw new Error("Offer is no longer available");
     }
 
     if (new Date() > new Date(offer.expiresAt)) {
         throw new Error("Offer has expired");
     }
 
-    // Update offer to accepted
-    const updatedOffer = await prisma.offer.update({
-        where: { id: offerId },
-        data: { status: "accepted" }
-    });
+    // All DB mutations in a single transaction to prevent partial state corruption
+    const { updatedOffer, booking } = await prisma.$transaction(async (tx) => {
+        // Update offer to accepted — the status check above + transaction isolation
+        // prevents the TOCTOU race with the expiry cron
+        const txUpdatedOffer = await tx.offer.update({
+            where: { id: offerId },
+            data: { status: "accepted" }
+        });
 
-    // Reject other offers for this request
-    await prisma.offer.updateMany({
-        where: {
-            requestId: offer.requestId,
-            id: { not: offerId },
-            status: "pending",
-        },
-        data: { status: "rejected" },
-    });
-
-    // Update request status
-    await prisma.therapyRequest.update({
-        where: { id: offer.requestId },
-        data: { status: "offers_accepted" }
-    });
-
-    const booking = await prisma.booking.create({
-        data: {
-            offerId,
-            customerId,
-            therapistId: offer.therapistId,
-            scheduledDate: offer.proposedDate,
-            rate: offer.rate,
-            sessionType: offer.sessionType,
-            status: "accepted",
-            patientId: offer.request.patientId || null,
-        },
-        include: {
-            therapist: {
-                include: { user: { select: { id: true, email: true } } }
+        // Reject other offers for this request
+        await tx.offer.updateMany({
+            where: {
+                requestId: offer.requestId,
+                id: { not: offerId },
+                status: "pending",
             },
-            customer: {
-                include: { user: { select: { id: true, email: true } } }
-            },
-            offer: {
-                include: { request: true },
-            },
-        },
+            data: { status: "rejected" },
+        });
+
+        // Update request status
+        await tx.therapyRequest.update({
+            where: { id: offer.requestId },
+            data: { status: "offers_accepted" }
+        });
+
+        let txBooking;
+        try {
+            txBooking = await tx.booking.create({
+                data: {
+                    offerId,
+                    customerId,
+                    therapistId: offer.therapistId,
+                    scheduledDate: offer.proposedDate,
+                    rate: offer.rate,
+                    sessionType: offer.sessionType,
+                    status: "accepted",
+                    patientId: offer.request.patientId || null,
+                },
+                include: {
+                    therapist: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                    customer: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                    offer: {
+                        include: { request: true },
+                    },
+                },
+            });
+        } catch (err) {
+            if (err.code === "P2002") {
+                txBooking = await tx.booking.findFirst({
+                    where: { offerId: offer.id },
+                    include: {
+                        therapist: {
+                            include: { user: { select: { id: true, email: true } } }
+                        },
+                        customer: {
+                            include: { user: { select: { id: true, email: true } } }
+                        },
+                        offer: {
+                            include: { request: true },
+                        },
+                    },
+                });
+                if (txBooking) {
+                    return { updatedOffer: txUpdatedOffer, booking: txBooking };
+                }
+            }
+            throw err;
+        }
+
+        return { updatedOffer: txUpdatedOffer, booking: txBooking };
     });
 
-    // Notify therapist that their offer was accepted (fire-and forget)
+    // Email notifications stay outside the transaction (side effects)
     sendOfferAccepted({
         therapist: booking.therapist,
         customer: booking.customer,
@@ -361,6 +392,8 @@ export const declineOffer = async (offerId, customerId) => {
     }).catch((err) => {
         logger.error('[OfferService] Offer declined notification failed', { error: err.message });
     });
+
+    return updatedOffer;
 }
 
 /**

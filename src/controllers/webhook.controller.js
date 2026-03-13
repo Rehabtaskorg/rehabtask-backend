@@ -118,14 +118,16 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
         });
 
         if (payment) {
-            await prisma.payment.update({
-                where: { id: payment.id },
-                data: { status: "failed" },
-            });
+            await prisma.$transaction(async (tx) => {
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: { status: "failed" },
+                });
 
-            await prisma.booking.update({
-                where: { id: payment.bookingId },
-                data: { status: "cancelled" },
+                await tx.booking.update({
+                    where: { id: payment.bookingId },
+                    data: { status: "cancelled" },
+                });
             });
 
             // Notify customer about failed payment (email)
@@ -166,14 +168,16 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
         });
 
         if (payment && payment.status === "intent_created") {
-            await prisma.payment.update({
-                where: { id: payment.id },
-                data: { status: "failed" },
-            });
+            await prisma.$transaction(async (tx) => {
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: { status: "failed" },
+                });
 
-            await prisma.booking.update({
-                where: { id: payment.bookingId },
-                data: { status: "cancelled" },
+                await tx.booking.update({
+                    where: { id: payment.bookingId },
+                    data: { status: "cancelled" },
+                });
             });
         }
     } catch (error) {
@@ -276,11 +280,21 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
         // NORMAL CASE: Payment already marked as released
         if (payment.status === "escrowed" && !payment.stripeTransferId) {
             try {
-                // Verify transfer is valid and not reversed
+                // Verify transfer is valid, not reversed, and not failed
                 const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
 
                 if (verifiedTransfer.reversed) {
                     console.log(`Transfer was reversed, not updating payment`);
+                    return;
+                }
+
+                // Only mark as released if the transfer is in a successful state.
+                // Stripe transfer object doesn't have a top-level "status" field for
+                // platform transfers, but `reversed` is checked above. For connected
+                // account payouts, failures surface via payout.failed webhook instead.
+                // Guard against zero-amount or negative-amount edge cases.
+                if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) {
+                    console.log(`Transfer has invalid amount (${verifiedTransfer.amount}), skipping recovery`);
                     return;
                 }
 

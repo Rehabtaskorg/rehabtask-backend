@@ -11,19 +11,21 @@ import {
 } from "../controllers/payment.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
+import { validate } from "../middleware/validate.js";
+import { createPaymentIntentSchema, refundSchema, paymentMethodIdParamSchema } from "../validators/payment.schema.js";
 
 const router = express.Router();
 
 // Customer routes
-router.post("/create-intent", authenticate, authorize(["customer"]), createPaymentIntentController);
+router.post("/create-intent", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
 router.get("/history", authenticate, authorize(["customer"]), getPaymentHistoryController);
-router.post("/refund", authenticate, authorize(["customer"]), processRefundController);
+router.post("/refund", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(refundSchema), processRefundController);
 
 // Saved payment methods
-router.get("/methods", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, getPaymentMethodsController);
+router.get("/methods", authenticate, authorize(["customer"]), getPaymentMethodsController);
 router.post("/methods/setup", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createSetupIntentController);
-router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, removePaymentMethodController);
-router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, setDefaultPaymentMethodController);
+router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
+router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
 
 // Therapist routes
 router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);

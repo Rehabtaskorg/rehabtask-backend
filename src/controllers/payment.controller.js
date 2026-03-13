@@ -108,7 +108,7 @@ const processRefundController = async (req, res, next) => {
                 bookingId,
                 amount,
                 reason,
-                stripeRefundId: refund.id,
+                stripeRefundId: refund?.id || null,
             },
         });
 

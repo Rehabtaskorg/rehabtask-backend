@@ -18,7 +18,7 @@ export const runSessionReminders = async () => {
                 gte: windowStart,
                 lte: windowEnd,
             },
-            status: { in: ["confirmed", "pending"] },
+            status: { in: ["confirmed", "pending", "accepted"] },
         },
         include: {
             customer: {
@@ -33,11 +33,13 @@ export const runSessionReminders = async () => {
     logger.info(`[SessionReminders] Found ${bookings.length} upcoming sessions`);
 
     const results = await Promise.allSettled(
-        bookings.map((booking) =>
-            sendSessionReminder({ customer: booking.customer, therapist: booking.therapist, booking })
-        )
+        bookings.flatMap((booking) => [
+            sendSessionReminder({ recipient: booking.customer, booking, role: "customer" }),
+            sendSessionReminder({ recipient: booking.therapist, booking, role: "therapist" }),
+        ])
     );
 
     const failed = results.filter((r) => r.status === "rejected").length;
-    logger.info(`[SessionReminders] Reminders sent: ${bookings.length - failed}, failed: ${failed}`);
+    const sent = results.length - failed;
+    logger.info(`[SessionReminders] Reminders sent: ${sent}, failed: ${failed}`);
 }

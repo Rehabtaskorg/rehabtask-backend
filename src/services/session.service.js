@@ -42,18 +42,21 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         throw new Error("Session must be in scheduled status");
     }
 
-    const updatedSession = await prisma.session.update({
-        where: { id: sessionId },
-        data: {
-            status: "completed_by_therapist",
-            completedAt: new Date(),
-        },
-    });
+    const updatedSession = await prisma.$transaction(async (tx) => {
+        const updated = await tx.session.update({
+            where: { id: sessionId },
+            data: {
+                status: "completed_by_therapist",
+                completedAt: new Date(),
+            },
+        });
 
-    // Update booking status
-    await prisma.booking.update({
-        where: { id: session.bookingId },
-        data: { status: "in_progress" },
+        await tx.booking.update({
+            where: { id: session.bookingId },
+            data: { status: "in_progress" },
+        });
+
+        return updated;
     });
 
     // Notify customer to confirm session (fire-and-forget)
@@ -95,22 +98,31 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         throw new Error("Unauthorized");
     }
 
+    // Idempotent: if already confirmed by customer, return as-is.
+    // This allows safe retries when releasePayment fails after confirm.
+    if (session.status === "confirmed_by_customer") {
+        return session;
+    }
+
     if (session.status !== "completed_by_therapist") {
         throw new Error("Therapist must complete session first");
     }
 
-    const updatedSession = await prisma.session.update({
-        where: { id: sessionId },
-        data: {
-            status: "confirmed_by_customer",
-            confirmedByCustomerAt: new Date(),
-        },
-    });
+    const updatedSession = await prisma.$transaction(async (tx) => {
+        const updated = await tx.session.update({
+            where: { id: sessionId },
+            data: {
+                status: "confirmed_by_customer",
+                confirmedByCustomerAt: new Date(),
+            },
+        });
 
-    // Update booking to completed
-    await prisma.booking.update({
-        where: { id: session.bookingId },
-        data: { status: "completed" },
+        await tx.booking.update({
+            where: { id: session.bookingId },
+            data: { status: "completed" },
+        });
+
+        return updated;
     });
 
     // Notify therapist that customer confirmed (fire-and-forget)
@@ -157,17 +169,21 @@ export const cancelSession = async (sessionId, userId, reason) => {
         throw new Error("Cannot cancel confirmed session");
     }
 
-    const updatedSession = await prisma.session.update({
-        where: { id: sessionId },
-        data: {
-            status: "cancelled",
-            cancellationReason: reason
-        },
-    });
+    const updatedSession = await prisma.$transaction(async (tx) => {
+        const updated = await tx.session.update({
+            where: { id: sessionId },
+            data: {
+                status: "cancelled",
+                cancellationReason: reason,
+            },
+        });
 
-    await prisma.booking.update({
-        where: { id: session.bookingId },
-        data: { status: "cancelled" },
+        await tx.booking.update({
+            where: { id: session.bookingId },
+            data: { status: "cancelled" },
+        });
+
+        return updated;
     });
 
     return updatedSession;
