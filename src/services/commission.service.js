@@ -2,28 +2,18 @@ import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 
-// PRD default rates: Basic 20%, Pro 12%, Elite 7%
-export const TIER_DEFAULT_RATES = {
-    basic: 0.2,
-    pro: 0.12,
-    elite: 0.07,
-};
-
-const VALID_TIERS = ["basic", "pro", "elite"];
+// Default platform commission rate (10%)
+const DEFAULT_COMMISSION_RATE = 0.1;
 
 /**
- * Get the current active commission rate for a specific therapist plan tier.
- * Returns the most recent CommissionConfig where tier matches and effectiveFrom <= now.
- * Falls back to TIER_DEFAULT_RATES if no DB record is seeded yet.
+ * Get the current global commission rate.
+ * Returns the most recent CommissionConfig where tier IS NULL and effectiveFrom <= now.
+ * Falls back to DEFAULT_COMMISSION_RATE if no DB record exists.
  */
-export const getCommissionRateByTier = async (tier) => {
-    if (!VALID_TIERS.includes(tier)) {
-        throw new BadRequestError(`Invalid tier '${tier}'. Must be one of: ${VALID_TIERS.join(", ")}`);
-    }
-
+export const getCommissionRate = async () => {
     const config = await prisma.commissionConfig.findFirst({
         where: {
-            tier,
+            tier: null,
             effectiveFrom: { lte: new Date() },
         },
         orderBy: { effectiveFrom: "desc" },
@@ -33,59 +23,45 @@ export const getCommissionRateByTier = async (tier) => {
         return parseFloat(config.rate);
     }
 
-    // Safe fallback: use PRD defaults if DB has no record for this tier yet
-    logger.warn("[CommissionService] No DB rate found for tier, using PRD default", { tier });
-    return TIER_DEFAULT_RATES[tier];
+    logger.warn("[CommissionService] No DB rate found, using default", { default: DEFAULT_COMMISSION_RATE });
+    return DEFAULT_COMMISSION_RATE;
 };
 
 /**
- * Get current commission rates for all three tiers.
- * Returns an array of { tier, rate, effectiveFrom, createdByAdmin } objects.
- * Tiers with no DB record use the PRD default rate.
+ * Get the current commission rate with metadata (for admin UI).
  */
-export const getAllTierRates = async () => {
-    const now = new Date();
-
-    const records = await Promise.all(
-        VALID_TIERS.map((tier) =>
-            prisma.commissionConfig.findFirst({
-                where: { tier, effectiveFrom: { lte: now } },
-                orderBy: { effectiveFrom: "desc" },
-                include: {
-                    createdByAdmin: { select: { id: true, email: true } },
-                },
-            })
-        )
-    );
-
-    return VALID_TIERS.map((tier, i) => {
-        const rec = records[i];
-        const createdByAdmin = rec ? (/** @type {any} */ (rec)).createdByAdmin ?? null : null;
-        return {
-            tier,
-            rate: rec ? parseFloat(rec.rate) : TIER_DEFAULT_RATES[tier],
-            effectiveFrom: rec?.effectiveFrom ?? null,
-            createdByAdmin,
-            isDefault: !rec,
-        };
+export const getCommissionRateWithMeta = async () => {
+    const config = await prisma.commissionConfig.findFirst({
+        where: {
+            tier: null,
+            effectiveFrom: { lte: new Date() },
+        },
+        orderBy: { effectiveFrom: "desc" },
+        include: {
+            createdByAdmin: { select: { id: true, email: true } },
+        },
     });
+
+    return {
+        rate: config ? parseFloat(config.rate) : DEFAULT_COMMISSION_RATE,
+        effectiveFrom: config?.effectiveFrom ?? null,
+        createdByAdmin: config ? /** @type {any} */ (config).createdByAdmin ?? null : null,
+        isDefault: !config,
+    };
 };
 
 /**
- * Set a commission rate for a specific plan tier.
+ * Set the global commission rate.
  * Creates a new history record (append-only audit trail).
+ * Uses tier = null to indicate global (not tier-specific).
  *
- * @param {string} tier - "basic" | "pro" | "elite"
- * @param {number} rate - Decimal 0–1 (e.g. 0.12 = 12%)
+ * @param {number} rate - Decimal 0-1 (e.g. 0.10 = 10%)
  * @param {string} adminId - Admin user ID performing the update
  * @param {string|Date|undefined} effectiveFrom - ISO date or Date; defaults to now
  */
-export const setTierCommissionRate = async (tier, rate, adminId, effectiveFrom) => {
-    if (!VALID_TIERS.includes(tier)) {
-        throw new BadRequestError(`Invalid tier '${tier}'. Must be one of: ${VALID_TIERS.join(", ")}`);
-    }
+export const setCommissionRate = async (rate, adminId, effectiveFrom) => {
     if (rate < 0 || rate > 1) {
-        throw new BadRequestError("Commission rate must be between 0 and 1 (e.g. 0.12 for 12%)");
+        throw new BadRequestError("Commission rate must be between 0 and 1 (e.g. 0.10 for 10%)");
     }
 
     const effective = effectiveFrom ? new Date(effectiveFrom) : new Date();
@@ -95,7 +71,7 @@ export const setTierCommissionRate = async (tier, rate, adminId, effectiveFrom) 
 
     const config = await prisma.commissionConfig.create({
         data: {
-            tier,
+            tier: null,
             rate,
             effectiveFrom: effective,
             createdByAdminId: adminId,
@@ -105,8 +81,7 @@ export const setTierCommissionRate = async (tier, rate, adminId, effectiveFrom) 
         },
     });
 
-    logger.info("[CommissionService] Tier commission rate updated", {
-        tier,
+    logger.info("[CommissionService] Global commission rate updated", {
         rate,
         effectiveFrom: effective,
         byAdmin: adminId,
@@ -116,12 +91,10 @@ export const setTierCommissionRate = async (tier, rate, adminId, effectiveFrom) 
 };
 
 /**
- * Paginated commission rate history, optionally filtered by tier.
- *
- * @param {{ tier?: string, page?: number, limit?: number }} params
+ * Paginated commission rate history.
  */
-export const getCommissionHistory = async ({ tier, page = 1, limit = 20 } = {}) => {
-    const where = tier ? { tier } : {};
+export const getCommissionHistory = async ({ page = 1, limit = 20 } = {}) => {
+    const where = { tier: null };
 
     const [configs, total] = await Promise.all([
         prisma.commissionConfig.findMany({
@@ -140,18 +113,4 @@ export const getCommissionHistory = async ({ tier, page = 1, limit = 20 } = {}) 
         configs,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
-};
-
-/**
- * @deprecated — kept for backward compatibility.
- * Returns the most recent global (null-tier) CommissionConfig record, if any.
- */
-export const getCurrentCommissionRate = async () => {
-    return prisma.commissionConfig.findFirst({
-        where: { tier: null, effectiveFrom: { lte: new Date() } },
-        orderBy: { effectiveFrom: "desc" },
-        include: {
-            createdByAdmin: { select: { id: true, email: true } },
-        },
-    });
 };

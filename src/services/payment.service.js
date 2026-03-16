@@ -2,7 +2,7 @@ import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
 import { sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { getCommissionRateByTier } from "./commission.service.js";
+import { getCommissionRate } from "./commission.service.js";
 
 /**
  * Get or create a Stripe customer for a given user.
@@ -57,7 +57,7 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         where: { id: bookingId },
         include: {
             customer: { include: { user: true } },
-            therapist: { select: { id: true, userId: true, fullName: true, stripeAccountId: true, planTier: true, user: true } },
+            therapist: { select: { id: true, userId: true, fullName: true, stripeAccountId: true, user: true } },
             offer: true,
         },
     });
@@ -76,14 +76,13 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
 
     const amount = parseFloat(booking.rate);
 
-    // Resolve commission rate from therapist's subscription tier.
+    // Resolve global commission rate
     let feePercent;
     try {
-        feePercent = await getCommissionRateByTier(booking.therapist.planTier ?? "basic");
+        feePercent = await getCommissionRate();
     } catch (err) {
         logger.error("[PaymentService] Commission rate lookup failed, using env fallback", {
             therapistId: booking.therapist.id,
-            planTier: booking.therapist.planTier,
             error: err.message,
         });
         feePercent = stripeConfig.platformFeePercentage / 100;

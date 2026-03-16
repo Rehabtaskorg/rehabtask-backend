@@ -1,8 +1,8 @@
 import {
-    getAllTierRates,
-    setTierCommissionRate,
+    getCommissionRate,
+    getCommissionRateWithMeta,
+    setCommissionRate,
     getCommissionHistory,
-    getCommissionRateByTier,
 } from "../services/commission.service.js";
 import { logAction } from "../services/audit.service.js";
 import { sendCommissionRateChanged } from "../services/email.service.js";
@@ -10,12 +10,12 @@ import { prisma } from "../config/prisma.js";
 
 /**
  * GET /admin/commission/rates
- * Returns the current effective rate for each plan tier (basic, pro, elite).
+ * Returns the current global commission rate.
  */
-const getAllTierRatesController = async (_req, res, next) => {
+const getCommissionRateController = async (_req, res, next) => {
     try {
-        const rates = await getAllTierRates();
-        res.status(200).json({ success: true, data: rates });
+        const rate = await getCommissionRateWithMeta();
+        res.status(200).json({ success: true, data: rate });
     } catch (error) {
         next(error);
     }
@@ -23,36 +23,35 @@ const getAllTierRatesController = async (_req, res, next) => {
 
 /**
  * POST /admin/commission/rates
- * Set a new commission rate for a specific plan tier.
- * Body: { tier: "basic"|"pro"|"elite", rate: 0–1, effectiveFrom?: ISO date }
+ * Set a new global commission rate.
+ * Body: { rate: 0-1, effectiveFrom?: ISO date }
  */
-const setTierCommissionRateController = async (req, res, next) => {
+const setCommissionRateController = async (req, res, next) => {
     try {
         const adminId = req.user.id;
-        const { tier, rate, effectiveFrom } = req.body;
+        const { rate, effectiveFrom } = req.body;
 
-        // Capture current rate before the update so the email can show before/after
-        const oldRate = await getCommissionRateByTier(tier);
+        const oldRate = await getCommissionRate();
 
-        const config = await setTierCommissionRate(tier, rate, adminId, effectiveFrom);
+        const config = await setCommissionRate(rate, adminId, effectiveFrom);
 
         await logAction({
             actorId: adminId,
             action: "commission.rate_updated",
             entityType: "commission",
-            entityId: config.id,  // UUID of the new CommissionConfig record
-            changes: { tier, rate: { from: oldRate, to: rate }, effectiveFrom: config.effectiveFrom },
+            entityId: config.id,
+            changes: { rate: { from: oldRate, to: rate }, effectiveFrom: config.effectiveFrom },
         });
 
-        // Notify all approved therapists on this tier — fire-and-forget
+        // Notify all approved therapists — fire-and-forget
         prisma.therapistProfile.findMany({
-            where: { planTier: tier, approvalStatus: "approved" },
+            where: { approvalStatus: "approved" },
             select: { fullName: true, user: { select: { email: true } } },
         }).then((therapists) => {
             if (therapists.length > 0) {
                 sendCommissionRateChanged({
                     therapists,
-                    tier,
+                    tier: null,
                     oldRate,
                     newRate: rate,
                     effectiveFrom: effectiveFrom ? new Date(effectiveFrom) : new Date(),
@@ -68,14 +67,12 @@ const setTierCommissionRateController = async (req, res, next) => {
 
 /**
  * GET /admin/commission/history
- * Paginated rate-change history, optionally filtered by tier.
- * Query: { tier?, page?, limit? }
+ * Paginated rate-change history.
  */
 const getCommissionHistoryController = async (req, res, next) => {
     try {
-        const { tier, page, limit } = req.query;
+        const { page, limit } = req.query;
         const result = await getCommissionHistory({
-            tier: tier || undefined,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
         });
@@ -86,7 +83,7 @@ const getCommissionHistoryController = async (req, res, next) => {
 };
 
 export {
-    getAllTierRatesController,
-    setTierCommissionRateController,
+    getCommissionRateController,
+    setCommissionRateController,
     getCommissionHistoryController,
 };

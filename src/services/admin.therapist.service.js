@@ -5,7 +5,6 @@ import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
 export const listTherapists = async ({
     approvalStatus,
-    planTier,
     search,
     page = 1,
     limit = 20,
@@ -13,7 +12,6 @@ export const listTherapists = async ({
     const where = { therapistProfile: { isNot: null } };
     const profileFilter = {};
     if (approvalStatus) profileFilter.approvalStatus = approvalStatus;
-    if (planTier) profileFilter.planTier = planTier;
     if (Object.keys(profileFilter).length) where.therapistProfile = profileFilter;
     if (search) {
         where.OR = [
@@ -181,68 +179,3 @@ export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
     };
 }
 
-const VALID_PLAN_TIERS = ["basic", "pro", "elite"];
-
-/**
- * Update the subscription plan tier for a therapist.
- * This controls the commission rate applied to their future payments.
- *
- * @param {string} therapistUserId - The therapist's User.id
- * @param {string} planTier - "basic" | "pro" | "elite"
- * @param {string} adminId - Admin performing the update (for audit)
- */
-export const adminUpdateTherapistPlan = async (therapistUserId, planTier, adminId) => {
-    if (!VALID_PLAN_TIERS.includes(planTier)) {
-        throw new BadRequestError(`Invalid plan tier '${planTier}'. Must be one of: ${VALID_PLAN_TIERS.join(", ")}`);
-    }
-
-    const profile = await prisma.therapistProfile.findUnique({
-        where: { userId: therapistUserId },
-        select: { id: true, planTier: true },
-    });
-    if (!profile) throw new NotFoundError("Therapist not found");
-
-    const previousTier = profile.planTier;
-
-    const updated = await prisma.therapistProfile.update({
-        where: { userId: therapistUserId },
-        data: { planTier },
-        select: {
-            id: true,
-            fullName: true,
-            planTier: true,
-            userId: true,
-        },
-    });
-
-    logger.info("[AdminTherapistService] Therapist plan tier updated", {
-        therapistUserId,
-        from: previousTier,
-        to: planTier,
-        byAdmin: adminId,
-    });
-
-    return { updated, previousTier };
-};
-
-export const getTherapistPlanStats = async () => {
-    const approvedFilter = { approvalStatus: "approved" };
-    const [total, byTier, approved] = await Promise.all([
-        prisma.therapistProfile.count(),
-        prisma.therapistProfile.groupBy({
-            by: ["planTier"],
-            where: approvedFilter,
-            _count: { id: true },
-        }),
-        prisma.therapistProfile.count({ where: approvedFilter }),
-    ]);
-
-    return {
-        total,
-        approved,
-        byTier: byTier.reduce((acc, row) => {
-            acc[row.planTier] = row._count.id;
-            return acc;
-        }, {}),
-    };
-};

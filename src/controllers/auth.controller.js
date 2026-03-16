@@ -431,7 +431,7 @@ export const resendVerificationEmailController = async (req, res, next) => {
  */
 export const refreshTokenController = async (req, res, next) => {
     try {
-        const refreshToken = req.cookies.sb_refresh_token || req.body.refreshToken;
+        const refreshToken = req.cookies?.sb_refresh_token || req.body?.refreshToken;
 
         if (!refreshToken) {
             return res.status(401).json({

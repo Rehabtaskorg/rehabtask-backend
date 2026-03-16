@@ -50,7 +50,6 @@ export const updateUserSchema = z.object({
 
 export const listTherapistsQuerySchema = z.object({
     approvalStatus: z.enum(["review", "pending", "approved", "rejected"]).optional(),
-    planTier: z.enum(["basic", "pro", "elite"]).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()
@@ -288,7 +287,6 @@ export const updateSubAdminPermissionsSchema = z.object({
 
 // ── Commission Management ────────────────────────────────────────────────────
 
-/** @deprecated — replaced by setTierCommissionRateSchema */
 export const setCommissionRateSchema = z.object({
     rate: z
         .number()
@@ -297,19 +295,7 @@ export const setCommissionRateSchema = z.object({
     effectiveFrom: z.string().datetime().optional(),
 });
 
-export const setTierCommissionRateSchema = z.object({
-    tier: z.enum(["basic", "pro", "elite"], {
-        error: "Tier must be one of: basic, pro, elite",
-    }),
-    rate: z
-        .number({ error: "Rate must be a number" })
-        .min(0, "Rate must be at least 0")
-        .max(1, "Rate must not exceed 1 (100%)"),
-    effectiveFrom: z.iso.datetime().optional(),
-});
-
 export const adminListCommissionHistoryQuerySchema = z.object({
-    tier: z.enum(["basic", "pro", "elite"]).optional(),
     page: z
         .string()
         .transform(Number)
@@ -322,14 +308,6 @@ export const adminListCommissionHistoryQuerySchema = z.object({
         .pipe(z.number().int().min(1).max(100))
         .optional()
         .default("20"),
-});
-
-// ── Therapist Plan Management ─────────────────────────────────────────────────
-
-export const updateTherapistPlanSchema = z.object({
-    planTier: z.enum(["basic", "pro", "elite"], {
-        error: "Plan tier must be one of: basic, pro, elite",
-    }),
 });
 
 // ── Notification Broadcast ────────────────────────────────────────────────────

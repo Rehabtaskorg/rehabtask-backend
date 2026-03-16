@@ -3,6 +3,7 @@ import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { stripe } from "../config/stripe.js";
 import { sendSubscriptionCancelledByAdmin } from "./email.service.js";
+import { PLAN_CONFIG } from "../config/subscriptionPlans.js";
 
 // Valid sortBy fields for subscriptions
 const VALID_SORT_FIELDS = ["createdAt", "currentPeriodStart", "currentPeriodEnd"];
@@ -108,16 +109,42 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
         throw new ConflictError("Subscription is already cancelled");
     }
 
-    if (subscription.stripeSubscriptionId) {
-        try {
-            await stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
-        } catch (stripeError) {
-            logger.error("[AdminSubscriptionService] Stripe cancel failed", {
-                subscriptionId,
-                error: stripeError.message,
-            });
-            throw stripeError;
-        }
+    // Trial/free subscriptions: downgrade to free (no Stripe involved)
+    if (!subscription.stripeSubscriptionId) {
+        const updated = await prisma.subscription.update({
+            where: { id: subscriptionId },
+            data: {
+                status: "active",
+                planType: "free",
+                therapistLimit: PLAN_CONFIG.free.therapistLimit,
+                requestLimit: PLAN_CONFIG.free.requestLimit,
+                trialEndsAt: null,
+                gracePeriodEndsAt: null,
+            },
+        });
+
+        sendSubscriptionCancelledByAdmin({
+            customer: subscription.customer,
+            subscription: updated,
+        }).catch(() => {});
+
+        logger.info("[AdminSubscriptionService] Trial/free subscription ended by admin", {
+            subscriptionId,
+            byAdmin: adminId,
+            previousStatus: subscription.status,
+        });
+        return updated;
+    }
+
+    // Paid subscriptions: cancel in Stripe first
+    try {
+        await stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+    } catch (stripeError) {
+        logger.error("[AdminSubscriptionService] Stripe cancel failed", {
+            subscriptionId,
+            error: stripeError.message,
+        });
+        throw stripeError;
     }
 
     const updated = await prisma.subscription.update({
@@ -138,16 +165,18 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
 };
 
 export const adminGetSubscriptionStats = async () => {
-    const [total, active, inactive, cancelled, pastDue, byPlan] = await Promise.all([
+    const [total, active, inactive, cancelled, pastDue, trialing, gracePeriod, byPlan] = await Promise.all([
         prisma.subscription.count(),
         prisma.subscription.count({ where: { status: "active" } }),
         prisma.subscription.count({ where: { status: "inactive" } }),
         prisma.subscription.count({ where: { status: "cancelled" } }),
         prisma.subscription.count({ where: { status: "past_due" } }),
+        prisma.subscription.count({ where: { status: "trialing" } }),
+        prisma.subscription.count({ where: { status: "grace_period" } }),
         prisma.subscription.groupBy({
             by: ["planType"],
             _count: { id: true },
-            where: { status: "active" },
+            where: { status: { in: ["active", "trialing", "grace_period"] } },
         }),
     ]);
 
@@ -157,6 +186,8 @@ export const adminGetSubscriptionStats = async () => {
         inactive,
         cancelled,
         pastDue,
+        trialing,
+        gracePeriod,
         byPlan: byPlan.reduce((acc, row) => {
             acc[row.planType] = row._count.id;
             return acc;
