@@ -108,11 +108,22 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
     const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
     const priceId = getStripePriceId(planType, billingInterval);
 
+    // Check if customer already has saved payment methods — if so, let Stripe
+    // pre-fill instead of creating a duplicate
+    const existingMethods = await stripe.paymentMethods.list({
+        customer: stripeCustomerId,
+        type: "card",
+        limit: 1,
+    });
+
     const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
         metadata: { customerId, planType, billingInterval },
+        ...(existingMethods.data.length > 0 && {
+            payment_method_collection: "if_required",
+        }),
         success_url: `${process.env.FRONTEND_URL}/customer/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL}/customer/subscription`,
     });
