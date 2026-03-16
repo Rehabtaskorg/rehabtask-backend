@@ -1,5 +1,6 @@
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
+import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
@@ -75,6 +76,27 @@ const handleStripeWebhook = async (req, res) => {
             case "payout.failed":
                 // ALert therapist: "Update your bank details"
                 await handlePayoutFailed(event.data.object, event.account);
+                break;
+
+            // Subscription Flow
+            case "checkout.session.completed":
+                await subscriptionService.handleCheckoutCompleted(event.data.object);
+                break;
+
+            case "invoice.paid":
+                await subscriptionService.handleInvoicePaid(event.data.object);
+                break;
+
+            case "invoice.payment_failed":
+                await subscriptionService.handleInvoicePaymentFailed(event.data.object);
+                break;
+
+            case "customer.subscription.deleted":
+                await subscriptionService.handleSubscriptionDeleted(event.data.object);
+                break;
+
+            case "customer.subscription.updated":
+                await subscriptionService.handleSubscriptionUpdated(event.data.object);
                 break;
 
             default:

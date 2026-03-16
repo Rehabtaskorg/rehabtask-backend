@@ -2,6 +2,7 @@ import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
 import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
+import { createTrialSubscription } from "./subscription.service.js";
 
 /**
  * Register a new customer
@@ -65,7 +66,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         // Create user record in our DB using admin access
         const user = await withAdminAccess(async (db) => {
-            return db.user.create({
+            const createdUser = await db.user.create({
                 data: {
                     id: authUser.id,
                     email: normalizedEmail,
@@ -86,8 +87,14 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                             connect: { id: existingPatient.id }
                         }
                     })
-                }
+                },
+                include: { customerProfile: true },
             });
+
+            // Create 30-day trial subscription with Standard limits
+            await createTrialSubscription(createdUser.customerProfile.id, db);
+
+            return createdUser;
         });
 
         let message = "Registration successful. Please check your email to verify your account."

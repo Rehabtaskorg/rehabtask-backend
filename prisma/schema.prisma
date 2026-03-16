@@ -181,11 +181,17 @@ model Subscription {
   id                   String             @id @default(uuid()) @db.Uuid
   customerId           String             @map("customer_id") @db.Uuid
   stripeSubscriptionId String?            @unique @map("stripe_subscription_id") @db.VarChar(255)
-  stripeCustomerId     String             @map("stripe_customer_id") @db.VarChar(255)
+  stripeCustomerId     String?            @map("stripe_customer_id") @db.VarChar(255)
+  stripePriceId        String?            @map("stripe_price_id") @db.VarChar(255)
   planType             SubscriptionPlan   @map("plan_type")
+  billingInterval      BillingInterval?   @map("billing_interval")
   status               SubscriptionStatus
   currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
   currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  trialEndsAt          DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  gracePeriodEndsAt    DateTime?          @map("grace_period_ends_at") @db.Timestamptz(3)
+  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason         String?            @map("cancel_reason")
   therapistLimit       Int                @map("therapist_limit")
   requestLimit         Int                @map("request_limit")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -195,6 +201,8 @@ model Subscription {
   @@index([customerId, status])
   @@index([stripeSubscriptionId])
   @@index([status, currentPeriodEnd])
+  @@index([status, trialEndsAt])
+  @@index([status, gracePeriodEndsAt])
   @@map("subscriptions")
 }
 
@@ -596,6 +604,13 @@ enum SubscriptionStatus {
   inactive
   cancelled
   past_due
+  trialing
+  grace_period
+}
+
+enum BillingInterval {
+  monthly
+  annual
 }
 
 enum RequestStatus {
