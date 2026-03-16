@@ -37,6 +37,11 @@ import {
     commissionRateChanged,
     paymentReleasedToCustomer,
     paymentReminder,
+    trialExpiringSoon,
+    trialExpired,
+    subscriptionPaymentFailed,
+    subscriptionCancelledByCustomer,
+    subscriptionDowngraded,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -259,4 +264,24 @@ export const sendCommissionRateChanged = async ({ therapists, tier, oldRate, new
 
 export const sendPaymentReminder = async ({ customer, therapist, booking, hoursUntilSession }) => {
     return dispatch(customer.user.email, paymentReminder, { customer, therapist, booking, hoursUntilSession });
+};
+
+export const sendTrialExpiringSoon = async ({ customer, daysLeft }) => {
+    return dispatch(customer.user.email, trialExpiringSoon, { customer, daysLeft });
+};
+
+export const sendTrialExpired = async ({ customer }) => {
+    return dispatch(customer.user.email, trialExpired, { customer });
+};
+
+export const sendSubscriptionPaymentFailed = async ({ customer }) => {
+    return dispatch(customer.user.email, subscriptionPaymentFailed, { customer });
+};
+
+export const sendSubscriptionCancelledByCustomer = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionCancelledByCustomer, { customer, subscription });
+};
+
+export const sendSubscriptionDowngraded = async ({ customer }) => {
+    return dispatch(customer.user.email, subscriptionDowngraded, { customer });
 };

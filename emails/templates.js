@@ -666,3 +666,82 @@ export const paymentReminder = ({ customer, therapist, booking, hoursUntilSessio
         `),
     };
 };
+
+// ─── Subscription Lifecycle Templates ────────────────────────────────────────
+
+// Trial expiring soon (sent 3 days before trial ends)
+export const trialExpiringSoon = ({ customer, daysLeft }) => ({
+    subject: `Your RehabTask trial ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
+    html: layout(`
+        ${heading('Your Free Trial Is Ending Soon')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`Your 30-day free trial of RehabTask Standard features ends in <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong>.`)}
+        ${text('After your trial, your account will revert to the Free plan with limited requests and therapist connections.')}
+        ${text('Upgrade now to keep your current features and avoid any disruption:')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'View Plans & Upgrade')}
+        ${muted('If you have any questions about our plans, please contact our support team.')}
+    `),
+});
+
+// Trial expired (sent when trial auto-downgrades to free)
+export const trialExpired = ({ customer }) => ({
+    subject: 'Your RehabTask trial has ended',
+    html: layout(`
+        ${heading('Trial Period Ended')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your 30-day free trial has ended. Your account has been moved to the <strong>Free plan</strong>.')}
+        ${hr()}
+        ${field('Current Plan', 'Free')}
+        ${field('Request Limit', '5 active requests')}
+        ${field('Therapist Limit', '5 active therapists')}
+        ${hr()}
+        ${text('You can upgrade at any time to unlock more features:')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Upgrade Your Plan')}
+    `),
+});
+
+// Subscription payment failed
+export const subscriptionPaymentFailed = ({ customer }) => ({
+    subject: 'Action needed — your RehabTask payment failed',
+    html: layout(`
+        ${heading('Payment Failed')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('We were unable to process your subscription payment. Please update your payment method to keep your plan active.')}
+        ${text('If the issue isn\'t resolved, your plan will be downgraded after a short grace period.')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Update Payment Method')}
+        ${muted('If you believe this is an error, please check with your bank or contact our support team.')}
+    `),
+});
+
+// Subscription cancelled by customer
+export const subscriptionCancelledByCustomer = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask subscription has been cancelled',
+    html: layout(`
+        ${heading('Subscription Cancelled')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription cancellation has been confirmed. You\'ll continue to have access to your current plan until the end of your billing period.')}
+        ${hr()}
+        ${field('Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Access Until', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${text('After this date, your account will move to the Free plan. You can resubscribe at any time.')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Resubscribe')}
+    `),
+});
+
+// Subscription downgraded (after grace period expires)
+export const subscriptionDowngraded = ({ customer }) => ({
+    subject: 'Your RehabTask plan has been downgraded',
+    html: layout(`
+        ${heading('Plan Downgraded to Free')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription grace period has ended and your account has been moved to the <strong>Free plan</strong>.')}
+        ${hr()}
+        ${field('Current Plan', 'Free')}
+        ${field('Request Limit', '5 active requests')}
+        ${field('Therapist Limit', '5 active therapists')}
+        ${hr()}
+        ${text('Your existing requests and bookings are not affected, but you won\'t be able to create new ones beyond the Free plan limits.')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Upgrade Your Plan')}
+    `),
+});

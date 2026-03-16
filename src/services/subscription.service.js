@@ -1,7 +1,12 @@
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { getOrCreateStripeCustomer } from "./payment.service.js";
-import { sendSubscriptionActivated } from "./email.service.js";
+import {
+    sendSubscriptionActivated,
+    sendSubscriptionPaymentFailed,
+    sendTrialExpired,
+    sendSubscriptionDowngraded,
+} from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId } from "../config/subscriptionPlans.js";
 
@@ -271,6 +276,17 @@ export const handleInvoicePaymentFailed = async (invoice) => {
         data: { status: "past_due" },
     });
 
+    // Send payment failed email
+    try {
+        const customer = await prisma.customerProfile.findUnique({
+            where: { id: subscription.customerId },
+            include: { user: true },
+        });
+        if (customer) await sendSubscriptionPaymentFailed({ customer });
+    } catch (err) {
+        logger.error("[Subscription] Failed to send payment failed email", { error: err.message });
+    }
+
     logger.warn("[Subscription] Invoice payment failed", { subscriptionId: subscription.id });
 };
 
@@ -373,6 +389,12 @@ export const runTrialExpiry = async () => {
             },
         });
 
+        try {
+            await sendTrialExpired({ customer: sub.customer });
+        } catch (err) {
+            logger.error("[Subscription] Failed to send trial expired email", { error: err.message });
+        }
+
         logger.info("[Subscription] Trial expired — downgraded to free", {
             subscriptionId: sub.id,
             customerId: sub.customerId,
@@ -412,6 +434,12 @@ export const runGracePeriodExpiry = async () => {
                 requestLimit,
             },
         });
+
+        try {
+            await sendSubscriptionDowngraded({ customer: sub.customer });
+        } catch (err) {
+            logger.error("[Subscription] Failed to send downgrade email", { error: err.message });
+        }
 
         logger.info("[Subscription] Grace period expired — downgraded to free", {
             subscriptionId: sub.id,
