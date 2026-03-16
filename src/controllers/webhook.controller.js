@@ -121,6 +121,13 @@ const handleStripeWebhook = async (req, res) => {
  */
 const handlePaymentIntentSucceeded = async (paymentIntent) => {
     try {
+        // Skip subscription-related PaymentIntents — they don't have booking Payment records.
+        // Subscription payments are handled by invoice.paid and checkout.session.completed.
+        if (paymentIntent.invoice) {
+            console.log(`Skipping subscription payment_intent.succeeded (invoice: ${paymentIntent.invoice})`);
+            return;
+        }
+
         await paymentService.handlePaymentSuccess(paymentIntent.id);
         console.log("Payment moved to escrow successfully");
     } catch (error) {

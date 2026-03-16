@@ -11,6 +11,18 @@ import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId } from "../config/subscriptionPlans.js";
 
 /**
+ * Safely parse a Stripe timestamp to a Date.
+ * Handles both Unix timestamps (seconds) and ISO 8601 strings.
+ */
+const parseStripeDate = (value) => {
+    if (!value) return null;
+    if (typeof value === "number") return new Date(value * 1000);
+    if (typeof value === "string") return new Date(value);
+    if (value instanceof Date) return value;
+    return null;
+};
+
+/**
  * Create a trial subscription for a new customer.
  * Called during registration inside the withAdminAccess transaction.
  */
@@ -169,6 +181,13 @@ export const handleCheckoutCompleted = async (session) => {
     const stripeSubscriptionId = session.subscription;
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
 
+    console.log("[Subscription] Stripe subscription data", {
+        current_period_start: stripeSubscription.current_period_start,
+        current_period_end: stripeSubscription.current_period_end,
+        type_start: typeof stripeSubscription.current_period_start,
+        type_end: typeof stripeSubscription.current_period_end,
+    });
+
     const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
 
     // Find existing subscription for this customer (trial or free) and upgrade
@@ -184,8 +203,8 @@ export const handleCheckoutCompleted = async (session) => {
         planType,
         billingInterval: billingInterval || null,
         status: "active",
-        currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-        currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+        currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
+        currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
         trialEndsAt: null,
         gracePeriodEndsAt: null,
         cancelledAt: null,
@@ -239,9 +258,10 @@ export const handleInvoicePaid = async (invoice) => {
     }
 
     // Already active — idempotent
+    const periodEnd = parseStripeDate(invoice.lines?.data[0]?.period?.end);
     if (subscription.status === "active" &&
-        subscription.currentPeriodEnd &&
-        new Date(invoice.lines.data[0]?.period?.end * 1000) <= subscription.currentPeriodEnd) {
+        subscription.currentPeriodEnd && periodEnd &&
+        periodEnd <= subscription.currentPeriodEnd) {
         return;
     }
 
@@ -249,8 +269,8 @@ export const handleInvoicePaid = async (invoice) => {
         where: { id: subscription.id },
         data: {
             status: "active",
-            currentPeriodStart: new Date(invoice.lines.data[0]?.period?.start * 1000),
-            currentPeriodEnd: new Date(invoice.lines.data[0]?.period?.end * 1000),
+            currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
+            currentPeriodEnd: periodEnd,
             gracePeriodEndsAt: null,
         },
     });
@@ -346,8 +366,8 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
         where: { id: subscription.id },
         data: {
             status: mappedStatus,
-            currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-            currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+            currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
+            currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
             stripePriceId: stripeSubscription.items.data[0]?.price?.id || subscription.stripePriceId,
         },
     });
