@@ -181,12 +181,8 @@ export const handleCheckoutCompleted = async (session) => {
     const stripeSubscriptionId = session.subscription;
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
 
-    console.log("[Subscription] Stripe subscription data", {
-        current_period_start: stripeSubscription.current_period_start,
-        current_period_end: stripeSubscription.current_period_end,
-        type_start: typeof stripeSubscription.current_period_start,
-        type_end: typeof stripeSubscription.current_period_end,
-    });
+    // In Stripe API 2025+, period dates are on subscription items, not the subscription object
+    const subscriptionItem = stripeSubscription.items?.data?.[0];
 
     const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
 
@@ -199,12 +195,12 @@ export const handleCheckoutCompleted = async (session) => {
     const data = {
         stripeSubscriptionId,
         stripeCustomerId: session.customer,
-        stripePriceId: stripeSubscription.items.data[0]?.price?.id || null,
+        stripePriceId: subscriptionItem?.price?.id || null,
         planType,
         billingInterval: billingInterval || null,
         status: "active",
-        currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
-        currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
+        currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
+        currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
         trialEndsAt: null,
         gracePeriodEndsAt: null,
         cancelledAt: null,
@@ -361,14 +357,15 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     };
 
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
+    const subItem = stripeSubscription.items?.data?.[0];
 
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
             status: mappedStatus,
-            currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
-            currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
-            stripePriceId: stripeSubscription.items.data[0]?.price?.id || subscription.stripePriceId,
+            currentPeriodStart: parseStripeDate(subItem?.current_period_start),
+            currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
+            stripePriceId: subItem?.price?.id || subscription.stripePriceId,
         },
     });
 
