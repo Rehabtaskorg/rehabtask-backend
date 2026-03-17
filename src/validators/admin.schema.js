@@ -163,7 +163,7 @@ export const adminDenyRescheduleSchema = z.object({
 // ── Subscription Management ──────────────────────────────────────────────────
 
 export const adminListSubscriptionsQuerySchema = z.object({
-    status: z.enum(["active", "inactive", "cancelled", "past_due"]).optional(),
+    status: z.enum(["active", "inactive", "cancelled", "past_due", "trialing", "grace_period"]).optional(),
     planType: z.enum(["free", "standard", "premium"]).optional(),
     search: z.string().max(200).optional(),
     sortBy: z.enum(["createdAt", "currentPeriodStart", "currentPeriodEnd"]).optional().default("createdAt"),
