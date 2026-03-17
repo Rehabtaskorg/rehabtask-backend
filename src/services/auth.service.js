@@ -1,6 +1,8 @@
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
+import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
+import { createTrialSubscription } from "./subscription.service.js";
 
 /**
  * Register a new customer
@@ -27,10 +29,13 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         if (error) {
             if (error.status === 422 || error.message?.toLowerCase().includes("already registered")) {
+                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+                });
                 return {
                     message: "Registration successful. Please check your email for verification.",
                     user: null
-                };
+                }
             }
 
             throw error;
@@ -61,7 +66,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         // Create user record in our DB using admin access
         const user = await withAdminAccess(async (db) => {
-            return db.user.create({
+            const createdUser = await db.user.create({
                 data: {
                     id: authUser.id,
                     email: normalizedEmail,
@@ -82,8 +87,14 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                             connect: { id: existingPatient.id }
                         }
                     })
-                }
+                },
+                include: { customerProfile: true },
             });
+
+            // Create 30-day trial subscription with Standard limits
+            await createTrialSubscription(createdUser.customerProfile.id, db);
+
+            return createdUser;
         });
 
         let message = "Registration successful. Please check your email to verify your account."
@@ -105,13 +116,14 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
             message
         };
     } catch (error) {
-        console.log("Error object:", error);
-
         /**
          * Handle Prisma uniqueness safely
          * Treat duplicate DB records as idempotent success
          */
         if (error?.code === "P2002" && error?.meta?.modelName === "User") {
+            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+            });
             return {
                 message: "Registration successful. Please check your email for verification.",
                 user: null
@@ -160,6 +172,9 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
 
         if (error) {
             if (error.status === 422 || error.message.includes("already registered")) {
+                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+                });
                 return {
                     message: "Registration successful. Please check your email and wait for admin approval.",
                     user: null
@@ -207,6 +222,20 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
         };
 
     } catch (error) {
+        /**
+         * Handle Prisma uniqueness safely
+         * Treat duplicate DB records as idempotent success
+         */
+        if (error?.code === "P2002" && error?.meta?.modelName === "User") {
+            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+            });
+            return {
+                message: "Registration successful. Please check your email and wait for admin approval.",
+                user: null
+            }
+        }
+
         if (authUser?.id) {
             await supabaseAdmin.auth.admin.deleteUser(authUser.id);
         }
@@ -248,7 +277,8 @@ export const login = async ({ email, password }) => {
         where: { id: data.user.id },
         include: {
             customerProfile: true,
-            therapistProfile: true
+            therapistProfile: true,
+            subAdminProfile: true,
         }
     });
 
@@ -325,12 +355,23 @@ export const getCurrentUser = async (userId) => {
             customerProfile: {
                 select: {
                     fullName: true,
+                    customerType: true,
+                    agencyName: true
                 },
             },
             therapistProfile: {
                 select: {
                     fullName: true,
                     approvalStatus: true,
+                    profilePhotoUrl: true,
+                    onboardingStep: true,
+                    onboardingComplete: true
+                }
+            },
+            subAdminProfile: {
+                select: {
+                    permissions: true,
+                    isActive: true,
                 }
             }
         }
@@ -349,24 +390,67 @@ export const getCurrentUser = async (userId) => {
         profile:
             user.role === "customer"
                 ? user.customerProfile
-                : user.therapistProfile
+                : user.role === "therapist"
+                    ? user.therapistProfile
+                    : user.role === "sub_admin"
+                        ? user.subAdminProfile
+                        : null
     };
 };
 
 /**
- * Mark a user as emai verified in your database
+ * Mark a user as email verified in your database
  * Called by the frontend after Supabase session exists
+ * Sends welcome email to therapists on first verification
  */
-export const markEmailVerified = async ({ userId }) => {
+export const markEmailVerified = async ({ userId, fullName }) => {
     if (!userId) throw new BadRequestError("User ID is required");
 
     try {
+        // Fetch user before update to check previous verification state
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                emailVerified: true,
+                therapistProfile: {
+                    select: { id: true, fullName: true }
+                }
+            }
+        });
+
+        if (!user) throw new NotFoundError("User not found");
+
+        const wasAlreadyVerified = user.emailVerified;
+
         await withAdminAccess(async (db) => {
             await db.user.update({
                 where: { id: userId },
                 data: { emailVerified: true }
             });
+
+            // Persist the sub-admin's chosen display name on invite acceptance
+            if (user.role === "sub_admin" && fullName?.trim()) {
+                await db.subAdminProfile.update({
+                    where: { userId },
+                    data: { fullName: fullName.trim() },
+                });
+            }
         });
+
+        // Send welcome email to therapists on first verification only
+        if (!wasAlreadyVerified && user.role === "therapist" && user.therapistProfile) {
+            sendTherapistWelcome({
+                therapist: { ...user.therapistProfile, user: { email: user.email } },
+            }).catch(() => { });
+        }
+
+        // Send welcome email to sub-admins on first verification only
+        if (!wasAlreadyVerified && user.role === "sub_admin") {
+            sendSubAdminWelcome({ user }).catch(() => { });
+        }
 
         return { message: "Email verified in database" };
     } catch (error) {
@@ -534,9 +618,6 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                         create: {
                             fullName: profileData.fullName,
                             phone: profileData.phone || "",
-                            specialization: profileData.specialization || null,
-                            licenseNumber: profileData.licenseNumber || null,
-                            workArea: profileData.workArea || null,
                             approvalStatus: "pending", // Requires admin approval
                         },
                     },
@@ -556,6 +637,9 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
 
     if (role === "therapist") {
         message += ". Your account is pending admin approval.";
+        sendTherapistWelcome({
+            therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } },
+        }).catch(() => { });
     }
 
     return {
@@ -582,6 +666,15 @@ export const refreshAccessToken = async ({ refreshToken }) => {
     if (error) {
         console.error("Token refresh error:", error);
         throw new AuthenticationError("Failed to refresh token", "TOKEN_REFRESH_FAILED");
+    }
+
+    // Check if user is still active
+    const user = await prisma.user.findUnique({
+        where: { id: data.user.id },
+        select: { isActive: true },
+    });
+    if (!user || !user.isActive) {
+        throw new AuthenticationError("Your account has been deactivated", "ACCOUNT_DEACTIVATED");
     }
 
     return {

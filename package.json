@@ -4,6 +4,9 @@
   "description": "",
   "type": "module",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
@@ -22,8 +25,6 @@
     "@logtail/winston": "^0.5.6",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
-    "@react-email/components": "^1.0.6",
-    "@react-email/render": "^2.0.4",
     "@sentry/node": "^10.36.0",
     "@supabase/supabase-js": "^2.91.0",
     "axios": "^1.13.4",
@@ -38,6 +39,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.1",
     "resend": "^6.8.0",
     "stripe": "^20.2.0",
     "winston": "^3.19.0",

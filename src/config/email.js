@@ -1,11 +1,11 @@
 import { Resend } from "resend";
 
-if (process.env.RESEND_API_KEY) {
-    throw new Error("RESEND_API_KEY is not defined in environment variables");
-}
 
-// Initialize Resend client
-export const resend = new Resend(process.env.RESEND_API_KEY);
+// Resend is the production email provider
+// In development, use src/config/mailer.js instead
+export const resend = process.env.RESEND_API_KEY
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
 
 export const emailConfig = {
     from: process.env.EMAIL_FROM || "RehabTask <noreply@rehabtask.com>",
@@ -66,6 +66,16 @@ export const sendEmail = async ({ to, subject, html, text, replyTo }) => {
  * Send bulk emails (batch sending)
  */
 export const sendBulkEmails = async (emails) => {
+    if (!resend) {
+        console.warn('[email.js] Resend not configured — skipping bulk emails');
+        return emails.map((email) => ({
+            email: email.to,
+            success: false,
+            emailId: null,
+            error: 'Resend not configured',
+        }))
+    }
+
     try {
         const emailPromises = emails.map((email) =>
             resend.emails.send({

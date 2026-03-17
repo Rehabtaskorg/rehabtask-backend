@@ -7,23 +7,32 @@ datasource db {
 }
 
 model User {
-  id                String            @id @db.Uuid
-  email             String            @unique @db.VarChar(255)
-  passwordHash      String            @default("") @map("password_hash")
+  id                String             @id @db.Uuid
+  email             String             @unique @db.VarChar(255)
+  passwordHash      String             @default("") @map("password_hash")
   role              UserRole
-  emailVerified     Boolean           @default(false) @map("email_verified")
-  isActive          Boolean           @default(true) @map("is_active")
-  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  emailVerified     Boolean            @default(false) @map("email_verified")
+  isActive          Boolean            @default(true) @map("is_active")
+  deactivatedAt     DateTime?          @map("deactivated_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   auditLogs         AuditLog[]
   customerProfile   CustomerProfile?
-  uploadedDocuments LicenseDocument[] @relation("UserDocuments")
-  verifiedDocuments LicenseDocument[] @relation("DocumentVerifier")
-  receivedMessages  Message[]         @relation("ReceivedMessages")
-  sentMessages      Message[]         @relation("SentMessages")
+  uploadedDocuments LicenseDocument[]  @relation("UserDocuments")
+  verifiedDocuments LicenseDocument[]  @relation("DocumentVerifier")
+  receivedMessages  Message[]          @relation("ReceivedMessages")
+  sentMessages      Message[]          @relation("SentMessages")
   patientProfile    Patient?
   configUpdates     SystemConfig[]
   therapistProfile  TherapistProfile?
+  disputes          Dispute[]          @relation("DisputeFiledBy")
+  assignedDisputes  Dispute[]          @relation("DisputeAssignedAdmin")
+  notifications     Notification[]
+  subAdminProfile   SubAdminProfile?   @relation("SubAdminUser")
+  createdSubAdmins  SubAdminProfile[]  @relation("SubAdminCreatedBy")
+  commissionConfigs CommissionConfig[]
+  directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
+  directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
 
   @@index([email])
   @@index([role, isActive])
@@ -47,6 +56,7 @@ model CustomerProfile {
   payments         Payment[]
   subscriptions    Subscription[]
   requests         TherapyRequest[]
+  reviews          Review[]
 
   @@index([userId])
   @@index([customerType])
@@ -61,6 +71,7 @@ model Patient {
   fullName           String           @map("full_name") @db.VarChar(255)
   phone              String?          @db.VarChar(20)
   userId             String?          @unique @map("user_id") @db.Uuid
+  isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookingsForPatient Booking[]        @relation("PatientBookings")
@@ -100,6 +111,7 @@ model TherapistProfile {
   rejectionReason          String?                @map("rejection_reason")
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
+  planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   availability             Availability[]
@@ -109,9 +121,11 @@ model TherapistProfile {
   payments                 Payment[]
   user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   workAreas                WorkArea[]
+  reviews                  Review[]
 
   @@index([userId])
   @@index([approvalStatus, createdAt])
+  @@index([planTier, approvalStatus])
   @@index([stripeAccountId])
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
@@ -167,11 +181,17 @@ model Subscription {
   id                   String             @id @default(uuid()) @db.Uuid
   customerId           String             @map("customer_id") @db.Uuid
   stripeSubscriptionId String?            @unique @map("stripe_subscription_id") @db.VarChar(255)
-  stripeCustomerId     String             @map("stripe_customer_id") @db.VarChar(255)
+  stripeCustomerId     String?            @map("stripe_customer_id") @db.VarChar(255)
+  stripePriceId        String?            @map("stripe_price_id") @db.VarChar(255)
   planType             SubscriptionPlan   @map("plan_type")
+  billingInterval      BillingInterval?   @map("billing_interval")
   status               SubscriptionStatus
   currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
   currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  trialEndsAt          DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  gracePeriodEndsAt    DateTime?          @map("grace_period_ends_at") @db.Timestamptz(3)
+  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason         String?            @map("cancel_reason")
   therapistLimit       Int                @map("therapist_limit")
   requestLimit         Int                @map("request_limit")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -181,6 +201,8 @@ model Subscription {
   @@index([customerId, status])
   @@index([stripeSubscriptionId])
   @@index([status, currentPeriodEnd])
+  @@index([status, trialEndsAt])
+  @@index([status, gracePeriodEndsAt])
   @@map("subscriptions")
 }
 
@@ -190,6 +212,9 @@ model TherapyRequest {
   patientId     String?         @map("patient_id") @db.Uuid
   serviceType   String          @map("service_type") @db.VarChar(100)
   description   String
+  rate          Decimal?        @db.Decimal(10, 2)
+  visitType     String?         @map("visit_type") @db.VarChar(100)
+  emr           String?         @db.VarChar(100)
   preferredDate DateTime        @map("preferred_date") @db.Timestamptz(3)
   location      String
   latitude      Decimal         @db.Decimal(10, 8)
@@ -198,6 +223,7 @@ model TherapyRequest {
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   offers        Offer[]
+  messages      Message[]
   customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
   patient       Patient?        @relation("PatientRequests", fields: [patientId], references: [id])
 
@@ -210,20 +236,23 @@ model TherapyRequest {
 }
 
 model Offer {
-  id           String           @id @default(uuid()) @db.Uuid
-  requestId    String           @map("request_id") @db.Uuid
-  therapistId  String           @map("therapist_id") @db.Uuid
-  rate         Decimal          @db.Decimal(10, 2)
-  sessionType  String           @map("session_type") @db.VarChar(20)
-  proposedDate DateTime         @map("proposed_date") @db.Timestamptz(3)
-  description  String
-  status       OfferStatus
-  expiresAt    DateTime         @map("expires_at") @db.Timestamptz(3)
-  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  booking      Booking?
-  request      TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  id                String           @id @default(uuid()) @db.Uuid
+  requestId         String           @map("request_id") @db.Uuid
+  therapistId       String           @map("therapist_id") @db.Uuid
+  rate              Decimal          @db.Decimal(10, 2)
+  sessionType       String           @map("session_type") @db.VarChar(20)
+  proposedDate      DateTime         @map("proposed_date") @db.Timestamptz(3)
+  description       String
+  status            OfferStatus
+  expiresAt         DateTime         @map("expires_at") @db.Timestamptz(3)
+  withdrawnAt       DateTime?        @map("withdrawn_at") @db.Timestamptz(3)
+  changeRequestNote String?          @map("change_request_note")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  booking           Booking?
+  messages          Message[]
+  request           TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  therapist         TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
 
   @@index([requestId, status])
   @@index([therapistId, status, createdAt])
@@ -233,23 +262,28 @@ model Offer {
 }
 
 model Booking {
-  id            String           @id @default(uuid()) @db.Uuid
-  offerId       String           @unique @map("offer_id") @db.Uuid
-  customerId    String           @map("customer_id") @db.Uuid
-  patientId     String?          @map("patient_id") @db.Uuid
-  therapistId   String           @map("therapist_id") @db.Uuid
-  scheduledDate DateTime         @map("scheduled_date") @db.Timestamptz(3)
-  rate          Decimal          @db.Decimal(10, 2)
-  sessionType   String           @map("session_type") @db.VarChar(20)
-  status        BookingStatus
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer      CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  offer         Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  patient       Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
-  therapist     TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
-  payment       Payment?
-  session       Session?
+  id              String           @id @default(uuid()) @db.Uuid
+  offerId         String           @unique @map("offer_id") @db.Uuid
+  customerId      String           @map("customer_id") @db.Uuid
+  patientId       String?          @map("patient_id") @db.Uuid
+  therapistId     String           @map("therapist_id") @db.Uuid
+  scheduledDate   DateTime         @map("scheduled_date") @db.Timestamptz(3)
+  rate            Decimal          @db.Decimal(10, 2)
+  sessionType     String           @map("session_type") @db.VarChar(20)
+  status          BookingStatus
+  proposedNewDate         DateTime?  @map("proposed_new_date") @db.Timestamptz(3)
+  paymentReminderSentAt   DateTime?  @map("payment_reminder_sent_at") @db.Timestamptz(3)
+  createdAt               DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer        CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  offer           Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  patient         Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
+  therapist       TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  payment         Payment?
+  session         Session?
+  messages        Message[]
+  review          Review?
+  disputes        Dispute[]
 
   @@index([customerId, status, scheduledDate])
   @@index([patientId, status, scheduledDate])
@@ -305,29 +339,62 @@ model Payment {
   @@map("payments")
 }
 
-model Message {
-  id          String    @id @default(uuid()) @db.Uuid
-  senderId    String    @map("sender_id") @db.Uuid
-  recipientId String    @map("recipient_id") @db.Uuid
-  patientId   String?   @map("patient_id") @db.Uuid
-  content     String
-  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  patient     Patient?  @relation("PatientMessages", fields: [patientId], references: [id])
-  recipient   User      @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
-  sender      User      @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+model DirectConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  user1Id   String   @map("user1_id") @db.Uuid
+  user2Id   String   @map("user2_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@index([recipientId, readAt, createdAt])
-  @@index([senderId, createdAt])
+  user1    User      @relation("DirectConvUser1", fields: [user1Id], references: [id])
+  user2    User      @relation("DirectConvUser2", fields: [user2Id], references: [id])
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@map("direct_conversations")
+}
+
+model Message {
+  id          String @id @default(uuid()) @db.Uuid
+  senderId    String @map("sender_id") @db.Uuid
+  recipientId String @map("recipient_id") @db.Uuid
+
+  requestId      String? @map("request_id") @db.Uuid
+  offerId        String? @map("offer_id") @db.Uuid
+  bookingId      String? @map("booking_id") @db.Uuid
+  patientId      String? @map("patient_id") @db.Uuid
+  conversationId String? @map("conversation_id") @db.Uuid
+
+  content String    @db.Text
+  readAt  DateTime? @map("read_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sender       User                @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient    User                @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  request      TherapyRequest?     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  offer        Offer?              @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  booking      Booking?            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  patient      Patient?            @relation("PatientMessages", fields: [patientId], references: [id])
+  conversation DirectConversation? @relation(fields: [conversationId], references: [id])
+
   @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, readAt])
+  @@index([requestId, createdAt])
+  @@index([offerId, createdAt])
+  @@index([bookingId, createdAt])
   @@index([patientId, createdAt])
+  @@index([conversationId, createdAt])
   @@map("messages")
 }
 
 model WorkArea {
   id          String           @id @default(uuid()) @db.Uuid
   therapistId String           @map("therapist_id") @db.Uuid
+  zipCode     String           @map("zip_code") @db.VarChar(10)
   city        String           @db.VarChar(100)
   state       String           @db.VarChar(50)
   latitude    Decimal          @db.Decimal(10, 8)
@@ -340,6 +407,134 @@ model WorkArea {
   @@index([therapistId])
   @@index([latitude, longitude])
   @@map("work_areas")
+}
+
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @unique @map("booking_id") @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  therapistId String   @map("therapist_id") @db.Uuid
+  rating      Int
+  comment     String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer  CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  therapist TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@index([therapistId, createdAt])
+  @@index([customerId])
+  @@index([bookingId])
+  @@map("reviews")
+}
+
+model FAQ {
+  id        String   @id @default(uuid()) @db.Uuid
+  question  String   @db.Text
+  answer    String   @db.Text
+  category  String   @db.VarChar(100)
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([category, sortOrder])
+  @@index([isActive])
+  @@map("faqs")
+}
+
+model RequestOption {
+  id        String   @id @default(uuid()) @db.Uuid
+  type      String   @db.VarChar(50)
+  value     String   @db.VarChar(100)
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([type, value])
+  @@index([type])
+  @@map("request_options")
+}
+
+model Dispute {
+  id              String        @id @default(uuid()) @db.Uuid
+  ticketId        String        @unique @map("ticket_id") @db.VarChar(20)
+  userId          String        @map("user_id") @db.Uuid
+  bookingId       String?       @map("booking_id") @db.Uuid
+  assignedAdminId String?       @map("assigned_admin_id") @db.Uuid
+  title           String?       @db.VarChar(255)
+  type            DisputeType
+  description     String        @db.Text
+  status          DisputeStatus @default(open)
+  resolution      String?       @db.Text
+  resolvedAt      DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy      String?       @map("resolved_by") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user          User     @relation("DisputeFiledBy", fields: [userId], references: [id], onDelete: Cascade)
+  booking       Booking? @relation(fields: [bookingId], references: [id])
+  assignedAdmin User?    @relation("DisputeAssignedAdmin", fields: [assignedAdminId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([ticketId])
+  @@index([assignedAdminId])
+  @@map("disputes")
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  type       String    @db.VarChar(100)
+  title      String    @db.VarChar(255)
+  message    String    @db.Text
+  isRead     Boolean   @default(false) @map("is_read")
+  entityType String?   @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.VarChar(255)
+  metadata   Json?
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(3)
+  failed     Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, type, entityId])
+  @@index([type, entityId])
+  @@map("notifications")
+}
+
+model SubAdminProfile {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  fullName         String?  @map("full_name") @db.VarChar(255)
+  permissions      String[]
+  isActive         Boolean  @default(true) @map("is_active")
+  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user             User     @relation("SubAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdmin   User     @relation("SubAdminCreatedBy", fields: [createdByAdminId], references: [id])
+
+  @@index([userId])
+  @@index([createdByAdminId])
+  @@map("sub_admin_profiles")
+}
+
+model CommissionConfig {
+  id               String         @id @default(uuid()) @db.Uuid
+  tier             TherapistPlan? // null = legacy global record; non-null = tier-specific rate
+  rate             Decimal        @db.Decimal(5, 4)
+  effectiveFrom    DateTime       @default(now()) @map("effective_from") @db.Timestamptz(3)
+  createdByAdminId String         @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdByAdmin   User           @relation(fields: [createdByAdminId], references: [id])
+
+  @@index([tier, effectiveFrom])
+  @@index([effectiveFrom])
+  @@index([createdByAdminId, effectiveFrom])
+  @@map("commission_configs")
 }
 
 model AuditLog {
@@ -371,10 +566,13 @@ model SystemConfig {
   @@map("system_config")
 }
 
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
 enum UserRole {
   customer
   therapist
   admin
+  sub_admin
 }
 
 enum CustomerType {
@@ -391,7 +589,14 @@ enum ApprovalStatus {
 
 enum SubscriptionPlan {
   free
+  standard
   premium
+}
+
+enum TherapistPlan {
+  basic
+  pro
+  elite
 }
 
 enum SubscriptionStatus {
@@ -399,6 +604,13 @@ enum SubscriptionStatus {
   inactive
   cancelled
   past_due
+  trialing
+  grace_period
+}
+
+enum BillingInterval {
+  monthly
+  annual
 }
 
 enum RequestStatus {
@@ -414,14 +626,18 @@ enum OfferStatus {
   accepted
   rejected
   expired
+  withdrawn
+  change_requested
 }
 
 enum BookingStatus {
   pending
+  accepted
   confirmed
   in_progress
   completed
   cancelled
+  reschedule_requested
 }
 
 enum SessionStatus {
@@ -454,4 +670,19 @@ enum BackgroundCheckStatus {
   in_progress
   completed
   failed
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  resolved
+  closed
+}
+
+enum DisputeType {
+  billing
+  service_quality
+  no_show
+  communication
+  other
 }

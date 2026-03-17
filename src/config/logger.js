@@ -18,10 +18,8 @@ const colors = {
 
 winston.addColors(colors);
 
-// Determine the environment
 const isDevelopment = process.env.NODE_ENV !== "production";
 
-// Custom format for better readability
 const customFormat = winston.format.combine(
     winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
     winston.format.errors({ stack: true }),
@@ -29,20 +27,14 @@ const customFormat = winston.format.combine(
     winston.format.json(),
     winston.format.printf((info) => {
         const { timestamp, level, message, ...meta } = info;
-
-        // Filter out PII from logs (HIPAA compliance)
         const sanitizedMeta = sanitizePII(meta);
-
-        return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(sanitizedMeta).length ? JSON.stringify(sanitizedMeta, null, 2) : ""
-            }`;
+        return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(sanitizedMeta).length ? JSON.stringify(sanitizedMeta, null, 2) : ""}`;
     })
 );
 
-// Sanitize PII from logs (HIPAA compliance)
 const sanitizePII = (obj) => {
     const piiFields = ['password', 'password_hash', 'ssn', 'license_document_url', 'phone'];
     const sanitized = { ...obj };
-
     Object.keys(sanitized).forEach((key) => {
         if (piiFields.includes(key)) {
             sanitized[key] = "[REDACTED]";
@@ -51,58 +43,57 @@ const sanitizePII = (obj) => {
             sanitized[key] = sanitizePII(sanitized[key]);
         }
     });
-
     return sanitized;
 }
 
-// Create logger instance
 export const logger = winston.createLogger({
     level: isDevelopment ? "debug" : "info",
     levels,
     format: customFormat,
+    exitOnError: false,
     transports: [
-        // Console transporter
         new winston.transports.Console({
             format: winston.format.combine(
                 winston.format.colorize({ all: true }),
                 customFormat
             ),
         }),
-
-        // File transport for errors
-        new winston.transports.File({
-            filename: "logs/error.log",
-            level: "error",
-            maxsize: 5242880, // 5MB
-            maxFiles: 5
-        }),
-
-        // File transport for all logs
-        new winston.transports.File({
-            filename: "logs/combined/log",
-            maxsize: 5242880,
-            maxFiles: 5
-        }),
+        // VPS: Uncomment file transports below when deploying to a VPS with filesystem access
+        // new winston.transports.File({
+        //     filename: "logs/error.log",
+        //     level: "error",
+        //     maxsize: 5242880,
+        //     maxFiles: 5
+        // }),
+        // new winston.transports.File({
+        //     filename: "logs/combined.log",
+        //     maxsize: 5242880,
+        //     maxFiles: 5
+        // }),
     ],
-
-    // Handle uncaught exceptions
     exceptionHandlers: [
-        new winston.transports.File({ filename: "logs/exceptions.log" })
+        new winston.transports.Console({
+            format: winston.format.combine(
+                winston.format.colorize({ all: true }),
+                customFormat
+            ),
+        }),
+        // new winston.transports.File({ filename: "logs/exceptions.log" })
     ],
-
-    // Handle unhandled promise rejections
     rejectionHandlers: [
-        new winston.transports.File({ filename: "logs/rejections.log" }),
+        new winston.transports.Console({
+            format: winston.format.combine(
+                winston.format.colorize({ all: true }),
+                customFormat
+            ),
+        }),
+        // new winston.transports.File({ filename: "logs/rejections.log" }),
     ]
 });
 
-// Helper functions for common log scenarios
+// Helper functions
 export const logInfo = (message, meta = {}) => {
-    logger.info(message, {
-        error: error.message || error,
-        stack: error.stack,
-        ...meta
-    });
+    logger.info(message, meta);
 };
 
 export const logWarn = (message, meta = {}) => {

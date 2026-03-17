@@ -2,23 +2,41 @@ import { APIError } from "../utils/errors.js";
 
 /**
  * Global error handler middleware
- * Formats and sends error responses
+ * andles logging and response formatting
  */
 const errorHandler = (err, req, res, next) => {
-    // log error for debugging
-    console.error("Error occured:", {
+    const statusCode = err.statusCode || 500;
+
+    const logPayload = {
         name: err.name,
         message: err.message,
         code: err.code,
-        stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        url: req.originalUrl,
+        statusCode,
         method: req.method,
-        ip: req.ip
-    });
+        url: req.originalUrl,
+        ip: req.ip,
+        timestamp: new Date().toISOString(),
+    };
 
-    // Handle operational errors (known errors)
+    if (process.env.NODE_ENV === "development") {
+        logPayload.stack = err.stack;
+    }
+
+    if (statusCode >= 500) {
+        console.error("Server Error:", logPayload);
+    } else if (statusCode === 401 || statusCode === 404) {
+        console.info("Auth/NotFound Event:", logPayload);
+    } else if (statusCode >= 400) {
+        console.warn("Client Error:", logPayload);
+    } else {
+        console.log("Info:", logPayload);
+    }
+
+    /**
+     * Handle known operational errors
+     */
     if (err.isOperational || err instanceof APIError) {
-        return res.status(err.statusCode || 500).json({
+        return res.status(statusCode).json({
             success: false,
             code: err.code || "ERROR",
             message: err.message,
@@ -27,7 +45,9 @@ const errorHandler = (err, req, res, next) => {
         });
     }
 
-    // Handle Prisma errors
+    /**
+     * Prisma Errors
+     */
     if (err.name === "PrismaClientKnownRequestError") {
         return handlePrismaError(err, res);
     }
@@ -41,7 +61,9 @@ const errorHandler = (err, req, res, next) => {
         });
     }
 
-    // Handle JWT errors
+    /**
+     * JWT Errors (if ever used outside Supabase)
+     */
     if (err.name === "JsonWebTokenError") {
         return res.status(401).json({
             success: false,
@@ -58,7 +80,9 @@ const errorHandler = (err, req, res, next) => {
         });
     }
 
-    // handle Zod validation errors
+    /**
+     * Zod validation errors
+     */
     if (err.name === "ZodError") {
         const formattedErrors = err.errors.map((e) => ({
             field: e.path.join("."),
@@ -73,17 +97,16 @@ const errorHandler = (err, req, res, next) => {
         });
     }
 
-    // Handle unknown/unexpected errors
-    const statusCode = err.statusCode || 500;
-    const message =
-        process.env.NODE_ENV === "production"
-            ? "An unexpected error occured"
-            : err.message || "Internal server error";
-
-    res.status(statusCode).json({
+    /**
+     * Unknown / Unexpected errors
+     */
+    return res.status(500).json({
         success: false,
-        code: err.code || "INTERNAL_ERROR",
-        message,
+        code: "INTERNAL_ERROR",
+        message:
+            process.env.NODE_ENV === "production"
+                ? "An unexpected error occurred"
+                : err.message || "Internal server error",
         ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
     });
 };
@@ -92,9 +115,9 @@ const errorHandler = (err, req, res, next) => {
  * Handle Prisma-specific errors
  */
 function handlePrismaError(err, res) {
-    const statusCode = 400;
     let message = "Database operation failed";
     let code = "DATABASE_ERROR";
+    const statusCode = 400;
 
     switch (err.code) {
         case "P2002":

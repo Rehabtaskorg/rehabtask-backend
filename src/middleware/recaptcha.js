@@ -112,7 +112,7 @@ export function recaptchaMiddleware(req, res, next) {
             if (!result.success) {
                 return res.status(400).json({
                     success: false,
-                    code: "RECAPTCHA FAILED",
+                    code: "RECAPTCHA_FAILED",
                     message: "reCAPTCHA verification failed. Please try again.",
                     ...(process.env.NODE_ENV === "development" && {
                         debug: {

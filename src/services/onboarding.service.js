@@ -1,6 +1,7 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { supabase } from "../config/supabase.js";
-import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js"
+import { supabase, supabaseAdmin } from "../config/supabase.js";
+import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
+import { sendTherapistApplicationSubmitted } from "./email.service.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -150,11 +151,15 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         });
     });
 
-    // Soft delete existing documents (don't actually delete from storage)
+    // Reconcile documents: keep submitted ones, soft-delete any removed ones
+    const submittedPaths = new Set(data.licenseDocuments.map(doc => doc.path));
+
+    // Soft-delete active documents NOT in the submitted list (user removed them)
     await prisma.licenseDocument.updateMany({
         where: {
             therapistId: therapist.id,
-            isDeleted: false
+            isDeleted: false,
+            documentUrl: { notIn: [...submittedPaths] },
         },
         data: {
             isDeleted: true,
@@ -162,25 +167,14 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         },
     });
 
-    // Create new license document records
-    const documentRecords = await Promise.all(
-        data.licenseDocuments.map(async (doc) => {
-            return prisma.licenseDocument.create({
-                data: {
-                    therapistId: therapist.id,
-                    userId: userId,
-                    documentUrl: doc.path,
-                    bucket: "license-documents",
-                    documentType: doc.documentType,
-                    fileName: doc.fileName,
-                    fileSize: doc.fileSize,
-                    mimeType: doc.mimetype || "application/pdf",
-                    status: "pending",
-                    uploadIp: uploadIp,
-                },
-            });
-        })
-    );
+    // Fetch the remaining active documents (already created during upload)
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
 
     return {
         message: "Credentials saved successfully",
@@ -188,16 +182,19 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
             id: updated.id,
             onboardingStep: updated.onboardingStep,
         },
-        documents: documentRecords.map(doc => ({
+        documents: activeDocuments.map(doc => ({
             id: doc.id,
             fileName: doc.fileName,
-            status: doc.status
         })),
     };
 };
 
 /**
  * Save availability (Step 3)
+ * 
+ * Now also creates an initial WorkArea record from geocoded zip code data
+ * sent by the FE. This ensures the therapist is searchable immediately after admin approval,
+ * without needing to manually add work area via profile
  */
 export const saveAvailability = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -231,7 +228,28 @@ export const saveAvailability = async (userId, data) => {
         });
     }
 
-    // Update therapist profile with additional fields
+    // Create work areas from geocoded address data
+    if (data.workAreas && data.workAreas.length > 0) {
+        // Delete any existing work areas from previous onboarding attempts
+        // to ensure idempotency (re-submitting step 3 replaces, not duplicates)
+        await prisma.workArea.deleteMany({
+            where: { therapistId: therapist.id }
+        });
+
+        await prisma.workArea.createMany({
+            data: data.workAreas.map(wa => ({
+                therapistId: therapist.id,
+                zipCode: wa.zipCode,
+                city: wa.city,
+                state: wa.state,
+                latitude: wa.latitude,
+                longitude: wa.longitude,
+                radiusMiles: Math.min(Math.max(wa.radiusMiles || 25, 1), 100),
+            })),
+        });
+    }
+
+    // Update therapist profile
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
             where: { userId },
@@ -331,19 +349,32 @@ export const completeOnboarding = async (userId) => {
         throw new BadRequestError("All onboarding steps must be completed");
     }
 
-    // Mark onboarding as complete and set status to review
+
+    // Only move to "review" if the therapist has not already been approved or rejected
+    // An already-approved therapist connecting Stripe post-approval must NOT be sent back to review
+    const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
+    const wasAlreadyComplete = therapist.onboardingComplete;
+
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
             where: { userId },
             data: {
                 onboardingComplete: true,
-                approvalStatus: "review"
+                ...(!alreadyDecided && { approvalStatus: "review" }),
             },
+            include: { user: { select: { email: true } } },
         });
     });
 
+    // Notify therapist + admin only on first-time completion (not on Stripe re-calls)
+    if (!wasAlreadyComplete) {
+        sendTherapistApplicationSubmitted({ therapist: updated }).catch(() => { });
+    }
+
     return {
-        message: "Onboarding completed successfully. Your profile is under review.",
+        message: alreadyDecided
+            ? "Stripe setup noted. Your approval status is unchanged."
+            : "Onboarding completed successfully. Your profile is under review.",
         therapist: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
@@ -377,7 +408,7 @@ export const getDocumentSignedUrl = async (userId, documentId) => {
     }
 
     // Generate signed URL (60 second expiry)
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseAdmin.storage
         .from(document.bucket)
         .createSignedUrl(document.documentUrl, 60);
 
@@ -426,7 +457,7 @@ export const getTherapistDocuments = async (userId) => {
     });
 
     return { documents };
-}
+};
 
 /**
  * Delete document (soft delete)
@@ -462,4 +493,4 @@ export const deleteDocument = async (userId, documentId) => {
     return {
         message: "Document deleted successfully",
     };
-}
+};

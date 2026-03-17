@@ -55,16 +55,16 @@ const imageFilter = (req, file, cb) => {
 }
 
 /**
- * Multer instance for license documents
+ * Multer instance for license documents 
  * - Single file upload
- * - Max size: 10MB
+ * - Max size: 20MB
  * - Allowed: PDF, JPEG, PNG
  */
 export const uploadDocument = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: 10 * 1024 * 1024,
+        fileSize: 25 * 1024 * 1024, // 25MB
         files: 1
     }
 }).single("file");

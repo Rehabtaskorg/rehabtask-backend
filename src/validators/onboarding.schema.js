@@ -73,6 +73,16 @@ const daySchema = z.object({
     }
 });
 
+// WorkArea sub-schema for geocoded ZIP code data from frontend
+const workAreaSchema = z.object({
+    zipCode: z.string().regex(/^\d{5}$/, "ZIP code must be 5 digits"),
+    city: z.string().min(1, "City is required").max(100, "City name too long"),
+    state: z.string().min(1, "State is required").max(50, "State name too long"),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    radiusMiles: z.number().int().min(1).max(100).default(25),
+});
+
 export const availabilitySchema = z.object({
     schedule: z.object({
         monday: daySchema,
@@ -88,18 +98,7 @@ export const availabilitySchema = z.object({
 
     acceptingNewPatients: z.boolean().optional().default(true),
 
-    baseZipCode: z
-        .string()
-        .regex(/^\d{5}(-\d{4})?$/, "Invalid ZIP code format")
-        .optional(),
-
-    serviceRadiusMiles: z
-        .number()
-        .int()
-        .min(0, "Service radius must be 0 or greater")
-        .max(100, "Service radius must not exceed 100 miles")
-        .optional()
-        .default(15)
+    workAreas: z.array(workAreaSchema).min(1, "At least one work area is required"),
 })
 
 export const backgroundCheckSchema = z.object({

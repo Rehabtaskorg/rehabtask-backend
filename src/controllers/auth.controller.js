@@ -6,15 +6,19 @@ import {
 } from "../services/auth.service.js";
 
 /**
- * Cookie options for Supabase tokens
+ * Whether cookies should use secure/cross-origin settings
+ * Driven by COOKIE_SECURE env var so it works indepentely of NODE_ENV
+ * Set COOKIE_SECURE=true on any deployment that serves over HTTPS (staging, production)
+ * Leave unset for local dev (HTTP localhost)
  */
-const getAccessTokenCookieOptions = () => {
-    const isProduction = process.env.NODE_ENV === "production";
 
+const isSecureContext = process.env.COOKIE_SECURE === "true";
+
+const getAccessTokenCookieOptions = () => {
     return {
         httpOnly: true,
-        secure: isProduction, // true in production
-        sameSite: isProduction ? "none" : "lax", // "none" for cross-origin
+        secure: isSecureContext,
+        sameSite: isSecureContext ? "none" : "lax", // "none" for cross-origin
         maxAge: 60 * 60 * 1000,
         path: "/",
     };
@@ -22,8 +26,8 @@ const getAccessTokenCookieOptions = () => {
 
 const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/",
 });
@@ -129,9 +133,17 @@ export const logoutController = async (req, res, next) => {
     try {
         await logout(req.accessToken);
 
-        // Clear all auth cookies
-        res.clearCookie("sb_access_token", { path: "/" });
-        res.clearCookie("sb_refresh_token", { path: "/" });
+        // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
+        const isSecureContext = process.env.COOKIE_SECURE === "true";
+        const clearOptions = {
+            path: "/",
+            httpOnly: true,
+            secure: isSecureContext,
+            sameSite: isSecureContext ? "none" : "lax",
+        };
+
+        res.clearCookie("sb_access_token", clearOptions);
+        res.clearCookie("sb_refresh_token", clearOptions);
 
         res.status(200).json({
             success: true,
@@ -165,7 +177,7 @@ export const getCurrentUserController = async (req, res, next) => {
  */
 export const verifyEmailController = async (req, res, next) => {
     try {
-        const { userId } = req.body;
+        const { userId, fullName } = req.body;
 
         if (!userId) {
             return res.status(400).json({
@@ -174,7 +186,7 @@ export const verifyEmailController = async (req, res, next) => {
             });
         }
 
-        const result = await markEmailVerified({ userId });
+        const result = await markEmailVerified({ userId, fullName });
 
         res.status(200).json({
             success: true,
@@ -230,7 +242,7 @@ export const changePasswordController = async (req, res, next) => {
  */
 export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
-        const { role, fullName, phone, customerType, agencyName, location, specialization, licenseNumber, workArea } = req.body;
+        const { role, fullName, phone, customerType, agencyName, location } = req.body;
 
         // Build profile data object based on role
         const profileData = {
@@ -241,11 +253,6 @@ export const completeOAuthOnboardingController = async (req, res, next) => {
                 agencyName,
                 location
             }),
-            ...(role === "therapist" && {
-                specialization,
-                licenseNumber,
-                workArea
-            })
         };
 
         const result = await completeOAuthOnboarding({
@@ -360,6 +367,15 @@ export const processOAuthController = async (req, res, next) => {
             });
         }
 
+        // Existing user - check if account is deactivated
+        if (!user.isActive) {
+            return res.status(401).json({
+                success: false,
+                code: "ACCOUNT_DEACTIVATED",
+                message: "Your account has been deactivated. Please contact support.",
+            });
+        }
+
         // Existing user - check if they need onboarding
         const needsOnboarding = user.role === "customer"
             ? !user.customerProfile
@@ -415,7 +431,7 @@ export const resendVerificationEmailController = async (req, res, next) => {
  */
 export const refreshTokenController = async (req, res, next) => {
     try {
-        const refreshToken = req.cookies.sb_refresh_token || req.body.refreshToken;
+        const refreshToken = req.cookies?.sb_refresh_token || req.body?.refreshToken;
 
         if (!refreshToken) {
             return res.status(401).json({

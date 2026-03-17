@@ -25,13 +25,13 @@ const emailSchema = z
     .trim();
 
 /**
- * Phone number validation (international format)
+ * Phone number validation (US format: +1XXXXXXXXXX)
  */
 const phoneSchema = z
     .string()
     .regex(
         /^\+1\d{10}$/,
-        "Invalid US phone number format. Use +1XXXXXXXXXX"
+        "Invalid phone number format. Use +1XXXXXXXXXX"
     );
 
 
@@ -43,15 +43,6 @@ const fullNameSchema = z
     .min(2, "Name must be atleast 2 characters")
     .max(255, "Name must not exceed 255 characters")
     .regex(/^[a-zA-Z\s'.-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes')
-    .trim();
-
-/**
- * License number validation
- */
-const licenseNumberSchema = z
-    .string()
-    .min(3, 'License number must be at least 3 characters')
-    .max(100, 'License number must not exceed 100 characters')
     .trim();
 
 /**
@@ -153,16 +144,6 @@ export const completeOAuthOnboardingSchema = z.object({
         .max(500, "Location must not exceed 500 characters")
         .optional(),
 
-    // Therapist fields
-    specialization: z.string()
-        .max(1000, "Specialization must not exceed 1000 characters")
-        .optional(),
-
-    licenseNumber: licenseNumberSchema.optional(),
-
-    workArea: z.string()
-        .max(500, "Work area must not exceed 500 characters")
-        .optional()
 })
     .refine(data => {
         if (data.role === "customer") {
@@ -181,15 +162,6 @@ export const completeOAuthOnboardingSchema = z.object({
     }, {
         message: "Agency name is required for agency customers",
         path: ["agencyName"]
-    })
-    .refine(data => {
-        if (data.role === "therapist") {
-            return !!data.licenseNumber?.trim();
-        }
-        return true;
-    }, {
-        message: "License number is required for therapists",
-        path: ["licenseNumber"]
     });
 
 

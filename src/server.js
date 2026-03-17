@@ -1,5 +1,9 @@
-import app from "./app.js";
+import { setDefaultResultOrder } from "node:dns";
+setDefaultResultOrder("ipv4first");
+
 import "dotenv/config";
+import app from "./app.js";
+import { startScheduledJobs } from "./jobs/index.js";
 
 const PORT = process.env.PORT;
 
@@ -8,3 +12,5 @@ app.listen(PORT, () => {
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
 });
+
+startScheduledJobs();

@@ -1,6 +1,9 @@
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
+import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
+import { sendPaymentFailed, sendPayoutFailed } from "../services/email.service.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Handle Stripe webhooks
@@ -75,6 +78,27 @@ const handleStripeWebhook = async (req, res) => {
                 await handlePayoutFailed(event.data.object, event.account);
                 break;
 
+            // Subscription Flow
+            case "checkout.session.completed":
+                await subscriptionService.handleCheckoutCompleted(event.data.object);
+                break;
+
+            case "invoice.paid":
+                await subscriptionService.handleInvoicePaid(event.data.object);
+                break;
+
+            case "invoice.payment_failed":
+                await subscriptionService.handleInvoicePaymentFailed(event.data.object);
+                break;
+
+            case "customer.subscription.deleted":
+                await subscriptionService.handleSubscriptionDeleted(event.data.object);
+                break;
+
+            case "customer.subscription.updated":
+                await subscriptionService.handleSubscriptionUpdated(event.data.object);
+                break;
+
             default:
                 console.log(`Unhandled event type:${event.type}`);
         }
@@ -97,6 +121,13 @@ const handleStripeWebhook = async (req, res) => {
  */
 const handlePaymentIntentSucceeded = async (paymentIntent) => {
     try {
+        // Skip subscription-related PaymentIntents — they don't have booking Payment records.
+        // Subscription payments are handled by invoice.paid and checkout.session.completed.
+        if (paymentIntent.invoice) {
+            console.log(`Skipping subscription payment_intent.succeeded (invoice: ${paymentIntent.invoice})`);
+            return;
+        }
+
         await paymentService.handlePaymentSuccess(paymentIntent.id);
         console.log("Payment moved to escrow successfully");
     } catch (error) {
@@ -116,18 +147,35 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
         });
 
         if (payment) {
-            await prisma.payment.update({
-                where: { id: payment.id },
-                data: { status: "failed" },
+            await prisma.$transaction(async (tx) => {
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: { status: "failed" },
+                });
+
+                await tx.booking.update({
+                    where: { id: payment.bookingId },
+                    data: { status: "cancelled" },
+                });
             });
 
-            await prisma.booking.update({
+            // Notify customer about failed payment (email)
+            const failedBooking = await prisma.booking.findUnique({
                 where: { id: payment.bookingId },
-                data: { status: "cancelled" },
+                include: {
+                    customer: { include: { user: { select: { email: true } } } },
+                },
             });
 
-            // TODO: Send notification to customer about failed payment
-            console.log("Payment and booking marked as failed/cancelled")
+            if (failedBooking) {
+                sendPaymentFailed({
+                    customer: failedBooking.customer,
+                    booking: failedBooking,
+                    reason: paymentIntent.last_payment_error?.message,
+                }).catch(() => { });
+            }
+
+            console.log("Payment and booking marked as failed/cancelled");
         } else {
             console.log(`No payment record found for payment intent: ${paymentIntent.id}`);
         }
@@ -149,14 +197,16 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
         });
 
         if (payment && payment.status === "intent_created") {
-            await prisma.payment.update({
-                where: { id: payment.id },
-                data: { status: "failed" },
-            });
+            await prisma.$transaction(async (tx) => {
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: { status: "failed" },
+                });
 
-            await prisma.booking.update({
-                where: { id: payment.bookingId },
-                data: { status: "cancelled" },
+                await tx.booking.update({
+                    where: { id: payment.bookingId },
+                    data: { status: "cancelled" },
+                });
             });
         }
     } catch (error) {
@@ -259,11 +309,21 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
         // NORMAL CASE: Payment already marked as released
         if (payment.status === "escrowed" && !payment.stripeTransferId) {
             try {
-                // Verify transfer is valid and not reversed
+                // Verify transfer is valid, not reversed, and not failed
                 const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
 
                 if (verifiedTransfer.reversed) {
                     console.log(`Transfer was reversed, not updating payment`);
+                    return;
+                }
+
+                // Only mark as released if the transfer is in a successful state.
+                // Stripe transfer object doesn't have a top-level "status" field for
+                // platform transfers, but `reversed` is checked above. For connected
+                // account payouts, failures surface via payout.failed webhook instead.
+                // Guard against zero-amount or negative-amount edge cases.
+                if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) {
+                    console.log(`Transfer has invalid amount (${verifiedTransfer.amount}), skipping recovery`);
                     return;
                 }
 
@@ -396,7 +456,6 @@ const handlePayoutPaid = async (payout, accountId) => {
 
         if (therapist) {
             console.log(`Payout of $${payout.amount / 100} delivered to ${therapist.fullName}`);
-            // TODO: Send notification: "Your payout of $X has arrived in your bank account!"
         }
     } catch (error) {
         console.error(`Error:`, error.message);
@@ -410,19 +469,21 @@ const handlePayoutFailed = async (payout, accountId) => {
 
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId: accountId },
+            include: { user: { select: { email: true } } },
         });
 
         if (therapist) {
             console.log(`Payout failed for therapist: ${therapist.fullName}`);
 
-            // TODO:
-            // 1. Notify therapist about failed payout
-            // 2. Request bank account verification
-            // 3. Alert admin to investigate
+            // Notify therapist about failed payout (email)
+            sendPayoutFailed({
+                therapist,
+                amount: payout.amount / 100,
+                reason: payout.failure_message,
+            }).catch(() => { });
 
             // NOTE: Payment status stays "released" - money is still in Stripe balance
             // Stripe will retry the payout automatically
-
         }
     } catch (error) {
         console.error(`Error handling payout failure:`, error.message);

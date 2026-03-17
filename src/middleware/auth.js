@@ -64,8 +64,15 @@ export const authenticate = async (req, res, next) => {
     } catch (error) {
         // Clear invalid cookies
         if (error instanceof AuthenticationError) {
-            res.clearCookie("sb_access_token", { path: "/", });
-            res.clearCookie("sb_refresh_token", { path: "/", });
+            const isSecureContext = process.env.COOKIE_SECURE === "true";
+            const clearOptions = {
+                path: "/",
+                httpOnly: true,
+                secure: isSecureContext,
+                sameSite: isSecureContext ? "none" : "lax",
+            };
+            res.clearCookie("sb_access_token", clearOptions);
+            res.clearCookie("sb_refresh_token", clearOptions);
         }
         next(error);
     }
@@ -185,52 +192,4 @@ export const requireTherapistApproval = (req, res, next) => {
     }
 
     next();
-}
-
-/**
- * Middleware to refresh token if it's about to expire
- * Checks if token expires within 5 mins and refreshes it
- */
-export const autoRefreshToken = async (req, res, next) => {
-    try {
-        if (!req.supabaseUser || !req.cookies.sb_refresh_token) {
-            return next();
-        }
-
-        const expiresAt = req.supabaseUser.exp;
-        const now = Math.floor(Date.now() / 1000);
-        const timeUntilExpiry = expiresAt - now;
-
-        // Refresh if token expires in less than 5 mins (300 seconds)
-        if (timeUntilExpiry < 300) {
-            const { data, error } = await supabase.auth.refreshSession({
-                refresh_token: req.cookies.sb_refresh_token,
-            });
-
-            if (!error && data.session) {
-                // set new tokens in cookies
-                res.cookie("sb_access_token", data.session.access_token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === "production",
-                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                    maxAge: 60 * 60 * 1000, // 1hour
-                    path: "/",
-                });
-                res.cookie("sb_refresh_token", data.session.refresh_token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === "production",
-                    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                    maxAge: 60 * 60 * 1000, // 1hour
-                    path: "/",
-                });
-
-                req.accessToken = data.session.access_token;
-            }
-        }
-
-        next();
-    } catch (error) {
-        console.error("Auto refresh error:", error);
-        next();
-    }
 }
