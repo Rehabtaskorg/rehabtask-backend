@@ -190,6 +190,16 @@ export const handleCheckoutCompleted = async (session) => {
     }
 
     const stripeSubscriptionId = session.subscription;
+
+    // Idempotency: if already processed, skip
+    const alreadyProcessed = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId },
+    });
+    if (alreadyProcessed) {
+        logger.info("[Subscription] checkout.session.completed already processed", { stripeSubscriptionId });
+        return;
+    }
+
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
 
     // In Stripe API 2025+, period dates are on subscription items, not the subscription object
