@@ -380,6 +380,10 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
     const subItem = stripeSubscription.items?.data?.[0];
 
+    // If customer resumed their subscription (cancel_at_period_end flipped to false),
+    // clear the cancelledAt so the UI reflects the active state
+    const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
+
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
@@ -387,8 +391,13 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             currentPeriodStart: parseStripeDate(subItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
             stripePriceId: subItem?.price?.id || subscription.stripePriceId,
+            ...(resumed && { cancelledAt: null, cancelReason: null }),
         },
     });
+
+    if (resumed) {
+        logger.info("[Subscription] Customer resumed subscription", { subscriptionId: subscription.id });
+    }
 
     logger.info("[Subscription] Updated from Stripe", {
         subscriptionId: subscription.id,
