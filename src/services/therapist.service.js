@@ -85,7 +85,7 @@ export const updateAvailability = async (userId, scheduleData) => {
 
     // Delete existing availability
     await prisma.availability.deleteMany({
-        where: { therapist: therapist.id }
+        where: { therapistId: therapist.id }
     });
 
     // Create new availability records (same pattern as onboarding.service.js)
