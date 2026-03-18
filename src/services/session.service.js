@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
+import { logAction } from "./audit.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -57,6 +58,15 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         });
 
         return updated;
+    });
+
+    // Event: session.completed_by_therapist
+    logAction({
+        actorId: session.booking.therapist.userId,
+        action: "session.completed_by_therapist",
+        entityType: "session",
+        entityId: sessionId,
+        changes: { bookingId: session.bookingId, completedAt: updatedSession.completedAt },
     });
 
     // Notify customer to confirm session (fire-and-forget)
@@ -125,6 +135,15 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         return updated;
     });
 
+    // Event: session.confirmed_by_customer
+    logAction({
+        actorId: session.booking.customer.userId,
+        action: "session.confirmed_by_customer",
+        entityType: "session",
+        entityId: sessionId,
+        changes: { bookingId: session.bookingId, confirmedAt: updatedSession.confirmedByCustomerAt },
+    });
+
     // Notify therapist that customer confirmed (fire-and-forget)
     sendSessionConfirmed({
         therapist: session.booking.therapist,
@@ -184,6 +203,15 @@ export const cancelSession = async (sessionId, userId, reason) => {
         });
 
         return updated;
+    });
+
+    // Event: session.cancelled
+    logAction({
+        actorId: userId,
+        action: isCustomer ? "session.cancelled_by_customer" : "session.cancelled_by_therapist",
+        entityType: "session",
+        entityId: sessionId,
+        changes: { bookingId: session.bookingId, reason, cancelledBy: isCustomer ? "customer" : "therapist" },
     });
 
     return updatedSession;

@@ -4,6 +4,7 @@ import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
+import { logSystemEvent } from "../services/audit.service.js";
 
 /**
  * Handle Stripe webhooks
@@ -174,6 +175,18 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                     reason: paymentIntent.last_payment_error?.message,
                 }).catch(() => { });
             }
+
+            // Event: payment.failed
+            logSystemEvent({
+                action: "payment.failed",
+                entityType: "payment",
+                entityId: payment.id,
+                changes: {
+                    bookingId: payment.bookingId,
+                    reason: paymentIntent.last_payment_error?.message || "Payment failed",
+                    stripePaymentIntentId: paymentIntent.id,
+                },
+            });
 
             console.log("Payment and booking marked as failed/cancelled");
         } else {

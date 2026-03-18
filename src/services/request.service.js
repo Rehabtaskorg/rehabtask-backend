@@ -3,6 +3,7 @@ import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
 import { sendNewRequestNotifications } from "./email.service.js";
 import { logger } from "../config/logger.js";
+import { logAction } from "./audit.service.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr } = data;
@@ -36,6 +37,15 @@ export const createRequest = async (customerId, data, customerProfile) => {
             ...(visitType && { visitType }),
             ...(emr && { emr }),
         },
+    });
+
+    // Event: request.created
+    logAction({
+        actorId: customerProfile.userId,
+        action: "request.created",
+        entityType: "request",
+        entityId: request.id,
+        changes: { serviceType, location, preferredDate, patientId: patientId || null },
     });
 
     // Auto-persist custom visit type and EMR values to the lookup table
