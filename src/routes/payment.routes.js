@@ -27,6 +27,15 @@ router.post("/methods/setup", authenticate, authorize(["customer"]), sensitiveOp
 router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
 router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
 
+// Commission rate (authenticated — therapists need this for offer UI)
+router.get("/commission-rate", authenticate, async (req, res, next) => {
+    try {
+        const { getCommissionRate } = await import("../services/commission.service.js");
+        const rate = await getCommissionRate();
+        res.json({ success: true, data: { rate } });
+    } catch (err) { next(err); }
+});
+
 // Therapist routes
 router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);
 router.get("/connect/status", authenticate, authorize(["therapist"]), getConnectAccountStatusController);
