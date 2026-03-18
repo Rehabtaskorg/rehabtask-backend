@@ -76,6 +76,7 @@ export const updateAvailabilitySchema = z.object({
 });
 
 export const searchTherapistsSchema = z.object({
+    search: z.string().trim().max(100).optional(),
     latitude: z
         .string()
         .transform((val) => parseFloat(val))
@@ -93,7 +94,8 @@ export const searchTherapistsSchema = z.object({
         .transform((val) => parseInt(val, 10))
         .pipe(z.number().int().min(1).max(500)),
     specialization: z.string().max(500).optional(),
-    primaryLicenseType: z.string().max(100).optional(),
+    primaryLicenseType: z.string().max(500).optional(),
+    sortBy: z.enum(["relevance", "rating", "experience", "newest"]).optional(),
     page: z
         .string()
         .optional()

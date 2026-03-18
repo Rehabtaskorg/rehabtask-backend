@@ -122,24 +122,18 @@ export const updateAvailability = async (userId, scheduleData) => {
 };
 
 export const searchTherapists = async ({
+    search,
     latitude,
     longitude,
     radiusMiles = 50,
     specialization,
     primaryLicenseType,
+    sortBy,
     page = 1,
     limit = 20,
 }) => {
     const hasLocation = latitude !== undefined && longitude !== undefined;
 
-    /**
-     * @typedef {import("@prisma/client").TherapistProfile & {
-     *   workAreas: import("@prisma/client").WorkArea[],
-     *   reviews: { rating: number }[]
-     * }} TherapistWithRelations
-     */
-
-    /** @type {TherapistWithRelations[]} */
     let therapists;
     let total;
 
@@ -149,13 +143,45 @@ export const searchTherapists = async ({
         onboardingComplete: true,
     };
 
-    if (specialization) {
-        where.specialization = { contains: specialization, mode: "insensitive" };
+    // Full-text name search (case-insensitive contains)
+    if (search && search.trim().length >= 2) {
+        where.fullName = { contains: search.trim(), mode: "insensitive" };
     }
 
-    if (primaryLicenseType) {
-        where.primaryLicenseType = { equals: primaryLicenseType, mode: "insensitive" };
+    // Multi-value specialization filter (comma-separated)
+    if (specialization) {
+        const specs = specialization.split(",").map((s) => s.trim()).filter(Boolean);
+        if (specs.length === 1) {
+            where.specialization = { contains: specs[0], mode: "insensitive" };
+        } else if (specs.length > 1) {
+            where.OR = specs.map((s) => ({
+                specialization: { contains: s, mode: "insensitive" },
+            }));
+        }
     }
+
+    // Multi-value license type filter (comma-separated)
+    if (primaryLicenseType) {
+        const types = primaryLicenseType.split(",").map((t) => t.trim()).filter(Boolean);
+        if (types.length === 1) {
+            where.primaryLicenseType = { equals: types[0], mode: "insensitive" };
+        } else if (types.length > 1) {
+            where.primaryLicenseType = { in: types };
+        }
+    }
+
+    // Determine sort order for non-geo queries
+    const getOrderBy = () => {
+        switch (sortBy) {
+            case "experience":
+                return { yearsOfExperience: "desc" };
+            case "newest":
+                return { createdAt: "desc" };
+            // "rating" and "relevance" are handled post-query (computed fields)
+            default:
+                return { createdAt: "desc" };
+        }
+    };
 
     if (hasLocation) {
         const allTherapists = await prisma.therapistProfile.findMany({
@@ -179,6 +205,9 @@ export const searchTherapists = async ({
             })
         );
 
+        // Apply sorting on the geo-filtered set
+        sortTherapists(geoFiltered, sortBy);
+
         total = geoFiltered.length;
 
         // Manual pagination on the geo-filtered set
@@ -186,22 +215,39 @@ export const searchTherapists = async ({
         therapists = geoFiltered.slice(start, start + limit);
     } else {
         // No location — return all approved therapists, paginated
-        const [therapists_result, total_result] = await Promise.all([
-            prisma.therapistProfile.findMany({
+        // For rating sort, we fetch all and sort post-query (computed field)
+        if (sortBy === "rating") {
+            const allTherapists = await prisma.therapistProfile.findMany({
                 where,
                 include: {
                     workAreas: true,
                     reviews: { select: { rating: true } },
                 },
-                skip: (page - 1) * limit,
-                take: limit,
-                orderBy: { createdAt: "desc" },
-            }),
-            prisma.therapistProfile.count({ where }),
-        ]);
+            });
 
-        therapists = therapists_result;
-        total = total_result;
+            sortTherapists(allTherapists, sortBy);
+
+            total = allTherapists.length;
+            const start = (page - 1) * limit;
+            therapists = allTherapists.slice(start, start + limit);
+        } else {
+            const [therapists_result, total_result] = await Promise.all([
+                prisma.therapistProfile.findMany({
+                    where,
+                    include: {
+                        workAreas: true,
+                        reviews: { select: { rating: true } },
+                    },
+                    skip: (page - 1) * limit,
+                    take: limit,
+                    orderBy: getOrderBy(),
+                }),
+                prisma.therapistProfile.count({ where }),
+            ]);
+
+            therapists = therapists_result;
+            total = total_result;
+        }
     }
 
     // Map to public response shape with aggregated review stats
@@ -243,6 +289,33 @@ export const searchTherapists = async ({
         },
     };
 };
+
+/**
+ * Sort therapists in-place by the given sort criteria.
+ * Handles computed fields (rating) that can't be sorted at the DB level.
+ */
+function sortTherapists(therapists, sortBy) {
+    const getAvgRating = (t) => {
+        if (!t.reviews || t.reviews.length === 0) return 0;
+        return t.reviews.reduce((sum, r) => sum + r.rating, 0) / t.reviews.length;
+    };
+
+    switch (sortBy) {
+        case "rating":
+            therapists.sort((a, b) => getAvgRating(b) - getAvgRating(a));
+            break;
+        case "experience":
+            therapists.sort((a, b) => (b.yearsOfExperience || 0) - (a.yearsOfExperience || 0));
+            break;
+        case "newest":
+            therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            break;
+        default:
+            // "relevance" or undefined — keep default order (createdAt desc)
+            therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            break;
+    }
+}
 
 export const getTherapistPublicProfile = async (therapistId) => {
     const therapist = await prisma.therapistProfile.findUnique({
