@@ -321,6 +321,7 @@ model Payment {
   amount                Decimal          @db.Decimal(10, 2)
   platformFee           Decimal          @map("platform_fee") @db.Decimal(10, 2)
   therapistPayout       Decimal          @map("therapist_payout") @db.Decimal(10, 2)
+  releasedAmount        Decimal?         @map("released_amount") @db.Decimal(10, 2)
   status                PaymentStatus
   escrowedAt            DateTime?        @map("escrowed_at") @db.Timestamptz(3)
   releasedAt            DateTime?        @map("released_at") @db.Timestamptz(3)
@@ -650,6 +651,7 @@ enum SessionStatus {
 enum PaymentStatus {
   intent_created
   escrowed
+  partially_released
   released
   refunded
   failed

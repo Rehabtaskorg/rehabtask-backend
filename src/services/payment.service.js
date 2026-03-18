@@ -404,6 +404,7 @@ const releasePayment = async (sessionId) => {
             data: {
                 status: "released",
                 releasedAt: new Date(),
+                releasedAmount: parseFloat(payment.therapistPayout),
             },
         });
 
@@ -585,7 +586,7 @@ const getTherapistPayoutHistory = async (therapistId) => {
     const payments = await prisma.payment.findMany({
         where: {
             therapistId,
-            status: { in: ["released", "escrowed"] },
+            status: { in: ["released", "partially_released", "escrowed"] },
         },
         include: {
             booking: {
@@ -603,12 +604,15 @@ const getTherapistPayoutHistory = async (therapistId) => {
     });
 
     const totalEarnings = payments
-        .filter((p) => p.status === "released")
-        .reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0);
+        .filter((p) => ["released", "partially_released"].includes(p.status))
+        .reduce((sum, p) => sum + parseFloat(p.releasedAmount ?? p.therapistPayout), 0);
 
     const pendingEarnings = payments
         .filter((p) => p.status === "escrowed")
-        .reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0);
+        .reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0)
+        + payments
+            .filter((p) => p.status === "partially_released")
+            .reduce((sum, p) => sum + (parseFloat(p.therapistPayout) - parseFloat(p.releasedAmount ?? 0)), 0);
 
     return { payments, totalEarnings, pendingEarnings };
 }
