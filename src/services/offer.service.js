@@ -8,6 +8,7 @@ import {
     sendOfferChangeRequested
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
+import { logAction } from "./audit.service.js";
 
 /**
  * Create offer
@@ -76,6 +77,15 @@ export const createOffer = async (therapistId, data) => {
     await prisma.therapyRequest.update({
         where: { id: requestId },
         data: { status: "offers_received" },
+    });
+
+    // Event: offer.sent
+    logAction({
+        actorId: offer.therapist.userId,
+        action: "offer.sent",
+        entityType: "offer",
+        entityId: offer.id,
+        changes: { requestId, rate, sessionType, proposedDate },
     });
 
     // Notify customer about the new offer (fire-and-forget)
@@ -258,6 +268,24 @@ export const acceptOffer = async (offerId, customerId) => {
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
     });
 
+    // Event: offer.approved_by_customer
+    logAction({
+        actorId: booking.customer.user.id,
+        action: "offer.approved_by_customer",
+        entityType: "offer",
+        entityId: offerId,
+        changes: { bookingId: booking.id, therapistId: offer.therapistId, rate: parseFloat(offer.rate) },
+    });
+
+    // Event: session.scheduled (booking created = session date locked)
+    logAction({
+        actorId: booking.customer.user.id,
+        action: "session.scheduled",
+        entityType: "booking",
+        entityId: booking.id,
+        changes: { offerId, scheduledDate: offer.proposedDate, rate: parseFloat(offer.rate) },
+    });
+
     // Email notifications stay outside the transaction (side effects)
     sendOfferAccepted({
         therapist: booking.therapist,
@@ -317,6 +345,15 @@ export const reviseOffer = async (therapistId, offerId, data) => {
                 }
             }
         }
+    });
+
+    // Event: offer.updated
+    logAction({
+        actorId: updated.therapist.userId,
+        action: "offer.updated",
+        entityType: "offer",
+        entityId: offerId,
+        changes: { rate, sessionType, proposedDate, previousStatus: "change_requested" },
     });
 
     // Notify customer about the revised offer (fire-and-forget)
@@ -383,6 +420,15 @@ export const declineOffer = async (offerId, customerId) => {
                 },
             },
         },
+    });
+
+    // Event: offer.rejected_by_customer
+    logAction({
+        actorId: updatedOffer.request.customer.user.id,
+        action: "offer.rejected_by_customer",
+        entityType: "offer",
+        entityId: offerId,
+        changes: { therapistId: updatedOffer.therapist.id, requestId: updatedOffer.request.id },
     });
 
     sendOfferDeclined({
@@ -496,6 +542,15 @@ export const withdrawOffer = async (offerId, therapistId) => {
             status: "withdrawn",
             withdrawnAt: new Date(),
         },
+    });
+
+    // Event: offer.withdrawn (therapist withdrew their offer)
+    logAction({
+        actorId: offer.therapist.userId,
+        action: "offer.withdrawn",
+        entityType: "offer",
+        entityId: offerId,
+        changes: { requestId: offer.requestId, previousStatus: offer.status },
     });
 
     sendOfferWithdrawn({

@@ -12,3 +12,15 @@ export const createRequestSchema = z.object({
     visitType: z.string().trim().min(1, "Visit type is required").max(100),
     emr: z.string().trim().min(1, "EMR system is required").max(100),
 });
+
+export const updateRequestSchema = z.object({
+    serviceType: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().min(10, "Description must be at least 10 characters").optional(),
+    preferredDate: z.string().min(1).optional(),
+    location: z.string().trim().min(1).optional(),
+    latitude: z.number({ coerce: true }).optional(),
+    longitude: z.number({ coerce: true }).optional(),
+    rate: z.number({ coerce: true }).positive("Rate must be a positive number").optional(),
+    visitType: z.string().trim().min(1).max(100).optional(),
+    emr: z.string().trim().min(1).max(100).optional(),
+});

@@ -3,6 +3,7 @@ import { stripe, stripeConfig } from "../config/stripe.js";
 import { sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
+import { logAction, logSystemEvent } from "./audit.service.js";
 
 /**
  * Get or create a Stripe customer for a given user.
@@ -215,6 +216,15 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         }
     }
 
+    // Event: payment.intent_created
+    logAction({
+        actorId: userId,
+        action: "payment.intent_created",
+        entityType: "payment",
+        entityId: payment.id,
+        changes: { bookingId, amount, platformFee: platformFee.toFixed(2), therapistPayout: therapistPayout.toFixed(2) },
+    });
+
     // If confirmed immediately and succeeded, the webhook will handle status transitions
     if (paymentIntent.status === "succeeded") {
         return { status: "succeeded", payment };
@@ -275,6 +285,14 @@ const handlePaymentSuccess = async (paymentIntentId) => {
                 status: "scheduled",
             },
         });
+    });
+
+    // Event: payment.escrow_funded (system/webhook triggered)
+    logSystemEvent({
+        action: "payment.escrow_funded",
+        entityType: "payment",
+        entityId: payment.id,
+        changes: { bookingId: payment.bookingId, amount: parseFloat(payment.amount), stripePaymentIntentId: paymentIntentId },
     });
 
     // Send payment confirmation email to customer
@@ -389,6 +407,31 @@ const releasePayment = async (sessionId) => {
             },
         });
 
+        // Event: payment.released_to_therapist
+        logSystemEvent({
+            action: "payment.released_to_therapist",
+            entityType: "payment",
+            entityId: payment.id,
+            changes: {
+                sessionId: session.id,
+                bookingId: session.bookingId,
+                therapistPayout: parseFloat(payment.therapistPayout),
+                stripeTransferId: transfer.id,
+            },
+        });
+
+        // Event: admin_fee.applied (commission deducted during payout)
+        logSystemEvent({
+            action: "admin_fee.applied",
+            entityType: "payment",
+            entityId: payment.id,
+            changes: {
+                totalAmount: parseFloat(payment.amount),
+                platformFee: parseFloat(payment.platformFee),
+                therapistPayout: parseFloat(payment.therapistPayout),
+            },
+        });
+
         // Send payout confirmation email to therapist
         sendPayoutConfirmation({
             therapist: session.booking.therapist,
@@ -499,6 +542,15 @@ const processRefund = async (bookingId, userId, reason) => {
                 },
             });
         }
+    });
+
+    // Event: payment.refunded
+    logAction({
+        actorId: userId,
+        action: "payment.refunded",
+        entityType: "payment",
+        entityId: payment.id,
+        changes: { bookingId, amount: parseFloat(payment.amount), reason, previousStatus: payment.status },
     });
 
     return { refund, paymentId: payment.id, amount: parseFloat(payment.amount) };
