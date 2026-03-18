@@ -99,15 +99,15 @@ export const adminGetPaymentStats = async () => {
     const [totalVolume, platformRevenue, therapistPayouts, refunded, escrowed] = await Promise.all([
         prisma.payment.aggregate({
             _sum: { amount: true },
-            where: { status: { in: ["escrowed", "released"] } },
+            where: { status: { in: ["escrowed", "partially_released", "released"] } },
         }),
         prisma.payment.aggregate({
             _sum: { platformFee: true },
-            where: { status: "released" },
+            where: { status: { in: ["partially_released", "released"] } },
         }),
         prisma.payment.aggregate({
-            _sum: { therapistPayout: true },
-            where: { status: "released" },
+            _sum: { releasedAmount: true },
+            where: { status: { in: ["partially_released", "released"] } },
         }),
         prisma.payment.aggregate({
             _sum: { amount: true },
@@ -115,14 +115,14 @@ export const adminGetPaymentStats = async () => {
         }),
         prisma.payment.aggregate({
             _sum: { amount: true },
-            where: { status: "escrowed" },
+            where: { status: { in: ["escrowed", "partially_released"] } },
         }),
     ]);
 
     return {
         totalVolume: parseFloat(totalVolume._sum.amount ?? 0),
         platformRevenue: parseFloat(platformRevenue._sum.platformFee ?? 0),
-        therapistPayouts: parseFloat(therapistPayouts._sum.therapistPayout ?? 0),
+        therapistPayouts: parseFloat(therapistPayouts._sum.releasedAmount ?? 0),
         totalRefunded: parseFloat(refunded._sum.amount ?? 0),
         escrowedFunds: parseFloat(escrowed._sum.amount ?? 0),
     };
@@ -196,11 +196,11 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
     const updated = await prisma.payment.update({
         where: { id: paymentId },
         data: {
-            status: "released",
+            status: isPartial ? "partially_released" : "released",
             stripeTransferId: transfer.id,
             releasedAt: new Date(),
-            // Update therapistPayout to the actual released amount for accurate stats
-            ...(isPartial && { therapistPayout: releaseAmount }),
+            releasedAmount: releaseAmount,
+            // therapistPayout is preserved as the original calculated amount — never overwritten
         },
         include: PAYMENT_INCLUDE,
     });
@@ -217,6 +217,96 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
         transferId: transfer.id,
         amount: releaseAmount,
         partial: isPartial,
+    });
+    return updated;
+};
+
+/**
+ * Admin release of the remaining balance on a partially released payment.
+ * Transfers the difference between therapistPayout and releasedAmount.
+ */
+export const adminReleaseRemainder = async (paymentId, adminId) => {
+    const payment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+            therapist: true,
+            booking: { include: { session: true } },
+        },
+    });
+    if (!payment) throw new NotFoundError("Payment not found");
+    if (payment.status !== "partially_released") {
+        throw new ConflictError(
+            `Only partially released payments can have their remainder released (current: '${payment.status}')`
+        );
+    }
+    if (!payment.therapist.stripeAccountId) {
+        throw new BadRequestError("Therapist has not connected a Stripe account");
+    }
+
+    const fullPayout = parseFloat(payment.therapistPayout);
+    const alreadyReleased = parseFloat(payment.releasedAmount ?? 0);
+    const remainder = parseFloat((fullPayout - alreadyReleased).toFixed(2));
+
+    if (remainder <= 0) {
+        throw new BadRequestError("No remaining balance to release");
+    }
+
+    let transfer;
+    try {
+        transfer = await stripe.transfers.create({
+            amount: Math.round(remainder * 100),
+            currency: "usd",
+            destination: payment.therapist.stripeAccountId,
+            metadata: {
+                paymentId: payment.id,
+                bookingId: payment.bookingId,
+                releasedByAdmin: adminId,
+                isRemainder: "true",
+            },
+            description: `Remainder payout for booking ${payment.bookingId}`,
+        }, {
+            idempotencyKey: `admin-release-remainder-${paymentId}-${adminId}`,
+        });
+    } catch (stripeError) {
+        logger.error("[AdminPaymentService] Stripe remainder transfer failed", {
+            paymentId,
+            error: stripeError.message,
+        });
+        throw stripeError;
+    }
+
+    // Remove the unique constraint conflict: the first transfer ID is already stored.
+    // For the remainder transfer, we append it to metadata via the releasedAmount tracking.
+    const updated = await prisma.payment.update({
+        where: { id: paymentId },
+        data: {
+            status: "released",
+            releasedAmount: fullPayout,
+            releasedAt: new Date(),
+        },
+        include: PAYMENT_INCLUDE,
+    });
+
+    // Mark booking as completed now that full payout is released
+    if (payment.booking) {
+        await prisma.booking.update({
+            where: { id: payment.bookingId },
+            data: { status: "completed" },
+        });
+    }
+
+    sendAdminPaymentReleased({
+        therapist: updated.therapist,
+        amount: remainder,
+        booking: updated.booking,
+    }).catch(() => {});
+
+    logger.info("[AdminPaymentService] Payment remainder released", {
+        paymentId,
+        byAdmin: adminId,
+        transferId: transfer.id,
+        remainder,
+        totalReleased: fullPayout,
     });
     return updated;
 };

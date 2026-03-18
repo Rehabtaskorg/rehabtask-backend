@@ -69,6 +69,7 @@ import {
     adminGetPaymentController,
     adminGetPaymentStatsController,
     adminReleasePaymentController,
+    adminReleaseRemainderController,
     adminRefundPaymentController,
 } from "../controllers/admin.payment.controller.js";
 
@@ -155,6 +156,7 @@ router.get("/payments/stats", ...adminOrSubAdmin, requirePermission("payments"),
 router.get("/payments", ...adminOrSubAdmin, requirePermission("payments"), validate(adminListPaymentsQuerySchema, "query"), adminListPaymentsController);
 router.get("/payments/:paymentId", ...adminOrSubAdmin, requirePermission("payments"), validate(paymentIdParamSchema, "params"), adminGetPaymentController);
 router.put("/payments/:paymentId/release", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminReleasePaymentSchema }), adminReleasePaymentController);
+router.put("/payments/:paymentId/release-remainder", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema }), adminReleaseRemainderController);
 router.put("/payments/:paymentId/refund", ...adminOrSubAdmin, requirePermission("payments"), validateMultiple({ params: paymentIdParamSchema, body: adminRefundPaymentSchema }), adminRefundPaymentController);
 
 // Commission Management
