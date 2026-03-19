@@ -169,6 +169,7 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
     const releaseAmount = partialAmount ?? fullPayout;
     const isPartial = partialAmount !== undefined && partialAmount !== null && partialAmount < fullPayout;
 
+
     let transfer;
     try {
         transfer = await stripe.transfers.create({
@@ -408,5 +409,3 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
     });
     return refund;
 };
-// redeploy trigger
-// deploy trigger

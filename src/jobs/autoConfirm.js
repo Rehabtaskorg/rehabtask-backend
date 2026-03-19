@@ -66,7 +66,7 @@ export const runAutoConfirm = async () => {
         where: {
             status: "confirmed_by_customer",
             booking: {
-                payment: { status: "escrowed" },
+                payment: { status: { in: ["escrowed", "partially_released"] } },
             },
         },
         include: {

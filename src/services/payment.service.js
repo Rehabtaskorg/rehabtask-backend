@@ -342,13 +342,13 @@ const releasePayment = async (sessionId) => {
 
     const payment = session.booking.payment;
 
-    // Idempotent: if already released, return as-is (safe retry after partial failure)
+    // Idempotent: if already fully released, return as-is (safe retry after partial failure)
     if (payment && payment.status === "released") {
         return payment;
     }
 
-    if (!payment || payment.status !== "escrowed") {
-        throw new Error("Payment not in escrowed state");
+    if (!payment || !["escrowed", "partially_released"].includes(payment.status)) {
+        throw new Error("Payment not in a releasable state");
     }
 
     const therapist = session.booking.therapist;
@@ -357,20 +357,30 @@ const releasePayment = async (sessionId) => {
         throw new Error("Therapist has not connected Stripe account");
     }
 
+    // Calculate the amount to release — full payout if escrowed, remainder if partially released
+    const fullPayout = parseFloat(payment.therapistPayout);
+    const alreadyReleased = parseFloat(payment.releasedAmount ?? 0);
+    const amountToRelease = payment.status === "partially_released"
+        ? parseFloat((fullPayout - alreadyReleased).toFixed(2))
+        : fullPayout;
+
     let transfer;
     try {
         transfer = await stripe.transfers.create({
-            amount: Math.round(parseFloat(payment.therapistPayout) * 100),
+            amount: Math.round(amountToRelease * 100),
             currency: "usd",
             destination: therapist.stripeAccountId,
             metadata: {
                 paymentId: payment.id,
                 sessionId: session.id,
                 bookingId: session.bookingId,
+                isRemainder: alreadyReleased > 0 ? "true" : "false",
             },
-            description: `Payout for session ${session.id}`,
+            description: alreadyReleased > 0
+                ? `Remainder payout for session ${session.id}`
+                : `Payout for session ${session.id}`,
         }, {
-            idempotencyKey: `release-${payment.id}`,
+            idempotencyKey: `release-${payment.id}${alreadyReleased > 0 ? "-remainder" : ""}`,
         });
     } catch (stripeError) {
         logger.error(`Transfer creation failed:`, stripeError.message);

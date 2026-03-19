@@ -192,7 +192,7 @@ export const subscriptionIdParamSchema = z.object({
 
 export const adminListPaymentsQuerySchema = z.object({
     status: z
-        .enum(["intent_created", "escrowed", "released", "refunded", "failed"])
+        .enum(["intent_created", "escrowed", "partially_released", "released", "refunded", "failed"])
         .optional(),
     search: z.string().max(200).optional(),
     sortBy: z.enum(["createdAt", "amount"]).optional().default("createdAt"),
