@@ -42,6 +42,7 @@ import {
     subscriptionPaymentFailed,
     subscriptionCancelledByCustomer,
     subscriptionDowngraded,
+    offersWithdrawnRequestUpdated,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -171,6 +172,14 @@ export const sendOfferDeclined = async ({ therapist, customer, offer }) => {
 
 export const sendOfferWithdrawn = async ({ customer, therapist, offer }) => {
     return dispatch(customer.user.email, offerWithdrawn, { customer, therapist, offer });
+};
+
+export const sendOffersWithdrawnRequestUpdated = async ({ therapists, customer, request }) => {
+    return Promise.allSettled(
+        therapists.map((therapist) =>
+            dispatch(therapist.user.email, offersWithdrawnRequestUpdated, { therapist, customer, request })
+        )
+    );
 };
 
 export const sendOfferChangeRequested = async ({ therapist, customer, offer, note }) => {

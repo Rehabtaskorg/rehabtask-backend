@@ -4,6 +4,7 @@ import {
     BadRequestError,
     AuthorizationError
 } from "../utils/errors.js";
+import { logAction } from "./audit.service.js";
 
 const generateTicketId = () => {
     const prefix = "RT";
@@ -54,6 +55,15 @@ export const createDispute = async (userId, data) => {
                     description,
                     status: "open"
                 }
+            });
+
+            // Event: session.disputed
+            logAction({
+                actorId: userId,
+                action: "session.disputed",
+                entityType: "dispute",
+                entityId: dispute.id,
+                changes: { ticketId, bookingId: bookingId || null, type },
             });
 
             return dispute;
@@ -169,6 +179,15 @@ export const resolveDispute = async (disputeId, adminUserId, data) => {
     const dispute = await prisma.dispute.update({
         where: { id: disputeId },
         data: updatedData,
+    });
+
+    // Event: admin.review_opened (admin resolved/updated dispute)
+    logAction({
+        actorId: adminUserId,
+        action: "admin.review_opened",
+        entityType: "dispute",
+        entityId: disputeId,
+        changes: { status: data.status, resolution: data.resolution || null, previousStatus: existing.status },
     });
 
     return dispute;

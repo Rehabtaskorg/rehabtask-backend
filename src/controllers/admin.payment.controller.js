@@ -3,6 +3,7 @@ import {
     adminGetPayment as adminGetPaymentService,
     adminGetPaymentStats as adminGetPaymentStatsService,
     adminReleasePayment as adminReleasePaymentService,
+    adminReleaseRemainder as adminReleaseRemainderService,
     adminRefundPayment as adminRefundPaymentService,
 } from "../services/admin.payment.service.js";
 import { logAction } from "../services/audit.service.js";
@@ -51,15 +52,17 @@ const adminReleasePaymentController = async (req, res, next) => {
         const { paymentId } = req.params;
         const { amount } = req.body;
         const payment = await adminReleasePaymentService(paymentId, adminId, amount);
+        const isPartial = amount !== undefined && amount < parseFloat(payment.therapistPayout);
         await logAction({
             actorId: adminId,
             action: "payment.released",
             entityType: "payment",
             entityId: paymentId,
             changes: {
-                status: { from: "escrowed", to: "released" },
-                amount: parseFloat(payment.therapistPayout),
-                partial: amount !== undefined,
+                status: { from: "escrowed", to: isPartial ? "partially_released" : "released" },
+                releasedAmount: parseFloat(payment.releasedAmount),
+                fullPayout: parseFloat(payment.therapistPayout),
+                partial: isPartial,
             },
         });
         res.status(200).json({ success: true, data: payment });
@@ -87,10 +90,33 @@ const adminRefundPaymentController = async (req, res, next) => {
     }
 };
 
+const adminReleaseRemainderController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { paymentId } = req.params;
+        const payment = await adminReleaseRemainderService(paymentId, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "payment.remainder_released",
+            entityType: "payment",
+            entityId: paymentId,
+            changes: {
+                status: { from: "partially_released", to: "released" },
+                releasedAmount: parseFloat(payment.releasedAmount),
+                fullPayout: parseFloat(payment.therapistPayout),
+            },
+        });
+        res.status(200).json({ success: true, data: payment });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     adminListPaymentsController,
     adminGetPaymentController,
     adminGetPaymentStatsController,
     adminReleasePaymentController,
+    adminReleaseRemainderController,
     adminRefundPaymentController,
 };

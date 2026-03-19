@@ -3,6 +3,7 @@ import { supabase } from "../config/supabase.js";
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
+import { logAction } from "./audit.service.js";
 
 /**
  * Generate the booking divider text based on the booking's current status.
@@ -331,6 +332,15 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
                 }
             }
         },
+    });
+
+    // Event: message.sent
+    logAction({
+        actorId: senderId,
+        action: "message.sent",
+        entityType: "message",
+        entityId: message.id,
+        changes: { contextType, contextId, recipientId },
     });
 
     await publishMessageToRealtime(message, contextType, contextId);

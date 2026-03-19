@@ -9,6 +9,7 @@ import {
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId } from "../config/subscriptionPlans.js";
+import { logSystemEvent } from "./audit.service.js";
 
 /**
  * Safely parse a Stripe timestamp to a Date.
@@ -255,6 +256,14 @@ export const handleCheckoutCompleted = async (session) => {
         logger.error("[Subscription] Failed to send activation email", { error: err.message });
     }
 
+    // Event: subscription.created
+    logSystemEvent({
+        action: "subscription.created",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { customerId, planType, billingInterval, stripeSubscriptionId },
+    });
+
     logger.info("[Subscription] Checkout completed", { customerId, planType, stripeSubscriptionId });
 };
 
@@ -292,6 +301,14 @@ export const handleInvoicePaid = async (invoice) => {
         },
     });
 
+    // Event: subscription.renewed
+    logSystemEvent({
+        action: "subscription.renewed",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { stripeSubscriptionId, periodEnd: parseStripeDate(invoice.lines?.data[0]?.period?.end) },
+    });
+
     logger.info("[Subscription] Invoice paid — period renewed", { subscriptionId: subscription.id });
 };
 
@@ -324,6 +341,14 @@ export const handleInvoicePaymentFailed = async (invoice) => {
         logger.error("[Subscription] Failed to send payment failed email", { error: err.message });
     }
 
+    // Event: subscription.payment_failed
+    logSystemEvent({
+        action: "subscription.payment_failed",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { stripeSubscriptionId, invoiceId: invoice.id },
+    });
+
     logger.warn("[Subscription] Invoice payment failed", { subscriptionId: subscription.id });
 };
 
@@ -348,6 +373,14 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
             gracePeriodEndsAt,
             cancelledAt: subscription.cancelledAt || new Date(),
         },
+    });
+
+    // Event: subscription.canceled (entering grace period)
+    logSystemEvent({
+        action: "subscription.canceled",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { previousPlan: subscription.planType, gracePeriodEndsAt },
     });
 
     logger.info("[Subscription] Deleted — entering grace period", {
@@ -380,6 +413,10 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
     const subItem = stripeSubscription.items?.data?.[0];
 
+    // If customer resumed their subscription (cancel_at_period_end flipped to false),
+    // clear the cancelledAt so the UI reflects the active state
+    const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
+
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
@@ -387,8 +424,13 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             currentPeriodStart: parseStripeDate(subItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
             stripePriceId: subItem?.price?.id || subscription.stripePriceId,
+            ...(resumed && { cancelledAt: null, cancelReason: null }),
         },
     });
+
+    if (resumed) {
+        logger.info("[Subscription] Customer resumed subscription", { subscriptionId: subscription.id });
+    }
 
     logger.info("[Subscription] Updated from Stripe", {
         subscriptionId: subscription.id,
@@ -425,6 +467,14 @@ export const runTrialExpiry = async () => {
                 therapistLimit,
                 requestLimit,
             },
+        });
+
+        // Event: subscription.trial_expired
+        logSystemEvent({
+            action: "subscription.trial_expired",
+            entityType: "subscription",
+            entityId: sub.id,
+            changes: { customerId: sub.customerId, previousPlan: "standard", downgradedTo: "free" },
         });
 
         try {
@@ -471,6 +521,14 @@ export const runGracePeriodExpiry = async () => {
                 therapistLimit,
                 requestLimit,
             },
+        });
+
+        // Event: subscription.grace_period_expired
+        logSystemEvent({
+            action: "subscription.grace_period_expired",
+            entityType: "subscription",
+            entityId: sub.id,
+            changes: { customerId: sub.customerId, previousPlan: sub.planType, downgradedTo: "free" },
         });
 
         try {

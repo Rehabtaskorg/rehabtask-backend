@@ -350,6 +350,22 @@ export const offerWithdrawn = ({ customer, therapist, offer }) => ({
     `),
 });
 
+// Offer withdrawn due to request update (to therapist)
+export const offersWithdrawnRequestUpdated = ({ therapist, customer, request }) => ({
+    subject: `A request you offered on has been updated`,
+    html: layout(`
+        ${heading('Request Updated — Offer Withdrawn')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> has updated their therapy request. Because the request details changed, your pending offer has been automatically withdrawn.`)}
+        ${hr()}
+        ${field('Service Type', request.serviceType)}
+        ${field('Location', request.location)}
+        ${hr()}
+        ${text('You can review the updated request and submit a new offer if you\'re still interested.')}
+        ${button(`${FRONTEND_URL}/therapist/requests`, 'Browse Requests')}
+    `),
+});
+
 // Offer Change requested (to therapist)
 export const offerChangeRequested = ({ therapist, customer, offer, note }) => ({
     subject: `${customer.fullName} requested changes to your offer`,
@@ -619,7 +635,7 @@ export const commissionRateChanged = ({ therapist, tier, oldRate, newRate, effec
         ${text(`Hi ${therapist.fullName},`)}
         ${text('The platform commission rate for your plan tier has been updated. This will apply to all future payments.')}
         ${hr()}
-        ${field('Plan Tier', tier.charAt(0).toUpperCase() + tier.slice(1))}
+        ${field('Plan Tier', tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'All Tiers')}
         ${field('Previous Rate', `${(oldRate * 100).toFixed(1)}%`)}
         ${field('New Rate', `${(newRate * 100).toFixed(1)}%`)}
         ${field('Effective From', formatDate(effectiveFrom))}

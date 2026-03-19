@@ -1,4 +1,4 @@
-import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, } from "../services/request.service.js";
+import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest } from "../services/request.service.js";
 
 /**
  * Create a new request
@@ -58,9 +58,25 @@ const getAvailableRequestsController = async (req, res, next) => {
     }
 };
 
+/**
+ * Update an existing request
+ */
+const updateRequestController = async (req, res, next) => {
+    try {
+        const { requestId } = req.params;
+        const customerId = req.user.customerProfile.id;
+        const request = await updateRequest(requestId, customerId, req.body, req.user.customerProfile);
+
+        res.status(200).json({ success: true, data: request });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     createRequestController,
     getCustomerRequestsController,
     getRequestByIdController,
     getAvailableRequestsController,
+    updateRequestController,
 }
