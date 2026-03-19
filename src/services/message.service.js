@@ -1319,7 +1319,12 @@ export const createDirectMessage = async ({ senderId, recipientId, content }) =>
  */
 const publishMessageToRealtime = async (message, contextType, contextId) => {
     try {
+        // Emit to conversation room (for users actively viewing this thread)
         emitToRoom(`conversation:${contextType}:${contextId}`, "message:new", message);
+
+        // Also emit to recipient's personal room so they get the message
+        // regardless of which page they're on (dashboard, bookings, etc.)
+        emitToRoom(`user:${message.recipientId}`, "message:new", message);
 
         const unreadCount = await getUnreadCount(message.recipientId);
         emitToRoom(`user:${message.recipientId}`, "message:unread_update", { count: unreadCount });
