@@ -51,12 +51,6 @@ const adminReleasePaymentController = async (req, res, next) => {
         const adminId = req.user.id;
         const { paymentId } = req.params;
         const { amount } = req.body;
-        console.log("[RELEASE_CONTROLLER_DEBUG]", {
-            rawBody: req.body,
-            amount,
-            amountType: typeof amount,
-            paymentId,
-        });
         const payment = await adminReleasePaymentService(paymentId, adminId, amount);
         const isPartial = amount !== undefined && amount < parseFloat(payment.therapistPayout);
         await logAction({

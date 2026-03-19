@@ -169,17 +169,6 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
     const releaseAmount = partialAmount ?? fullPayout;
     const isPartial = partialAmount !== undefined && partialAmount !== null && partialAmount < fullPayout;
 
-    console.log("[PARTIAL_RELEASE_DEBUG]", {
-        partialAmount,
-        partialAmountType: typeof partialAmount,
-        fullPayout,
-        releaseAmount,
-        isPartial,
-        partialAmountUndefined: partialAmount === undefined,
-        partialAmountNull: partialAmount === null,
-        lessThanFull: partialAmount < fullPayout,
-        statusToSet: isPartial ? "partially_released" : "released",
-    });
 
     let transfer;
     try {
@@ -420,5 +409,3 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
     });
     return refund;
 };
-// redeploy trigger
-// deploy trigger
