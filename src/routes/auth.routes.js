@@ -114,6 +114,23 @@ router.post("/logout", authenticate, logoutController);
 // Get current user
 router.get("/me", authenticate, getCurrentUserController);
 
+// Generate a one-time ticket for Socket.io authentication
+// The ticket is short-lived (30s) and can only be used once.
+// This avoids exposing the access token to JavaScript while still
+// allowing cross-origin Socket.io auth where cookies aren't sent.
+const socketTickets = new Map();
+router.get("/socket-ticket", authenticate, (req, res) => {
+    const ticket = `tkt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    socketTickets.set(ticket, { userId: req.user.id, createdAt: Date.now() });
+    // Expire old tickets (cleanup)
+    for (const [key, val] of socketTickets) {
+        if (Date.now() - val.createdAt > 30000) socketTickets.delete(key);
+    }
+    res.json({ success: true, data: { ticket } });
+});
+// Export for socket auth middleware
+export { socketTickets };
+
 // Change password
 router.post(
     "/password/change",

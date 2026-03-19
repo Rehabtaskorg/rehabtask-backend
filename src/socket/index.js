@@ -4,6 +4,7 @@ import { supabase } from "../config/supabase.js";
 import { prisma } from "../config/prisma.js";
 import { addUser, removeUser } from "./presence.js";
 import { logger } from "../config/logger.js";
+import { socketTickets } from "../routes/auth.routes.js";
 
 let io = null;
 
@@ -23,23 +24,42 @@ export function initSocketIO(httpServer) {
     });
 
     // ─── Auth Middleware ─────────────────────────────────────────────────
+    // Supports three auth methods in priority order:
+    // 1. One-time ticket (safe for cross-origin, no token exposure)
+    // 2. httpOnly cookie (same-origin or when cross-origin cookies work)
+    // 3. Handshake auth token (fallback for OAuth users with Supabase session)
     io.use(async (socket, next) => {
         try {
-            // Extract token from cookies (same cookie as REST auth) or handshake auth
+            const ticket = socket.handshake.auth?.ticket;
             const cookies = cookie.parse(socket.handshake.headers.cookie || "");
             const token = cookies.sb_access_token || socket.handshake.auth?.token;
 
-            if (!token) {
+            let userId = null;
+
+            // Method 1: One-time ticket (preferred for cross-origin)
+            if (ticket && socketTickets.has(ticket)) {
+                const ticketData = socketTickets.get(ticket);
+                socketTickets.delete(ticket); // Single use — delete immediately
+                if (Date.now() - ticketData.createdAt > 30000) {
+                    return next(new Error("Ticket expired"));
+                }
+                userId = ticketData.userId;
+            }
+            // Method 2 & 3: Cookie or handshake token
+            else if (token) {
+                const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+                if (error || !supabaseUser) {
+                    return next(new Error("Invalid or expired token"));
+                }
+                userId = supabaseUser.id;
+            }
+
+            if (!userId) {
                 return next(new Error("Authentication required"));
             }
 
-            const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
-            if (error || !supabaseUser) {
-                return next(new Error("Invalid or expired token"));
-            }
-
             const user = await prisma.user.findUnique({
-                where: { id: supabaseUser.id },
+                where: { id: userId },
                 select: { id: true, role: true, email: true },
             });
 
@@ -47,7 +67,6 @@ export function initSocketIO(httpServer) {
                 return next(new Error("User not found"));
             }
 
-            // Attach user info to socket for downstream use
             socket.userId = user.id;
             socket.userRole = user.role;
             next();
