@@ -1,9 +1,10 @@
 import { prisma } from "../config/prisma.js"
-import { supabase } from "../config/supabase.js";
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 import { logAction } from "./audit.service.js";
+import { getIO } from "../socket/index.js";
+import { isUserOnline } from "../socket/presence.js";
 
 /**
  * Generate the booking divider text based on the booking's current status.
@@ -24,43 +25,13 @@ const getBookingDividerText = (bookingStatus) => {
 };
 
 /**
- * Supabase Realtime broadcast helper
- * Channels must be subscribed before sending — .send() without subscribing silently fails.
- * This helper subscribes, waits for confirmation, sends, then cleans up.
+ * Emit an event to a Socket.io room.
+ * Safe to call even if Socket.io is not initialized (e.g., during tests).
  */
-const subscribedChannels = new Map();
-
-const broadcastToChannel = async (channelName, event, payload) => {
-    try {
-        let channel = subscribedChannels.get(channelName);
-
-        if (!channel) {
-            channel = supabase.channel(channelName);
-            await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error("Channel subscribe timeout")), 5000);
-                channel.subscribe((status) => {
-                    if (status === "SUBSCRIBED") {
-                        clearTimeout(timeout);
-                        resolve();
-                    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                        clearTimeout(timeout);
-                        reject(new Error(`Channel subscribe failed: ${status}`));
-                    }
-                });
-            });
-            subscribedChannels.set(channelName, channel);
-        }
-
-        await channel.send({ type: "broadcast", event, payload });
-    } catch (error) {
-        // Clean up failed channel so next attempt retries fresh
-        const failed = subscribedChannels.get(channelName);
-        if (failed) {
-            supabase.removeChannel(failed);
-            subscribedChannels.delete(channelName);
-        }
-        logger.error(`Realtime broadcast error [${channelName}]: ${error.message}`);
-    }
+const emitToRoom = (room, event, payload) => {
+    const io = getIO();
+    if (!io) return;
+    io.to(room).emit(event, payload);
 };
 
 /**
@@ -748,7 +719,7 @@ export const markMessagesAsRead = async (userId, contextType, contextId) => {
     if (result.count > 0) {
         const { recipientId: otherUserId } = extractContextMetadata(userId, contextType, contextData);
         if (otherUserId) {
-            await broadcastToChannel(`user:${otherUserId}`, "messages:marked_read", {
+            emitToRoom(`user:${otherUserId}`, "messages:marked_read", {
                 contextType,
                 contextId,
                 readBy: userId,
@@ -1344,29 +1315,29 @@ export const createDirectMessage = async ({ senderId, recipientId, content }) =>
 };
 
 /**
- * Publish message to Supabase Realtime
+ * Publish message to connected clients via Socket.io
  */
 const publishMessageToRealtime = async (message, contextType, contextId) => {
     try {
-        const channelName = `conversation:${contextType}:${contextId}`;
+        const payload = { ...message, _contextType: contextType, _contextId: contextId };
 
-        await broadcastToChannel(channelName, "message:new", message);
+        // Emit to conversation room (for users actively viewing this thread)
+        emitToRoom(`conversation:${contextType}:${contextId}`, "message:new", payload);
+
+        // Also emit to recipient's personal room so they get the message
+        // regardless of which page they're on (dashboard, bookings, etc.)
+        emitToRoom(`user:${message.recipientId}`, "message:new", payload);
 
         const unreadCount = await getUnreadCount(message.recipientId);
-
-        await broadcastToChannel(`user:${message.recipientId}`, "message:unread_update", {
-            count: unreadCount,
-        });
+        emitToRoom(`user:${message.recipientId}`, "message:unread_update", { count: unreadCount });
     } catch (error) {
-        logger.error("Supabase realtime publish error:", error);
-        // Don't throw - realtime is not critical
+        logger.error("[Socket] Message broadcast error:", error);
     }
 };
 
 /**
  * Check is user is currently only via Supabase presence
  */
-const checkUserOnlineStatus = async (_userId) => {
-    // TODO: Implement proper Supabase presence tracking post-MVP
-    return false;
+const checkUserOnlineStatus = async (userId) => {
+    return isUserOnline(userId);
 };
