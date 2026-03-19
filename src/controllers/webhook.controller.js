@@ -322,10 +322,10 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
         // RECOVERY CASE: Transfer succeeded but DB wasn't updated.
         // Skip if already processed (released, partially_released, or has transfer ID).
         if (payment.status === "escrowed" && !payment.stripeTransferId) {
-            // Re-fetch to avoid race condition with admin release (which updates status + transferId atomically)
-            const freshPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
-            if (freshPayment.status !== "escrowed" || freshPayment.stripeTransferId) {
-                console.log(`Payment ${payment.id} already processed (status: ${freshPayment.status}), skipping recovery`);
+            // Skip admin-initiated transfers — the admin service handles its own DB updates.
+            // Without this, the webhook races the admin's DB write and overwrites partially_released → released.
+            if (transfer.metadata?.releasedByAdmin) {
+                console.log(`Payment ${payment.id} transfer was admin-initiated, skipping webhook recovery`);
                 return;
             }
 
