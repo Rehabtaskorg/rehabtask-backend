@@ -10,8 +10,8 @@ export const getVisitTypesController = async (req, res, next) => {
             return res.status(403).json({ success: false, message: "Only therapists can access visit types" });
         }
 
-        const discipline = therapist.primaryLicenseType || "";
-        const visitTypes = await getVisitTypesByDiscipline(discipline);
+        const licenseType = therapist.primaryLicenseType || "";
+        const visitTypes = await getVisitTypesByDiscipline(licenseType);
         res.json({ success: true, data: visitTypes });
     } catch (error) {
         next(error);
