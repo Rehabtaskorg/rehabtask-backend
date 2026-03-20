@@ -3,15 +3,31 @@ import { VISIT_TYPES } from "../../prisma/seeds/visitTypes.js";
 import { logger } from "../config/logger.js";
 
 /**
+ * Normalize license type abbreviations to discipline names.
+ * e.g., "Occupational Therapist (OT)" → "Occupational Therapist"
+ */
+const normalizeDiscipline = (licenseType) => {
+    if (!licenseType) return "";
+    const lt = licenseType.toLowerCase();
+    if (lt.includes("physical therapist assistant") || lt.includes("pta")) return "Physical Therapist";
+    if (lt.includes("physical therapist") || lt.includes("(pt)")) return "Physical Therapist";
+    if (lt.includes("occupational therapist assistant") || lt.includes("ota")) return "Occupational Therapist";
+    if (lt.includes("occupational therapist") || lt.includes("(ot)")) return "Occupational Therapist";
+    if (lt.includes("speech") || lt.includes("(slp)")) return "Speech Therapist";
+    return licenseType;
+};
+
+/**
  * Get visit types filtered by discipline.
  * "All" discipline types (e.g., Missed Visit) are included for every discipline.
  */
 export const getVisitTypesByDiscipline = async (discipline) => {
+    const normalized = normalizeDiscipline(discipline);
     return prisma.visitType.findMany({
         where: {
             isActive: true,
             OR: [
-                { discipline },
+                { discipline: normalized },
                 { discipline: "All" },
             ],
         },
