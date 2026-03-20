@@ -14,7 +14,7 @@ import { logAction } from "./audit.service.js";
  * Create offer
  */
 export const createOffer = async (therapistId, data) => {
-    const { requestId, rate, sessionType, proposedDate, description } = data;
+    const { requestId, rate, sessionType, proposedDate, description, visitTypeId } = data;
 
     const request = await prisma.therapyRequest.findUnique({ where: { id: requestId } });
 
@@ -53,8 +53,10 @@ export const createOffer = async (therapistId, data) => {
             description,
             status: "pending",
             expiresAt,
+            ...(visitTypeId && { visitTypeId }),
         },
         include: {
+            visitType: true,
             therapist: true,
             request: {
                 include: {
@@ -104,6 +106,7 @@ export const getTherapistOffers = async (therapistId) => {
     const offers = await prisma.offer.findMany({
         where: { therapistId },
         include: {
+            visitType: true,
             request: {
                 include: {
                     customer: true,
@@ -129,6 +132,7 @@ export const getOfferById = async (offerId, userId) => {
     const offer = await prisma.offer.findUnique({
         where: { id: offerId },
         include: {
+            visitType: true,
             request: {
                 include: {
                     customer: true,
@@ -299,7 +303,7 @@ export const acceptOffer = async (offerId, customerId) => {
  * Revise an offer that has status "change_requested"
  */
 export const reviseOffer = async (therapistId, offerId, data) => {
-    const { rate, sessionType, proposedDate, description } = data;
+    const { rate, sessionType, proposedDate, description, visitTypeId } = data;
 
     const existing = await prisma.offer.findUnique({
         where: { id: offerId },
@@ -327,11 +331,13 @@ export const reviseOffer = async (therapistId, offerId, data) => {
             sessionType,
             proposedDate: new Date(proposedDate),
             description,
-            status: "pending", // reset back to pending after revision
+            status: "pending",
             expiresAt,
-            changeRequestNote: null, // clear the change request note
+            changeRequestNote: null,
+            ...(visitTypeId !== undefined && { visitTypeId }),
         },
         include: {
+            visitType: true,
             therapist: true,
             request: {
                 include: {
