@@ -1,4 +1,4 @@
-import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest } from "../services/request.service.js";
+import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest, cancelRequest } from "../services/request.service.js";
 
 /**
  * Create a new request
@@ -73,10 +73,26 @@ const updateRequestController = async (req, res, next) => {
     }
 };
 
+/**
+ * Cancel a request
+ */
+const cancelRequestController = async (req, res, next) => {
+    try {
+        const { requestId } = req.params;
+        const customerId = req.user.customerProfile.id;
+        const result = await cancelRequest(requestId, customerId);
+
+        res.status(200).json({ success: true, data: result, message: "Request cancelled successfully" });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     createRequestController,
     getCustomerRequestsController,
     getRequestByIdController,
     getAvailableRequestsController,
     updateRequestController,
+    cancelRequestController,
 }

@@ -327,3 +327,99 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
 
     return updatedRequest;
 }
+
+/**
+ * Cancel a therapy request.
+ * Only allowed for requests in "created" or "offers_received" status.
+ * Auto-withdraws all pending/change_requested offers and notifies therapists.
+ */
+export const cancelRequest = async (requestId, customerId) => {
+    const existing = await prisma.therapyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+            offers: {
+                where: { status: { in: ["pending", "change_requested"] } },
+                include: {
+                    therapist: {
+                        include: { user: { select: { id: true, email: true } } }
+                    },
+                },
+            },
+            customer: {
+                include: { user: { select: { id: true } } }
+            },
+        },
+    });
+
+    if (!existing) {
+        const err = new Error("Request not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    if (existing.customerId !== customerId) {
+        const err = new Error("Unauthorized");
+        err.statusCode = 403;
+        throw err;
+    }
+
+    if (!["created", "offers_received"].includes(existing.status)) {
+        const err = new Error("This request can no longer be cancelled. If you have a booking, please cancel the booking instead.");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    const hasActiveOffers = existing.offers.length > 0;
+
+    // Transaction: cancel request + withdraw all pending offers
+    const cancelledRequest = await prisma.$transaction(async (tx) => {
+        if (hasActiveOffers) {
+            await tx.offer.updateMany({
+                where: {
+                    requestId,
+                    status: { in: ["pending", "change_requested"] },
+                },
+                data: {
+                    status: "withdrawn",
+                    withdrawnAt: new Date(),
+                },
+            });
+        }
+
+        return tx.therapyRequest.update({
+            where: { id: requestId },
+            data: { status: "cancelled" },
+        });
+    });
+
+    // Audit event: request.cancelled_by_customer
+    logAction({
+        actorId: existing.customer.user.id,
+        action: "request.cancelled_by_customer",
+        entityType: "request",
+        entityId: requestId,
+        changes: {
+            status: { from: existing.status, to: "cancelled" },
+            ...(hasActiveOffers ? { offersWithdrawn: existing.offers.length } : {}),
+        },
+    });
+
+    // Notify withdrawn therapists (fire-and-forget)
+    if (hasActiveOffers) {
+        sendOffersWithdrawnRequestUpdated({
+            therapists: existing.offers.map((o) => o.therapist),
+            customer: existing.customer,
+            request: cancelledRequest,
+        }).catch((err) => {
+            logger.error("[RequestService] Failed to notify therapists about cancelled request", { error: err.message });
+        });
+    }
+
+    logger.info("[RequestService] Request cancelled", {
+        requestId,
+        customerId,
+        offersWithdrawn: hasActiveOffers ? existing.offers.length : 0,
+    });
+
+    return cancelledRequest;
+}

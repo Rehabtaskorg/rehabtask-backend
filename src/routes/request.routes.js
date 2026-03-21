@@ -2,7 +2,7 @@ import express from "express";
 import {
     createRequestController, getAvailableRequestsController,
     getCustomerRequestsController, getRequestByIdController,
-    updateRequestController
+    updateRequestController, cancelRequestController
 } from "../controllers/request.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -16,5 +16,6 @@ router.get("/my-requests", authenticate, authorize(["customer"]), getCustomerReq
 router.get("/available", authenticate, authorize(["therapist"]), getAvailableRequestsController);
 router.get("/:requestId", authenticate, getRequestByIdController);
 router.put("/:requestId", authenticate, authorize(["customer"]), validate(updateRequestSchema), updateRequestController);
+router.post("/:requestId/cancel", authenticate, authorize(["customer"]), cancelRequestController);
 
 export default router;
