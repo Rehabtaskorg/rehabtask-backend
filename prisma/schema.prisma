@@ -132,6 +132,22 @@ model TherapistProfile {
   @@map("therapist_profiles")
 }
 
+model VisitType {
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique @db.VarChar(10)
+  name       String   @db.VarChar(100)
+  discipline String   @db.VarChar(50)
+  isActive   Boolean  @default(true) @map("is_active")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  offers     Offer[]
+
+  @@index([discipline, isActive])
+  @@index([code])
+  @@map("visit_types")
+}
+
 model LicenseDocument {
   id            String           @id @default(uuid()) @db.Uuid
   therapistId   String           @map("therapist_id") @db.Uuid
@@ -247,12 +263,14 @@ model Offer {
   expiresAt         DateTime         @map("expires_at") @db.Timestamptz(3)
   withdrawnAt       DateTime?        @map("withdrawn_at") @db.Timestamptz(3)
   changeRequestNote String?          @map("change_request_note")
+  visitTypeId       String?          @map("visit_type_id") @db.Uuid
   createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking           Booking?
   messages          Message[]
   request           TherapyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   therapist         TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  visitType         VisitType?       @relation(fields: [visitTypeId], references: [id])
 
   @@index([requestId, status])
   @@index([therapistId, status, createdAt])
