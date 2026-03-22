@@ -175,7 +175,135 @@ export const cancelSubscription = async (customerId) => {
     return { message: "Subscription will be cancelled at the end of the current billing period" };
 };
 
-// ─── Webhook Handlers ────────────────────────────────────────────────────────
+/**
+ * Upgrade a paid subscription to a higher plan.
+ * Uses stripe.subscriptions.update() with proration — no new Checkout session needed.
+ */
+export const upgradeSubscription = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to upgrade. Use checkout for first-time subscriptions.");
+    }
+
+    const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
+    const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
+    if (targetRank <= currentRank) {
+        throw new Error("Can only upgrade to a higher plan. Use downgrade for lower plans.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    // Get the current subscription item ID from Stripe
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Update the subscription in Stripe — proration charges the difference immediately
+    const updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        items: [{ id: subscriptionItemId, price: newPriceId }],
+        proration_behavior: "always_invoice",
+        metadata: { planType, billingInterval },
+    });
+
+    const subscriptionItem = updated.items?.data?.[0];
+    const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
+
+    // Update local DB immediately — don't wait for webhook
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+            planType,
+            billingInterval: billingInterval || subscription.billingInterval,
+            stripePriceId: newPriceId,
+            currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
+            currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
+            therapistLimit: therapistLimit ?? 999999,
+            requestLimit: requestLimit ?? 999999,
+            cancelledAt: null,
+            cancelReason: null,
+        },
+    });
+
+    logSystemEvent({
+        action: "subscription.upgraded",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { from: subscription.planType, to: planType, billingInterval },
+    });
+
+    logger.info("[Subscription] Plan upgraded", { customerId, from: subscription.planType, to: planType });
+
+    return { message: `Upgraded to ${planType}. Prorated charge applied.` };
+};
+
+/**
+ * Downgrade a paid subscription to a lower paid plan.
+ * Takes effect at the end of the current billing period — no proration, no immediate charge.
+ */
+export const downgradeSubscription = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to downgrade");
+    }
+
+    const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
+    const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
+    if (targetRank >= currentRank) {
+        throw new Error("Can only downgrade to a lower plan. Use upgrade for higher plans.");
+    }
+
+    if (planType === "free") {
+        throw new Error("To move to Free, cancel your subscription instead.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Schedule the downgrade for the next billing cycle — no proration, no refund
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        items: [{ id: subscriptionItemId, price: newPriceId }],
+        proration_behavior: "none",
+        metadata: { planType, billingInterval, scheduledDowngrade: "true" },
+    });
+
+    // Don't update local DB limits yet — customer keeps current plan until period ends
+    // The invoice.paid webhook will update planType and limits at the next billing cycle
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+            cancelReason: `scheduled_downgrade:${planType}`,
+        },
+    });
+
+    logSystemEvent({
+        action: "subscription.downgrade_scheduled",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { from: subscription.planType, to: planType, effectiveAt: subscription.currentPeriodEnd },
+    });
+
+    logger.info("[Subscription] Downgrade scheduled", { customerId, from: subscription.planType, to: planType });
+
+    return {
+        message: `Your plan will downgrade to ${planType} at the end of your current billing period.`,
+        effectiveAt: subscription.currentPeriodEnd,
+    };
+};
+
+//─── Webhook Handlers ────────────────────────────────────────────────────────
 
 /**
  * Handle checkout.session.completed webhook.
@@ -291,14 +419,35 @@ export const handleInvoicePaid = async (invoice) => {
         return;
     }
 
+    // Check if there's a scheduled downgrade pending
+    const updateData = {
+        status: "active",
+        currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
+        currentPeriodEnd: periodEnd,
+        gracePeriodEndsAt: null,
+    };
+
+    if (subscription.cancelReason?.startsWith("scheduled_downgrade:")) {
+        const newPlanType = subscription.cancelReason.split(":")[1];
+        const planConfig = PLAN_CONFIG[newPlanType];
+        if (planConfig) {
+            updateData.planType = newPlanType;
+            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
+            updateData.requestLimit = planConfig.requestLimit ?? 999999;
+            updateData.cancelReason = null;
+            updateData.stripePriceId = invoice.lines?.data[0]?.price?.id || subscription.stripePriceId;
+
+            logger.info("[Subscription] Scheduled downgrade applied", {
+                subscriptionId: subscription.id,
+                from: subscription.planType,
+                to: newPlanType,
+            });
+        }
+    }
+
     await prisma.subscription.update({
         where: { id: subscription.id },
-        data: {
-            status: "active",
-            currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
-            currentPeriodEnd: periodEnd,
-            gracePeriodEndsAt: null,
-        },
+        data: updateData,
     });
 
     // Event: subscription.renewed

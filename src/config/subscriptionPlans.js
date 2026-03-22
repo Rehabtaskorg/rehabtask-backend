@@ -1,7 +1,7 @@
 export const PLAN_CONFIG = {
-    free: { requestLimit: 5, therapistLimit: 5, features: [] },
-    standard: { requestLimit: 10, therapistLimit: 10, features: [] },
-    premium: { requestLimit: null, therapistLimit: null, features: ["elite_filter", "coordinator"] },
+    free: { requestLimit: 5, therapistLimit: 5, features: [], rank: 0 },
+    standard: { requestLimit: 10, therapistLimit: 10, features: [], rank: 1 },
+    premium: { requestLimit: null, therapistLimit: null, features: ["elite_filter", "coordinator"], rank: 2 },
 };
 
 export const TRIAL_DURATION_DAYS = 30;
