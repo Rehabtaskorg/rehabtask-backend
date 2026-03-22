@@ -441,7 +441,9 @@ export const getCurrentUser = async (userId) => {
                     approvalStatus: true,
                     profilePhotoUrl: true,
                     onboardingStep: true,
-                    onboardingComplete: true
+                    onboardingComplete: true,
+                    ratePerVisit: true,
+                    primaryLicenseType: true,
                 }
             },
             subAdminProfile: {
@@ -608,8 +610,14 @@ export const resendVerificationEmail = async ({ email }) => {
     });
 
     if (error) {
-        console.error("Resend verification error:", error);
-        // Don't reveal if email exists
+        // Rate limit errors should be surfaced — user needs to know to wait
+        if (error.status === 429 || error.code === "over_email_send_rate_limit") {
+            const waitMatch = error.message?.match(/after (\d+) seconds/);
+            const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 60;
+            throw new BadRequestError(`Please wait ${waitSeconds} seconds before requesting another verification email.`);
+        }
+        // Other errors: don't reveal if email exists (prevents enumeration)
+        logger.warn("[Auth] Resend verification error", { email: normalizedEmail, error: error.message });
     }
 
     return {

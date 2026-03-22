@@ -146,6 +146,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
             data: {
                 licenseNumber: data.licenseNumber,
                 licenseState: data.licenseState,
+                ...(data.ratePerVisit !== undefined && { ratePerVisit: data.ratePerVisit }),
                 onboardingStep: Math.max(therapist.onboardingStep, 3),
             },
         });
