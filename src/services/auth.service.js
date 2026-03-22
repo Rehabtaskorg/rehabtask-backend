@@ -1,7 +1,8 @@
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
-import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
+import { sendTherapistWelcome, sendSubAdminWelcome, sendExistingAccountNotification } from "./email.service.js";
+import { logger } from "../config/logger.js";
 import { createTrialSubscription } from "./subscription.service.js";
 
 /**
@@ -11,6 +12,31 @@ import { createTrialSubscription } from "./subscription.service.js";
 export const registerCustomer = async ({ email, password, fullName, phone, customerType, agencyName }) => {
     const normalizedEmail = email.toLowerCase().trim();
     let authUser;
+
+    // Pre-check: does this email already exist in our DB?
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existingUser) {
+        // Send custom notification instead of Supabase's generic reset email
+        try {
+            const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+                type: "recovery",
+                email: normalizedEmail,
+                options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
+            });
+            const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
+
+            sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
+                logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
+            });
+        } catch (linkErr) {
+            logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
+        }
+
+        return {
+            message: "Registration successful. Please check your email for verification.",
+            user: null,
+        };
+    }
 
     try {
         const { data, error } = await supabase.auth.signUp({
@@ -29,13 +55,27 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         if (error) {
             if (error.status === 422 || error.message?.toLowerCase().includes("already registered")) {
-                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-                });
+                // Generate a password reset link without sending Supabase's generic email
+                try {
+                    const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+                        type: "recovery",
+                        email: normalizedEmail,
+                        options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
+                    });
+                    const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
+
+                    sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
+                        logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
+                    });
+                } catch (linkErr) {
+                    logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
+                }
+
+                // Return identical response to prevent email enumeration
                 return {
                     message: "Registration successful. Please check your email for verification.",
-                    user: null
-                }
+                    user: null,
+                };
             }
 
             throw error;
@@ -155,6 +195,30 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
     const normalizedEmail = email.toLowerCase().trim();
     let authUser;
 
+    // Pre-check: does this email already exist in our DB?
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existingUser) {
+        try {
+            const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+                type: "recovery",
+                email: normalizedEmail,
+                options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
+            });
+            const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
+
+            sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
+                logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
+            });
+        } catch (linkErr) {
+            logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
+        }
+
+        return {
+            message: "Registration successful. Please check your email and wait for admin approval.",
+            user: null,
+        };
+    }
+
     try {
 
         const { data, error } = await supabase.auth.signUp({
@@ -172,12 +236,24 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
 
         if (error) {
             if (error.status === 422 || error.message.includes("already registered")) {
-                await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-                    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-                });
+                try {
+                    const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+                        type: "recovery",
+                        email: normalizedEmail,
+                        options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
+                    });
+                    const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
+
+                    sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
+                        logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
+                    });
+                } catch (linkErr) {
+                    logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
+                }
+
                 return {
                     message: "Registration successful. Please check your email and wait for admin approval.",
-                    user: null
+                    user: null,
                 };
             }
             throw error;
