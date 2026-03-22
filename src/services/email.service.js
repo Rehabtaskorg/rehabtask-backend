@@ -43,6 +43,7 @@ import {
     subscriptionCancelledByCustomer,
     subscriptionDowngraded,
     offersWithdrawnRequestUpdated,
+    existingAccountNotification,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -293,4 +294,13 @@ export const sendSubscriptionCancelledByCustomer = async ({ customer, subscripti
 
 export const sendSubscriptionDowngraded = async ({ customer }) => {
     return dispatch(customer.user.email, subscriptionDowngraded, { customer });
+};
+
+/**
+ * Existing account notification — sent when someone tries to register
+ * with an email that already has an account. Prevents email enumeration
+ * while informing the existing user.
+ */
+export const sendExistingAccountNotification = async ({ email, resetLink }) => {
+    return dispatch(email, existingAccountNotification, { email, resetLink });
 };

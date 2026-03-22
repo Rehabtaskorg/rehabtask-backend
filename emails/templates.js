@@ -761,3 +761,19 @@ export const subscriptionDowngraded = ({ customer }) => ({
         ${button(`${FRONTEND_URL}/customer/subscription`, 'Upgrade Your Plan')}
     `),
 });
+
+// Existing Account Notification (sent when someone tries to register with an email that already exists)
+export const existingAccountNotification = ({ email, resetLink }) => ({
+    subject: 'Sign-in attempt for your RehabTask account',
+    html: layout(`
+        ${heading('Someone tried to create an account with your email')}
+        ${text('We received a registration request using this email address, but you already have a RehabTask account.')}
+        ${text('If this was you, you can log in to your existing account:')}
+        ${button(`${FRONTEND_URL}/login`, 'Log In to Your Account')}
+        ${hr()}
+        ${text('If you\'ve forgotten your password, you can reset it here:')}
+        ${button(resetLink, 'Reset Your Password')}
+        ${hr()}
+        ${muted('If you didn\'t attempt to register, you can safely ignore this email. Your account is secure and no changes have been made.')}
+    `),
+});
