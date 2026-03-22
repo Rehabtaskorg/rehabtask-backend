@@ -270,6 +270,7 @@ export const searchTherapists = async ({
             yearsOfExperience: t.yearsOfExperience,
             primaryLicenseType: t.primaryLicenseType,
             professionalSummary: t.professionalSummary,
+            ratePerVisit: t.ratePerVisit,
             workAreas: t.workAreas.map((wa) => ({
                 city: wa.city,
                 state: wa.state,
@@ -354,6 +355,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         yearsOfExperience: therapist.yearsOfExperience,
         primaryLicenseType: therapist.primaryLicenseType,
         professionalSummary: therapist.professionalSummary,
+        ratePerVisit: therapist.ratePerVisit,
         workAreas: therapist.workAreas.map((wa) => ({
             id: wa.id,
             zipCode: wa.zipCode,

@@ -49,6 +49,14 @@ export const credentialsSchema = z.object({
         }))
         .min(1, "At least one license document is required")
         .max(5, "Maximum 5 license documents allowed"),
+
+    ratePerVisit: z.coerce
+        .number()
+        .min(0, "Rate must be 0 or greater")
+        .max(10000, "Rate must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => val === 0 ? null : val),
 })
 
 // Availability Schema

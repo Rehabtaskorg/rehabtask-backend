@@ -73,14 +73,15 @@ export const saveProfessionalProfileController = async (req, res, next) => {
  */
 export const saveCredentialsController = async (req, res, next) => {
     try {
-        const { licenseNumber, licenseState, licenseDocuments } = req.body;
+        const { licenseNumber, licenseState, licenseDocuments, ratePerVisit } = req.body;
         const uploadIp = getClientIp(req);
 
         const result = await saveCredentials(req.user.id,
             {
                 licenseNumber,
                 licenseState,
-                licenseDocuments
+                licenseDocuments,
+                ratePerVisit,
             }, uploadIp
         );
 

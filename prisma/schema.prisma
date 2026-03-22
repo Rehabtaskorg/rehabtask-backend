@@ -111,6 +111,7 @@ model TherapistProfile {
   rejectionReason          String?                @map("rejection_reason")
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
+  ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)

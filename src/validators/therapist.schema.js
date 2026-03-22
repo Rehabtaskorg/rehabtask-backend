@@ -21,6 +21,19 @@ export const updateProfileSchema = z.object({
         .max(500, "Specialization must be 500 characters or less")
         .optional(),
     profilePhotoUrl: z.string().url("Invalid URL format").nullable().optional(),
+    ratePerVisit: z.coerce
+        .number()
+        .min(0, "Rate must be 0 or greater")
+        .max(10000, "Rate must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => val === 0 ? null : val),
+    yearsOfExperience: z.coerce
+        .number()
+        .int()
+        .min(0, "Must be 0 or greater")
+        .max(50, "Must be 50 or less")
+        .optional(),
 });
 
 export const updateWorkAreasSchema = z.object({
