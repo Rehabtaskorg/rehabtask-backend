@@ -4,6 +4,9 @@ import {
     createCheckoutController,
     createBillingPortalController,
     cancelSubscriptionController,
+    previewUpgradeController,
+    upgradeSubscriptionController,
+    downgradeSubscriptionController,
 } from "../controllers/subscription.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -16,5 +19,8 @@ router.get("/current", authenticate, authorize(["customer"]), getSubscriptionCon
 router.post("/checkout", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), createCheckoutController);
 router.post("/billing-portal", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createBillingPortalController);
 router.post("/cancel", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, cancelSubscriptionController);
+router.post("/preview-upgrade", authenticate, authorize(["customer"]), validate(createCheckoutSchema), previewUpgradeController);
+router.post("/upgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), upgradeSubscriptionController);
+router.post("/downgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), downgradeSubscriptionController);
 
 export default router;

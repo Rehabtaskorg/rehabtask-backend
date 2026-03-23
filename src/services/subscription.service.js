@@ -8,7 +8,7 @@ import {
     sendSubscriptionDowngraded,
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId } from "../config/subscriptionPlans.js";
+import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId, getPlanFromPriceId } from "../config/subscriptionPlans.js";
 import { logSystemEvent } from "./audit.service.js";
 
 /**
@@ -175,7 +175,205 @@ export const cancelSubscription = async (customerId) => {
     return { message: "Subscription will be cancelled at the end of the current billing period" };
 };
 
-// ─── Webhook Handlers ────────────────────────────────────────────────────────
+/**
+ * Preview the proration cost for upgrading to a higher plan.
+ * Calls Stripe's invoice preview API — no charge, no side effects.
+ */
+export const previewUpgrade = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to preview upgrade for.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Get the customer's Stripe customer ID
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { id: customerId },
+        select: { stripeCustomerId: true },
+    });
+
+    // Preview the upcoming invoice with the price change
+    const preview = await stripe.invoices.createPreview({
+        customer: customerProfile.stripeCustomerId,
+        subscription: subscription.stripeSubscriptionId,
+        subscription_details: {
+            items: [{ id: subscriptionItemId, price: newPriceId }],
+            proration_behavior: "always_invoice",
+        },
+    });
+
+    // Extract proration line items
+    const lines = preview.lines.data;
+    const credits = lines.filter(l => l.amount < 0).reduce((sum, l) => sum + l.amount, 0);
+    const charges = lines.filter(l => l.amount > 0).reduce((sum, l) => sum + l.amount, 0);
+    const netAmount = preview.amount_due; // What the customer actually pays today
+
+    return {
+        credit: Math.abs(credits) / 100,       // Unused current plan credit (positive number)
+        charge: charges / 100,                   // New plan prorated charge
+        netAmount: netAmount / 100,              // Net charge today
+        currency: preview.currency,
+        currentPlan: subscription.planType,
+        targetPlan: planType,
+        billingInterval,
+        periodEnd: parseStripeDate(stripeSubscription.items.data[0]?.current_period_end),
+    };
+};
+
+/**
+ * Upgrade a paid subscription to a higher plan.
+ * Uses error_if_incomplete to prevent subscription change if payment fails.
+ * The subscription only changes if the proration invoice is paid successfully.
+ */
+export const upgradeSubscription = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to upgrade. Use checkout for first-time subscriptions.");
+    }
+
+    const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
+    const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
+    if (targetRank <= currentRank) {
+        throw new Error("Can only upgrade to a higher plan. Use downgrade for lower plans.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    // Get the current subscription item ID from Stripe
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Update with error_if_incomplete — if payment fails, Stripe throws and reverts
+    let updated;
+    try {
+        updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+            items: [{ id: subscriptionItemId, price: newPriceId }],
+            proration_behavior: "always_invoice",
+            payment_behavior: "error_if_incomplete",
+            metadata: { planType, billingInterval },
+        });
+    } catch (stripeError) {
+        // Payment failed — Stripe reverted the subscription change
+        if (stripeError.code === "payment_intent_action_required" || stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
+            logger.warn("[Subscription] Upgrade payment failed", { customerId, planType, error: stripeError.message });
+            const error = new Error("Payment failed. Please update your payment method and try again.");
+            error.statusCode = 402;
+            error.code = "PAYMENT_FAILED";
+            throw error;
+        }
+        throw stripeError;
+    }
+
+    const subscriptionItem = updated.items?.data?.[0];
+    const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
+
+    // Payment succeeded — update local DB
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+            planType,
+            billingInterval: billingInterval || subscription.billingInterval,
+            stripePriceId: newPriceId,
+            currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
+            currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
+            therapistLimit: therapistLimit ?? 999999,
+            requestLimit: requestLimit ?? 999999,
+            cancelledAt: null,
+            cancelReason: null,
+        },
+    });
+
+    logSystemEvent({
+        action: "subscription.upgraded",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { from: subscription.planType, to: planType, billingInterval },
+    });
+
+    logger.info("[Subscription] Plan upgraded", { customerId, from: subscription.planType, to: planType });
+
+    return { message: `Upgraded to ${planType}. Prorated charge applied.` };
+};
+
+/**
+ * Downgrade a paid subscription to a lower paid plan.
+ * Takes effect at the end of the current billing period — no proration, no immediate charge.
+ */
+export const downgradeSubscription = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to downgrade");
+    }
+
+    const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
+    const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
+    if (targetRank >= currentRank) {
+        throw new Error("Can only downgrade to a lower plan. Use upgrade for higher plans.");
+    }
+
+    if (planType === "free") {
+        throw new Error("To move to Free, cancel your subscription instead.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Schedule the downgrade for the next billing cycle — no proration, no refund
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        items: [{ id: subscriptionItemId, price: newPriceId }],
+        proration_behavior: "none",
+        metadata: { planType, billingInterval, scheduledDowngrade: "true" },
+    });
+
+    // Don't update local DB limits yet — customer keeps current plan until period ends
+    // The invoice.paid webhook will update planType and limits at the next billing cycle
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+            cancelReason: `scheduled_downgrade:${planType}`,
+        },
+    });
+
+    logSystemEvent({
+        action: "subscription.downgrade_scheduled",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { from: subscription.planType, to: planType, effectiveAt: subscription.currentPeriodEnd },
+    });
+
+    logger.info("[Subscription] Downgrade scheduled", { customerId, from: subscription.planType, to: planType });
+
+    return {
+        message: `Your plan will downgrade to ${planType} at the end of your current billing period.`,
+        effectiveAt: subscription.currentPeriodEnd,
+    };
+};
+
+//─── Webhook Handlers ────────────────────────────────────────────────────────
 
 /**
  * Handle checkout.session.completed webhook.
@@ -283,22 +481,45 @@ export const handleInvoicePaid = async (invoice) => {
         return;
     }
 
-    // Already active — idempotent
+    // Already active — idempotent (but always process if there's a pending downgrade)
     const periodEnd = parseStripeDate(invoice.lines?.data[0]?.period?.end);
-    if (subscription.status === "active" &&
+    const hasPendingDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
+    if (!hasPendingDowngrade &&
+        subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
         return;
     }
 
+    // Check if there's a scheduled downgrade pending
+    const updateData = {
+        status: "active",
+        currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
+        currentPeriodEnd: periodEnd,
+        gracePeriodEndsAt: null,
+    };
+
+    if (subscription.cancelReason?.startsWith("scheduled_downgrade:")) {
+        const newPlanType = subscription.cancelReason.split(":")[1];
+        const planConfig = PLAN_CONFIG[newPlanType];
+        if (planConfig) {
+            updateData.planType = newPlanType;
+            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
+            updateData.requestLimit = planConfig.requestLimit ?? 999999;
+            updateData.cancelReason = null;
+            updateData.stripePriceId = invoice.lines?.data[0]?.price?.id || subscription.stripePriceId;
+
+            logger.info("[Subscription] Scheduled downgrade applied", {
+                subscriptionId: subscription.id,
+                from: subscription.planType,
+                to: newPlanType,
+            });
+        }
+    }
+
     await prisma.subscription.update({
         where: { id: subscription.id },
-        data: {
-            status: "active",
-            currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
-            currentPeriodEnd: periodEnd,
-            gracePeriodEndsAt: null,
-        },
+        data: updateData,
     });
 
     // Event: subscription.renewed
@@ -412,10 +633,33 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
     const subItem = stripeSubscription.items?.data?.[0];
+    const currentPriceId = subItem?.price?.id;
 
     // If customer resumed their subscription (cancel_at_period_end flipped to false),
     // clear the cancelledAt so the UI reflects the active state
     const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
+
+    // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
+    const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
+    let planUpdate = {};
+    if (planChanged) {
+        const detected = getPlanFromPriceId(currentPriceId);
+        if (detected && detected.planType !== subscription.planType) {
+            const planConfig = PLAN_CONFIG[detected.planType];
+            planUpdate = {
+                planType: detected.planType,
+                billingInterval: detected.billingInterval,
+                therapistLimit: planConfig.therapistLimit ?? 999999,
+                requestLimit: planConfig.requestLimit ?? 999999,
+                cancelReason: null,
+            };
+            logger.info("[Subscription] Plan change detected from Stripe", {
+                subscriptionId: subscription.id,
+                from: subscription.planType,
+                to: detected.planType,
+            });
+        }
+    }
 
     await prisma.subscription.update({
         where: { id: subscription.id },
@@ -423,8 +667,9 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             status: mappedStatus,
             currentPeriodStart: parseStripeDate(subItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
-            stripePriceId: subItem?.price?.id || subscription.stripePriceId,
+            stripePriceId: currentPriceId || subscription.stripePriceId,
             ...(resumed && { cancelledAt: null, cancelReason: null }),
+            ...planUpdate,
         },
     });
 
