@@ -176,8 +176,62 @@ export const cancelSubscription = async (customerId) => {
 };
 
 /**
+ * Preview the proration cost for upgrading to a higher plan.
+ * Calls Stripe's invoice preview API — no charge, no side effects.
+ */
+export const previewUpgrade = async (customerId, planType, billingInterval) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
+    });
+
+    if (!subscription) {
+        throw new Error("No active paid subscription to preview upgrade for.");
+    }
+
+    const newPriceId = getStripePriceId(planType, billingInterval);
+
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+    if (!subscriptionItemId) {
+        throw new Error("Could not find subscription item in Stripe");
+    }
+
+    // Get the customer's Stripe customer ID
+    const customerProfile = await prisma.customerProfile.findUnique({
+        where: { id: customerId },
+        select: { stripeCustomerId: true },
+    });
+
+    // Preview the upcoming invoice with the price change
+    const preview = await stripe.invoices.createPreview({
+        customer: customerProfile.stripeCustomerId,
+        subscription: subscription.stripeSubscriptionId,
+        subscription_items: [{ id: subscriptionItemId, price: newPriceId }],
+        subscription_proration_behavior: "always_invoice",
+    });
+
+    // Extract proration line items
+    const lines = preview.lines.data;
+    const credits = lines.filter(l => l.amount < 0).reduce((sum, l) => sum + l.amount, 0);
+    const charges = lines.filter(l => l.amount > 0).reduce((sum, l) => sum + l.amount, 0);
+    const netAmount = preview.amount_due; // What the customer actually pays today
+
+    return {
+        credit: Math.abs(credits) / 100,       // Unused current plan credit (positive number)
+        charge: charges / 100,                   // New plan prorated charge
+        netAmount: netAmount / 100,              // Net charge today
+        currency: preview.currency,
+        currentPlan: subscription.planType,
+        targetPlan: planType,
+        billingInterval,
+        periodEnd: parseStripeDate(stripeSubscription.items.data[0]?.current_period_end),
+    };
+};
+
+/**
  * Upgrade a paid subscription to a higher plan.
- * Uses stripe.subscriptions.update() with proration — no new Checkout session needed.
+ * Uses error_if_incomplete to prevent subscription change if payment fails.
+ * The subscription only changes if the proration invoice is paid successfully.
  */
 export const upgradeSubscription = async (customerId, planType, billingInterval) => {
     const subscription = await prisma.subscription.findFirst({
@@ -203,17 +257,31 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw new Error("Could not find subscription item in Stripe");
     }
 
-    // Update the subscription in Stripe — proration charges the difference immediately
-    const updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        items: [{ id: subscriptionItemId, price: newPriceId }],
-        proration_behavior: "always_invoice",
-        metadata: { planType, billingInterval },
-    });
+    // Update with error_if_incomplete — if payment fails, Stripe throws and reverts
+    let updated;
+    try {
+        updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+            items: [{ id: subscriptionItemId, price: newPriceId }],
+            proration_behavior: "always_invoice",
+            payment_behavior: "error_if_incomplete",
+            metadata: { planType, billingInterval },
+        });
+    } catch (stripeError) {
+        // Payment failed — Stripe reverted the subscription change
+        if (stripeError.code === "payment_intent_action_required" || stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
+            logger.warn("[Subscription] Upgrade payment failed", { customerId, planType, error: stripeError.message });
+            const error = new Error("Payment failed. Please update your payment method and try again.");
+            error.statusCode = 402;
+            error.code = "PAYMENT_FAILED";
+            throw error;
+        }
+        throw stripeError;
+    }
 
     const subscriptionItem = updated.items?.data?.[0];
     const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
 
-    // Update local DB immediately — don't wait for webhook
+    // Payment succeeded — update local DB
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
