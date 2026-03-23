@@ -206,8 +206,10 @@ export const previewUpgrade = async (customerId, planType, billingInterval) => {
     const preview = await stripe.invoices.createPreview({
         customer: customerProfile.stripeCustomerId,
         subscription: subscription.stripeSubscriptionId,
-        subscription_items: [{ id: subscriptionItemId, price: newPriceId }],
-        subscription_proration_behavior: "always_invoice",
+        subscription_details: {
+            items: [{ id: subscriptionItemId, price: newPriceId }],
+            proration_behavior: "always_invoice",
+        },
     });
 
     // Extract proration line items
