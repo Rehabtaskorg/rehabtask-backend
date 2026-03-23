@@ -8,7 +8,7 @@ import {
     sendSubscriptionDowngraded,
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId } from "../config/subscriptionPlans.js";
+import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId, getPlanFromPriceId } from "../config/subscriptionPlans.js";
 import { logSystemEvent } from "./audit.service.js";
 
 /**
@@ -411,9 +411,11 @@ export const handleInvoicePaid = async (invoice) => {
         return;
     }
 
-    // Already active — idempotent
+    // Already active — idempotent (but always process if there's a pending downgrade)
     const periodEnd = parseStripeDate(invoice.lines?.data[0]?.period?.end);
-    if (subscription.status === "active" &&
+    const hasPendingDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
+    if (!hasPendingDowngrade &&
+        subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
         return;
@@ -561,10 +563,33 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
     const subItem = stripeSubscription.items?.data?.[0];
+    const currentPriceId = subItem?.price?.id;
 
     // If customer resumed their subscription (cancel_at_period_end flipped to false),
     // clear the cancelledAt so the UI reflects the active state
     const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
+
+    // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
+    const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
+    let planUpdate = {};
+    if (planChanged) {
+        const detected = getPlanFromPriceId(currentPriceId);
+        if (detected && detected.planType !== subscription.planType) {
+            const planConfig = PLAN_CONFIG[detected.planType];
+            planUpdate = {
+                planType: detected.planType,
+                billingInterval: detected.billingInterval,
+                therapistLimit: planConfig.therapistLimit ?? 999999,
+                requestLimit: planConfig.requestLimit ?? 999999,
+                cancelReason: null,
+            };
+            logger.info("[Subscription] Plan change detected from Stripe", {
+                subscriptionId: subscription.id,
+                from: subscription.planType,
+                to: detected.planType,
+            });
+        }
+    }
 
     await prisma.subscription.update({
         where: { id: subscription.id },
@@ -572,8 +597,9 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             status: mappedStatus,
             currentPeriodStart: parseStripeDate(subItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
-            stripePriceId: subItem?.price?.id || subscription.stripePriceId,
+            stripePriceId: currentPriceId || subscription.stripePriceId,
             ...(resumed && { cancelledAt: null, cancelReason: null }),
+            ...planUpdate,
         },
     });
 

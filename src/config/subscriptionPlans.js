@@ -19,3 +19,22 @@ export const getStripePriceId = (planType, billingInterval) => {
     }
     return priceId;
 };
+
+/**
+ * Reverse lookup: Stripe Price ID → { planType, billingInterval }
+ * Used by webhooks to detect plan changes from Stripe events.
+ */
+export const getPlanFromPriceId = (priceId) => {
+    const plans = ["standard", "premium"];
+    const intervals = ["monthly", "annual"];
+
+    for (const plan of plans) {
+        for (const interval of intervals) {
+            const key = `STRIPE_PRICE_${plan.toUpperCase()}_${interval.toUpperCase()}`;
+            if (process.env[key] === priceId) {
+                return { planType: plan, billingInterval: interval };
+            }
+        }
+    }
+    return null;
+};
