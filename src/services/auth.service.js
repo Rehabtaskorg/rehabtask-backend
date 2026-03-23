@@ -400,14 +400,16 @@ export const login = async ({ email, password }) => {
 };
 
 /**
- * Logout user
+ * Logout user — only kills the current session, not all sessions.
+ * TODO: For production, create separate accounts per user instead of sharing accounts.
+ * Using scope: 'local' so logging out on one device doesn't kick out other devices.
  */
 export const logout = async (accessToken) => {
     if (!accessToken) {
         return { success: true };
     }
 
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
 
     if (error) {
         console.error("Logout error:", error);

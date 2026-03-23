@@ -342,19 +342,18 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
         throw new Error("Could not find subscription item in Stripe");
     }
 
-    // Schedule the downgrade for the next billing cycle — no proration, no refund
+    // Don't change the price in Stripe yet — just store the intent
+    // The price change will be applied when handleInvoicePaid fires at next renewal
+    // This keeps Premium active in Stripe until the billing period ends
     await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        items: [{ id: subscriptionItemId, price: newPriceId }],
-        proration_behavior: "none",
-        metadata: { planType, billingInterval, scheduledDowngrade: "true" },
+        metadata: { scheduledDowngrade: "true", downgradeToplan: planType, downgradeToBillingInterval: billingInterval },
     });
 
-    // Don't update local DB limits yet — customer keeps current plan until period ends
-    // The invoice.paid webhook will update planType and limits at the next billing cycle
+    // Store the downgrade intent in DB — customer keeps current plan until period ends
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
-            cancelReason: `scheduled_downgrade:${planType}`,
+            cancelReason: `scheduled_downgrade:${planType}:${billingInterval}`,
         },
     });
 
@@ -500,14 +499,35 @@ export const handleInvoicePaid = async (invoice) => {
     };
 
     if (subscription.cancelReason?.startsWith("scheduled_downgrade:")) {
-        const newPlanType = subscription.cancelReason.split(":")[1];
+        const parts = subscription.cancelReason.split(":");
+        const newPlanType = parts[1];
+        const newBillingInterval = parts[2] || subscription.billingInterval || "monthly";
         const planConfig = PLAN_CONFIG[newPlanType];
         if (planConfig) {
+            // Change the price in Stripe NOW (at renewal time)
+            try {
+                const newPriceId = getStripePriceId(newPlanType, newBillingInterval);
+                const stripeSubObj = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+                const itemId = stripeSubObj.items.data[0]?.id;
+                if (itemId) {
+                    await stripe.subscriptions.update(stripeSubscriptionId, {
+                        items: [{ id: itemId, price: newPriceId }],
+                        proration_behavior: "none",
+                        metadata: { planType: newPlanType, billingInterval: newBillingInterval, scheduledDowngrade: null },
+                    });
+                    updateData.stripePriceId = newPriceId;
+                    updateData.billingInterval = newBillingInterval;
+                }
+            } catch (stripeErr) {
+                logger.error("[Subscription] Failed to update Stripe price on downgrade", {
+                    subscriptionId: subscription.id, error: stripeErr.message,
+                });
+            }
+
             updateData.planType = newPlanType;
             updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
             updateData.requestLimit = planConfig.requestLimit ?? 999999;
             updateData.cancelReason = null;
-            updateData.stripePriceId = invoice.lines?.data[0]?.price?.id || subscription.stripePriceId;
 
             logger.info("[Subscription] Scheduled downgrade applied", {
                 subscriptionId: subscription.id,
