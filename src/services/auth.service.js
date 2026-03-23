@@ -400,21 +400,16 @@ export const login = async ({ email, password }) => {
 };
 
 /**
- * Logout user — only kills the current session, not all sessions.
- * TODO: For production, create separate accounts per user instead of sharing accounts.
- * Using scope: 'local' so logging out on one device doesn't kick out other devices.
+ * Logout user — only clears cookies on the requesting client.
+ * We intentionally do NOT call supabase.auth.signOut() because:
+ * 1. The backend Supabase client is shared (not per-user), so signOut() revokes ALL sessions
+ * 2. This causes other devices/browsers for the same user to get logged out
+ * 3. The access token will expire naturally (1 hour) via Supabase's JWT expiry
+ * 4. Cookie clearing on the controller side is sufficient for the requesting client
+ * TODO: For production, create separate accounts per user for proper audit trail.
  */
 export const logout = async (accessToken) => {
-    if (!accessToken) {
-        return { success: true };
-    }
-
-    const { error } = await supabase.auth.signOut({ scope: "local" });
-
-    if (error) {
-        console.error("Logout error:", error);
-    }
-
+    // No Supabase signOut — just return success. Cookies are cleared by the controller.
     return { success: true };
 };
 
