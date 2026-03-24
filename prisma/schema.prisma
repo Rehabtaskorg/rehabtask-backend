@@ -239,6 +239,8 @@ model TherapyRequest {
   status        RequestStatus
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  visitsPerWeek Int?            @map("visits_per_week")
+  numberOfWeeks Int?            @map("number_of_weeks")
   offers        Offer[]
   messages      Message[]
   customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -298,8 +300,11 @@ model Booking {
   offer           Offer            @relation(fields: [offerId], references: [id], onDelete: Cascade)
   patient         Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
   therapist       TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  earlyCompletionRequested  Boolean?   @default(false) @map("early_completion_requested")
+  earlyCompletionReason     String?    @map("early_completion_reason")
+  earlyCompletionBy         String?    @map("early_completion_by") @db.VarChar(20)
   payment         Payment?
-  session         Session?
+  sessions        Session[]
   messages        Message[]
   review          Review?
   disputes        Dispute[]
@@ -314,8 +319,9 @@ model Booking {
 
 model Session {
   id                    String        @id @default(uuid()) @db.Uuid
-  bookingId             String        @unique @map("booking_id") @db.Uuid
-  scheduledDate         DateTime      @map("scheduled_date") @db.Timestamptz(3)
+  bookingId             String        @map("booking_id") @db.Uuid
+  sessionNumber         Int?          @map("session_number")
+  scheduledDate         DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                SessionStatus
   startedAt             DateTime?     @map("started_at") @db.Timestamptz(3)
   completedAt           DateTime?     @map("completed_at") @db.Timestamptz(3)
@@ -327,6 +333,7 @@ model Session {
 
   @@index([bookingId])
   @@index([status, completedAt])
+  @@index([bookingId, sessionNumber])
   @@map("sessions")
 }
 
@@ -661,6 +668,7 @@ enum BookingStatus {
 }
 
 enum SessionStatus {
+  pending_schedule
   scheduled
   completed_by_therapist
   confirmed_by_customer

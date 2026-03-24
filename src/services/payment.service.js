@@ -59,7 +59,7 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         include: {
             customer: { include: { user: true } },
             therapist: { select: { id: true, userId: true, fullName: true, stripeAccountId: true, user: true } },
-            offer: true,
+            offer: { include: { request: true } },
         },
     });
 
@@ -75,7 +75,13 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         throw new Error("Booking must be in pending or accepted status");
     }
 
-    const amount = parseFloat(booking.rate);
+    // Calculate total amount: rate × total sessions (multi-session support)
+    const request = booking.offer?.request;
+    const totalSessions = (request?.visitsPerWeek && request?.numberOfWeeks)
+        ? request.visitsPerWeek * request.numberOfWeeks
+        : 1;
+    const perSessionRate = parseFloat(booking.rate);
+    const amount = perSessionRate * totalSessions;
 
     // Resolve global commission rate
     let feePercent;
@@ -248,7 +254,12 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     const payment = await prisma.payment.findUnique({
         where: { stripePaymentIntentId: paymentIntentId },
         include: {
-            booking: true,
+            booking: {
+                include: {
+                    offer: { include: { request: true } },
+                    sessions: true,
+                },
+            },
         },
     });
 
@@ -260,6 +271,12 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     if (payment.status === "escrowed") {
         return payment;
     }
+
+    // Calculate total sessions from request frequency (default 1 for single-session)
+    const request = payment.booking.offer?.request;
+    const totalSessions = (request?.visitsPerWeek && request?.numberOfWeeks)
+        ? request.visitsPerWeek * request.numberOfWeeks
+        : 1;
 
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({
@@ -275,16 +292,30 @@ const handlePaymentSuccess = async (paymentIntentId) => {
             data: { status: "confirmed" },
         });
 
-        // Upsert session to avoid duplicates from webhook retries
-        await tx.session.upsert({
-            where: { bookingId: payment.bookingId },
-            update: {},
-            create: {
-                bookingId: payment.bookingId,
-                scheduledDate: payment.booking.scheduledDate,
-                status: "scheduled",
-            },
-        });
+        // Idempotency: skip session creation if sessions already exist (webhook retry)
+        if (payment.booking.sessions?.length === 0) {
+            // Session 1: scheduled with the offer's proposed date
+            await tx.session.create({
+                data: {
+                    bookingId: payment.bookingId,
+                    sessionNumber: 1,
+                    scheduledDate: payment.booking.scheduledDate,
+                    status: "scheduled",
+                },
+            });
+
+            // Sessions 2-N: pending_schedule (therapist sets dates as treatment progresses)
+            for (let i = 2; i <= totalSessions; i++) {
+                await tx.session.create({
+                    data: {
+                        bookingId: payment.bookingId,
+                        sessionNumber: i,
+                        scheduledDate: null,
+                        status: "pending_schedule",
+                    },
+                });
+            }
+        }
     });
 
     // Event: payment.escrow_funded (system/webhook triggered)
@@ -477,7 +508,7 @@ const processRefund = async (bookingId, userId, reason) => {
         where: { id: bookingId },
         include: {
             payment: true,
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
             customer: { select: { userId: true } },
         },
     });
@@ -544,14 +575,17 @@ const processRefund = async (bookingId, userId, reason) => {
             data: { status: "cancelled" },
         });
 
-        if (booking.session) {
-            await tx.session.update({
-                where: { id: booking.session.id },
-                data: {
-                    status: "cancelled",
-                    cancellationReason: reason,
-                },
-            });
+        // Cancel all sessions for this booking
+        if (booking.sessions?.length > 0) {
+            for (const s of booking.sessions) {
+                await tx.session.update({
+                    where: { id: s.id },
+                    data: {
+                        status: "cancelled",
+                        cancellationReason: reason,
+                    },
+                });
+            }
         }
     });
 

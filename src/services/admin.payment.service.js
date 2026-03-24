@@ -138,7 +138,7 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
         where: { id: paymentId },
         include: {
             therapist: true,
-            booking: { include: { session: true } },
+            booking: { include: { sessions: { orderBy: { sessionNumber: "asc" } } } },
             customer: { select: { userId: true } },
         },
     });
@@ -231,7 +231,7 @@ export const adminReleaseRemainder = async (paymentId, adminId) => {
         where: { id: paymentId },
         include: {
             therapist: true,
-            booking: { include: { session: true } },
+            booking: { include: { sessions: { orderBy: { sessionNumber: "asc" } } } },
         },
     });
     if (!payment) throw new NotFoundError("Payment not found");
@@ -319,7 +319,7 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
     const payment = await prisma.payment.findUnique({
         where: { id: paymentId },
         include: {
-            booking: { include: { session: true } },
+            booking: { include: { sessions: { orderBy: { sessionNumber: "asc" } } } },
             customer: {
                 select: {
                     userId: true,
@@ -385,13 +385,13 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
             where: { id: payment.bookingId },
             data: { status: "cancelled" },
         }),
-        ...(payment.booking.session
-            ? [
+        ...(payment.booking.sessions?.length > 0
+            ? payment.booking.sessions.map(s =>
                 prisma.session.update({
-                    where: { id: payment.booking.session.id },
+                    where: { id: s.id },
                     data: { status: "cancelled", cancellationReason: reason },
-                }),
-            ]
+                })
+            )
             : []),
     ]);
 

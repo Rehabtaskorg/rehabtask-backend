@@ -30,8 +30,8 @@ export const runAutoConfirm = async () => {
 
         const results = await Promise.allSettled(
             sessions.map(async (session) => {
-                // Atomic: session + booking status update together
-                await prisma.$transaction(async (tx) => {
+                // Atomic: confirm this session, check if ALL sessions done
+                const allConfirmed = await prisma.$transaction(async (tx) => {
                     await tx.session.update({
                         where: { id: session.id },
                         data: {
@@ -40,16 +40,31 @@ export const runAutoConfirm = async () => {
                         },
                     });
 
-                    await tx.booking.update({
-                        where: { id: session.bookingId },
-                        data: { status: "completed" },
+                    // Check if ALL sessions for this booking are now confirmed
+                    const allSessions = await tx.session.findMany({
+                        where: { bookingId: session.bookingId },
                     });
+                    const confirmedCount = allSessions.filter(s =>
+                        s.id === session.id || s.status === "confirmed_by_customer"
+                    ).length;
+
+                    if (confirmedCount === allSessions.length) {
+                        await tx.booking.update({
+                            where: { id: session.bookingId },
+                            data: { status: "completed" },
+                        });
+                        return true;
+                    }
+                    return false;
                 });
 
-                // Release payment (has its own idempotency via Stripe idempotency key)
-                await releasePayment(session.id);
-
-                logger.info(`[AutoConfirm] Auto-confirmed session ${session.id}`);
+                // Only release payment when ALL sessions are confirmed
+                if (allConfirmed) {
+                    await releasePayment(session.id);
+                    logger.info(`[AutoConfirm] All sessions confirmed — payment released for booking ${session.bookingId}`);
+                } else {
+                    logger.info(`[AutoConfirm] Auto-confirmed session ${session.id}, waiting for remaining sessions`);
+                }
             })
         );
 

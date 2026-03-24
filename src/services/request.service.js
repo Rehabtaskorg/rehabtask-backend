@@ -6,7 +6,7 @@ import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
-    const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr } = data;
+    const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr, visitsPerWeek, numberOfWeeks } = data;
 
     // IF patientId is provided, validate the patient belongs to this agency
     if (patientId) {
@@ -36,6 +36,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
             ...(rate != null && { rate }),
             ...(visitType && { visitType }),
             ...(emr && { emr }),
+            ...(visitsPerWeek != null && { visitsPerWeek }),
+            ...(numberOfWeeks != null && { numberOfWeeks }),
         },
     });
 

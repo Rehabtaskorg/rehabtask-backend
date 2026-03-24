@@ -3,6 +3,7 @@ import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
 import { logAction } from "./audit.service.js";
+import { releasePayment } from "./payment.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -52,10 +53,14 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
             },
         });
 
-        await tx.booking.update({
-            where: { id: session.bookingId },
-            data: { status: "in_progress" },
-        });
+        // Only transition booking to in_progress if it's currently confirmed
+        // (avoid overwriting in_progress for multi-session bookings)
+        if (session.booking.status === "confirmed") {
+            await tx.booking.update({
+                where: { id: session.bookingId },
+                data: { status: "in_progress" },
+            });
+        }
 
         return updated;
     });
@@ -127,12 +132,24 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
             },
         });
 
-        await tx.booking.update({
-            where: { id: session.bookingId },
-            data: { status: "completed" },
+        // Check if ALL sessions for this booking are now confirmed
+        const allSessions = await tx.session.findMany({
+            where: { bookingId: session.bookingId },
         });
+        const totalSessions = allSessions.length;
+        const confirmedCount = allSessions.filter(s =>
+            s.id === sessionId || s.status === "confirmed_by_customer"
+        ).length;
 
-        return updated;
+        if (confirmedCount === totalSessions) {
+            // ALL sessions confirmed — mark booking completed
+            await tx.booking.update({
+                where: { id: session.bookingId },
+                data: { status: "completed" },
+            });
+        }
+
+        return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
     });
 
     // Event: session.confirmed_by_customer
@@ -141,7 +158,11 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         action: "session.confirmed_by_customer",
         entityType: "session",
         entityId: sessionId,
-        changes: { bookingId: session.bookingId, confirmedAt: updatedSession.confirmedByCustomerAt },
+        changes: {
+            bookingId: session.bookingId,
+            confirmedAt: updatedSession.confirmedByCustomerAt,
+            sessionProgress: `${updatedSession._confirmedCount}/${updatedSession._totalSessions}`,
+        },
     });
 
     // Notify therapist that customer confirmed (fire-and-forget)
@@ -152,7 +173,29 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         booking: session.booking
     }).catch((err) => {
         logger.error('[SessionService] Session confirmed notification failed', { error: err.message });
-    })
+    });
+
+    // Release payment only when ALL sessions are confirmed
+    if (updatedSession._allConfirmed) {
+        try {
+            await releasePayment(sessionId);
+            logger.info("[Session] All sessions confirmed — payment released", {
+                bookingId: session.bookingId,
+                totalSessions: updatedSession._totalSessions,
+            });
+        } catch (err) {
+            logger.error("[Session] Payment release failed after all sessions confirmed", {
+                bookingId: session.bookingId,
+                error: err.message,
+            });
+        }
+    } else {
+        logger.info("[Session] Session confirmed, waiting for remaining", {
+            bookingId: session.bookingId,
+            confirmed: updatedSession._confirmedCount,
+            total: updatedSession._totalSessions,
+        });
+    }
 
     return updatedSession;
 }
@@ -282,6 +325,70 @@ export const getCustomerSessions = async (customerId) => {
 /**
  * Get therapist's session
  */
+/**
+ * Schedule a pending session (therapist sets date for a pending_schedule session)
+ */
+export const scheduleSession = async (sessionId, therapistId, scheduledDate) => {
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: true,
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new Error("Session not found");
+    }
+
+    if (session.booking.therapistId !== therapistId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (session.status !== "pending_schedule") {
+        throw new BadRequestError("Only pending sessions can be scheduled");
+    }
+
+    // Validate date is in the future
+    const proposedDate = new Date(scheduledDate);
+    if (proposedDate <= new Date()) {
+        throw new BadRequestError("Scheduled date must be in the future");
+    }
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: {
+            scheduledDate: proposedDate,
+            status: "scheduled",
+        },
+    });
+
+    logAction({
+        actorId: session.booking.therapist.userId,
+        action: "session.scheduled",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            sessionNumber: session.sessionNumber,
+            scheduledDate: proposedDate,
+        },
+    });
+
+    logger.info("[Session] Session scheduled by therapist", {
+        sessionId,
+        sessionNumber: session.sessionNumber,
+        bookingId: session.bookingId,
+        scheduledDate: proposedDate,
+    });
+
+    return updatedSession;
+};
+
 export const getTherapistSessions = async (therapistId) => {
     const sessions = await prisma.session.findMany({
         where: {
