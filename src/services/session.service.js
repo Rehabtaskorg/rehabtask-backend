@@ -349,8 +349,8 @@ export const scheduleSession = async (sessionId, therapistId, scheduledDate) => 
         throw new Error("Unauthorized");
     }
 
-    if (session.status !== "pending_schedule") {
-        throw new BadRequestError("Only pending sessions can be scheduled");
+    if (!["pending_schedule", "scheduled"].includes(session.status)) {
+        throw new BadRequestError("Only pending or scheduled sessions can be scheduled/rescheduled");
     }
 
     // Validate date is in the future
