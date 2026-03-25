@@ -6,7 +6,10 @@ import { sendAdminPaymentReleased, sendAdminPaymentRefunded } from "./email.serv
 
 const PAYMENT_INCLUDE = {
     booking: {
-        select: { id: true, scheduledDate: true, sessionType: true, status: true },
+        select: {
+            id: true, scheduledDate: true, sessionType: true, status: true,
+            sessions: { select: { id: true, sessionNumber: true, status: true, scheduledDate: true }, orderBy: { sessionNumber: "asc" } },
+        },
     },
     customer: {
         select: {
