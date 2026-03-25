@@ -1,8 +1,7 @@
 import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
-    getSessionById, getCustomerSessions, getTherapistSessions
+    getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession
 } from "../services/session.service.js";
-import { releasePayment } from "../services/payment.service.js";
 import { logAction } from "../services/audit.service.js";
 
 /**
@@ -27,23 +26,10 @@ const confirmByCustomerController = async (req, res, next) => {
         const { sessionId } = req.params;
         const customerId = req.user.customerProfile.id;
         const session = await confirmSessionByCustomer(sessionId, customerId);
-        const payment = await releasePayment(sessionId);
 
-        // Audit: customer-initiated payment release (most common payment flow)
-        logAction({
-            actorId: req.user.id,
-            action: "payment.released",
-            entityType: "payment",
-            entityId: payment.id,
-            changes: {
-                trigger: "customer_confirmation",
-                sessionId,
-                amount: parseFloat(payment.therapistPayout),
-                stripeTransferId: payment.stripeTransferId,
-            },
-        });
-
-        res.status(200).json({ success: true, data: { session, payment } });
+        // Payment release is now handled inside confirmSessionByCustomer
+        // (only triggers when ALL sessions for the booking are confirmed)
+        res.status(200).json({ success: true, data: { session } });
     } catch (error) {
         next(error);
     }
@@ -104,6 +90,21 @@ const getTherapistSessionsController = async (req, res, next) => {
     }
 }
 
+/**
+ * Schedule a pending session (therapist sets the date)
+ */
+const scheduleSessionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { scheduledDate } = req.body;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await scheduleSession(sessionId, therapistId, scheduledDate);
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export {
     completeTherapistController,
     confirmByCustomerController,
@@ -111,4 +112,5 @@ export {
     getSessionController,
     getCustomerSessionsController,
     getTherapistSessionsController,
+    scheduleSessionController,
 };

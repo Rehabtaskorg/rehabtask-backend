@@ -206,21 +206,37 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
 const handlePaymentIntentCanceled = async (paymentIntent) => {
     try {
         const payment = await prisma.payment.findUnique({
-            where: { stripePaymentIntentId: paymentIntent.id }
+            where: { stripePaymentIntentId: paymentIntent.id },
+            include: { booking: { include: { payment: true } } },
         });
 
         if (payment && payment.status === "intent_created") {
+            // Only cancel the booking if THIS payment is still the active one for the booking.
+            // If the payment was replaced by a new PaymentIntent (stale intent reuse pattern),
+            // the booking's current payment will have a DIFFERENT stripePaymentIntentId.
+            const isActivePayment = payment.booking.payment?.id === payment.id;
+
             await prisma.$transaction(async (tx) => {
                 await tx.payment.update({
                     where: { id: payment.id },
                     data: { status: "failed" },
                 });
 
-                await tx.booking.update({
-                    where: { id: payment.bookingId },
-                    data: { status: "cancelled" },
-                });
+                // Only cancel the booking if this was the active payment, not a stale one
+                if (isActivePayment) {
+                    await tx.booking.update({
+                        where: { id: payment.bookingId },
+                        data: { status: "cancelled" },
+                    });
+                }
             });
+
+            if (!isActivePayment) {
+                logger.info("[Webhook] Stale PaymentIntent canceled — booking not affected", {
+                    paymentIntentId: paymentIntent.id,
+                    bookingId: payment.bookingId,
+                });
+            }
         }
     } catch (error) {
         console.error(`Error handling payment cancellation:`, error.message);

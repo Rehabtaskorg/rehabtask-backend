@@ -21,7 +21,7 @@ export const getBookingById = async (bookingId, userId) => {
                 },
             },
             payment: true,
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },
@@ -55,7 +55,7 @@ export const getCustomerBookings = async (customerId) => {
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
         },
         orderBy: { scheduledDate: "desc" },
     });
@@ -77,7 +77,7 @@ export const getTherapistBookings = async (therapistId) => {
                 },
             },
             payment: true,
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },
@@ -101,7 +101,7 @@ export const rescheduleBooking = async (bookingId, therapistId, newDate) => {
             therapist: {
                 include: { user: { select: { id: true, email: true } } }
             },
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
         },
     });
 
@@ -158,7 +158,7 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
             therapist: {
                 include: { user: { select: { id: true, email: true } } }
             },
-            session: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
         },
     });
 
@@ -194,10 +194,11 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
             },
         });
 
-        // Also update the session's scheduledDate if it exists
-        if (booking.session) {
+        // Also update the first scheduled session's date if it exists
+        const firstSession = booking.sessions?.find(s => s.status === "scheduled");
+        if (firstSession) {
             await prisma.session.update({
-                where: { id: booking.session.id },
+                where: { id: firstSession.id },
                 data: { scheduledDate: newScheduledDate },
             });
         }

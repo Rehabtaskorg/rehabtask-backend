@@ -11,6 +11,8 @@ export const createRequestSchema = z.object({
     rate: z.number({ coerce: true }).positive("Rate must be a positive number"),
     visitType: z.string().trim().min(1, "Visit type is required").max(100),
     emr: z.string().trim().min(1, "EMR system is required").max(100),
+    visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
+    numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
 });
 
 export const updateRequestSchema = z.object({
@@ -23,4 +25,6 @@ export const updateRequestSchema = z.object({
     rate: z.number({ coerce: true }).positive("Rate must be a positive number").optional(),
     visitType: z.string().trim().min(1).max(100).optional(),
     emr: z.string().trim().min(1).max(100).optional(),
+    visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
+    numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
 });
