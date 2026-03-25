@@ -31,7 +31,7 @@ const BOOKING_INCLUDE = {
             therapistPayout: true,
         },
     },
-    session: { select: { id: true, status: true, completedAt: true } },
+    sessions: { select: { id: true, status: true, sessionNumber: true, scheduledDate: true, completedAt: true }, orderBy: { sessionNumber: "asc" } },
     patient: {
         select: { id: true, fullName: true, email: true, phone: true },
     },
