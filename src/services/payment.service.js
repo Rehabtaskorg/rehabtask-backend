@@ -627,38 +627,108 @@ const getCustomerPaymentHistory = async (customerId) => {
  * Get therapist earnings/payout history
  */
 const getTherapistPayoutHistory = async (therapistId) => {
-    const payments = await prisma.payment.findMany({
-        where: {
-            therapistId,
-            status: { in: ["released", "partially_released", "escrowed"] },
-        },
-        include: {
-            booking: {
-                include: {
-                    customer: true,
-                    offer: {
-                        include: {
-                            request: true,
+    const [payments, therapist] = await Promise.all([
+        prisma.payment.findMany({
+            where: {
+                therapistId,
+                status: { in: ["released", "partially_released", "escrowed"] },
+            },
+            include: {
+                booking: {
+                    include: {
+                        customer: true,
+                        offer: {
+                            include: {
+                                request: true,
+                            },
                         },
                     },
                 },
             },
-        },
-        orderBy: { createdAt: "desc" },
-    });
+            orderBy: { createdAt: "desc" },
+        }),
+        prisma.therapistProfile.findUnique({
+            where: { id: therapistId },
+            select: { planTier: true },
+        }),
+    ]);
 
-    const totalEarnings = payments
-        .filter((p) => ["released", "partially_released"].includes(p.status))
+    const releasedPayments = payments.filter((p) => ["released", "partially_released"].includes(p.status));
+    const escrowedPayments = payments.filter((p) => p.status === "escrowed");
+
+    const totalEarnings = releasedPayments
         .reduce((sum, p) => sum + parseFloat(p.releasedAmount ?? p.therapistPayout), 0);
 
-    const pendingEarnings = payments
-        .filter((p) => p.status === "escrowed")
+    const pendingEarnings = escrowedPayments
         .reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0)
         + payments
             .filter((p) => p.status === "partially_released")
             .reduce((sum, p) => sum + (parseFloat(p.therapistPayout) - parseFloat(p.releasedAmount ?? 0)), 0);
 
-    return { payments, totalEarnings, pendingEarnings };
+    const pendingSessionCount = escrowedPayments.length;
+
+    // Earnings grouped by month (last 6 months) — aggregated in JS to avoid raw SQL
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const earningsByMonthMap = {};
+    for (const p of releasedPayments) {
+        const d = new Date(p.releasedAt || p.createdAt);
+        if (d < sixMonthsAgo) continue;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!earningsByMonthMap[key]) earningsByMonthMap[key] = { month: key, earnings: 0, sessions: 0 };
+        earningsByMonthMap[key].earnings += parseFloat(p.releasedAmount ?? p.therapistPayout);
+        earningsByMonthMap[key].sessions += 1;
+    }
+    const earningsByMonth = Object.values(earningsByMonthMap).sort((a, b) => a.month.localeCompare(b.month));
+
+    // Commission info for this therapist's tier
+    const tierRate = await prisma.commissionConfig.findFirst({
+        where: { tier: therapist?.planTier ?? "basic", effectiveFrom: { lte: new Date() } },
+        orderBy: { effectiveFrom: "desc" },
+    });
+    const globalRate = tierRate ? null : await prisma.commissionConfig.findFirst({
+        where: { tier: null, effectiveFrom: { lte: new Date() } },
+        orderBy: { effectiveFrom: "desc" },
+    });
+    const commissionInfo = {
+        planTier: therapist?.planTier ?? "basic",
+        commissionRate: tierRate ? parseFloat(tierRate.rate) : globalRate ? parseFloat(globalRate.rate) : 0.1,
+    };
+
+    // Period stats: this month vs last month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const thisMonthPayments = releasedPayments.filter((p) => new Date(p.releasedAt || p.createdAt) >= startOfMonth);
+    const lastMonthPayments = releasedPayments.filter((p) => {
+        const d = new Date(p.releasedAt || p.createdAt);
+        return d >= startOfLastMonth && d < startOfMonth;
+    });
+
+    const periodStats = {
+        thisMonth: {
+            earnings: thisMonthPayments.reduce((s, p) => s + parseFloat(p.releasedAmount ?? p.therapistPayout), 0),
+            sessions: thisMonthPayments.length,
+        },
+        lastMonth: {
+            earnings: lastMonthPayments.reduce((s, p) => s + parseFloat(p.releasedAmount ?? p.therapistPayout), 0),
+            sessions: lastMonthPayments.length,
+        },
+    };
+
+    return {
+        payments,
+        totalEarnings,
+        pendingEarnings,
+        pendingSessionCount,
+        earningsByMonth,
+        commissionInfo,
+        periodStats,
+    };
 }
 
 /**
