@@ -62,8 +62,10 @@ export const authenticate = async (req, res, next) => {
 
         next();
     } catch (error) {
-        // Clear invalid cookies
-        if (error instanceof AuthenticationError) {
+        // Only clear the access token — preserve the refresh token so the
+        // frontend interceptor can still call /auth/token/refresh and get
+        // a new access token. Clearing both causes premature logouts.
+        if (error instanceof AuthenticationError && error.code !== "ACCOUNT_DEACTIVATED") {
             const isSecureContext = process.env.COOKIE_SECURE === "true";
             const clearOptions = {
                 path: "/",
@@ -72,7 +74,6 @@ export const authenticate = async (req, res, next) => {
                 sameSite: isSecureContext ? "none" : "lax",
             };
             res.clearCookie("sb_access_token", clearOptions);
-            res.clearCookie("sb_refresh_token", clearOptions);
         }
         next(error);
     }
