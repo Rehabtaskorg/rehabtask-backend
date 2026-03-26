@@ -410,5 +410,17 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         byAdmin: adminId,
         refundId: refund.id,
     });
-    return refund;
+
+    const updatedPayment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+            booking: { select: { id: true, status: true, scheduledDate: true } },
+            customer: { select: { fullName: true } },
+        },
+    });
+
+    return {
+        payment: updatedPayment,
+        stripeRefundId: refund.id,
+    };
 };
