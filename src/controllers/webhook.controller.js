@@ -152,59 +152,43 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
             return;
         }
 
-        // Only affect the booking if THIS intent is still the active payment.
-        // When a customer retries, the stale intent gets replaced via the reuse
-        // pattern in createPaymentIntent — the booking's current payment record
-        // now points to a NEW stripePaymentIntentId. A late-arriving webhook for
-        // the old intent must not cancel the booking.
         const isActivePayment = payment.booking.payment?.id === payment.id;
 
-        await prisma.$transaction(async (tx) => {
-            await tx.payment.update({
-                where: { id: payment.id },
-                data: { status: "failed" },
-            });
-
-            if (isActivePayment) {
-                await tx.booking.update({
-                    where: { id: payment.bookingId },
-                    data: { status: "cancelled" },
-                });
-            }
+        // Mark the payment record as failed, but NEVER cancel the booking.
+        // A failed payment is recoverable — the customer can retry with a
+        // different card. The createPaymentIntent reuse pattern will detect
+        // the failed status and create a new intent on the next attempt.
+        // Only explicit user/admin cancellation should cancel a booking.
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: "failed" },
         });
 
         if (isActivePayment) {
-            const failedBooking = await prisma.booking.findUnique({
-                where: { id: payment.bookingId },
-                include: {
-                    customer: { include: { user: { select: { email: true } } } },
-                },
-            });
-
-            if (failedBooking) {
-                sendPaymentFailed({
-                    customer: failedBooking.customer,
-                    booking: failedBooking,
-                    reason: paymentIntent.last_payment_error?.message,
-                }).catch(() => { });
-            }
-
-            logSystemEvent({
-                action: "payment.failed",
-                entityType: "payment",
-                entityId: payment.id,
-                changes: {
-                    bookingId: payment.bookingId,
-                    reason: paymentIntent.last_payment_error?.message || "Payment failed",
-                    stripePaymentIntentId: paymentIntent.id,
-                },
-            });
-        } else {
-            logger.info("[Webhook] Stale PaymentIntent failed — booking not affected", {
-                paymentIntentId: paymentIntent.id,
-                bookingId: payment.bookingId,
-            });
+            sendPaymentFailed({
+                customer: { ...payment.booking, user: null },
+                booking: payment.booking,
+                reason: paymentIntent.last_payment_error?.message,
+            }).catch(() => { });
         }
+
+        logSystemEvent({
+            action: "payment.failed",
+            entityType: "payment",
+            entityId: payment.id,
+            changes: {
+                bookingId: payment.bookingId,
+                isActivePayment,
+                reason: paymentIntent.last_payment_error?.message || "Payment failed",
+                stripePaymentIntentId: paymentIntent.id,
+            },
+        });
+
+        logger.info("[Webhook] PaymentIntent failed — booking preserved for retry", {
+            paymentIntentId: paymentIntent.id,
+            bookingId: payment.bookingId,
+            isActivePayment,
+        });
 
     } catch (error) {
         console.error("Error handling payment failure:", error);
@@ -219,39 +203,24 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
     try {
         const payment = await prisma.payment.findUnique({
             where: { stripePaymentIntentId: paymentIntent.id },
-            include: { booking: { include: { payment: true } } },
         });
 
-        if (payment && payment.status === "intent_created") {
-            // Only cancel the booking if THIS payment is still the active one for the booking.
-            // If the payment was replaced by a new PaymentIntent (stale intent reuse pattern),
-            // the booking's current payment will have a DIFFERENT stripePaymentIntentId.
-            const isActivePayment = payment.booking.payment?.id === payment.id;
+        if (!payment || payment.status !== "intent_created") return;
 
-            await prisma.$transaction(async (tx) => {
-                await tx.payment.update({
-                    where: { id: payment.id },
-                    data: { status: "failed" },
-                });
+        // Mark payment as failed but preserve the booking for retry.
+        // The createPaymentIntent reuse pattern will detect the failed
+        // status and create a new intent on the customer's next attempt.
+        await prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: "failed" },
+        });
 
-                // Only cancel the booking if this was the active payment, not a stale one
-                if (isActivePayment) {
-                    await tx.booking.update({
-                        where: { id: payment.bookingId },
-                        data: { status: "cancelled" },
-                    });
-                }
-            });
-
-            if (!isActivePayment) {
-                logger.info("[Webhook] Stale PaymentIntent canceled — booking not affected", {
-                    paymentIntentId: paymentIntent.id,
-                    bookingId: payment.bookingId,
-                });
-            }
-        }
+        logger.info("[Webhook] PaymentIntent canceled — booking preserved for retry", {
+            paymentIntentId: paymentIntent.id,
+            bookingId: payment.bookingId,
+        });
     } catch (error) {
-        console.error(`Error handling payment cancellation:`, error.message);
+        console.error("Error handling payment cancellation:", error.message);
     }
 }
 
