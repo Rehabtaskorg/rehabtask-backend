@@ -44,6 +44,8 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         throw new Error("Session must be in scheduled status");
     }
 
+    console.log(`[DEBUG:THERAPIST_COMPLETE] Session ${sessionId} | Booking ${session.bookingId} | Current session status: ${session.status} | Booking status: ${session.booking.status}`);
+
     const updatedSession = await prisma.$transaction(async (tx) => {
         const updated = await tx.session.update({
             where: { id: sessionId },
@@ -60,10 +62,15 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
                 where: { id: session.bookingId },
                 data: { status: "in_progress" },
             });
+            console.log(`[DEBUG:THERAPIST_COMPLETE] Booking ${session.bookingId} transitioned: confirmed → in_progress`);
+        } else {
+            console.log(`[DEBUG:THERAPIST_COMPLETE] Booking ${session.bookingId} already ${session.booking.status}, no transition`);
         }
 
         return updated;
     });
+
+    console.log(`[DEBUG:THERAPIST_COMPLETE] Session ${sessionId} → completed_by_therapist at ${updatedSession.completedAt}`);
 
     // Event: session.completed_by_therapist
     logAction({
@@ -113,9 +120,11 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         throw new Error("Unauthorized");
     }
 
+    console.log(`[DEBUG:CUSTOMER_CONFIRM] Session ${sessionId} | Booking ${session.bookingId} | Current status: ${session.status}`);
+
     // Idempotent: if already confirmed by customer, return as-is.
-    // This allows safe retries when releasePayment fails after confirm.
     if (session.status === "confirmed_by_customer") {
+        console.log(`[DEBUG:CUSTOMER_CONFIRM] Session ${sessionId} already confirmed — idempotent return`);
         return session;
     }
 
@@ -141,12 +150,19 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
             s.id === sessionId || s.status === "confirmed_by_customer"
         ).length;
 
+        console.log(`[DEBUG:CUSTOMER_CONFIRM] Session ${sessionId} confirmed. Progress: ${confirmedCount}/${totalSessions}`);
+        allSessions.forEach(s => {
+            console.log(`[DEBUG:CUSTOMER_CONFIRM]   → Session ${s.id} (${s.sessionNumber}): ${s.id === sessionId ? "confirmed_by_customer (just now)" : s.status}`);
+        });
+
         if (confirmedCount === totalSessions) {
-            // ALL sessions confirmed — mark booking completed
             await tx.booking.update({
                 where: { id: session.bookingId },
                 data: { status: "completed" },
             });
+            console.log(`[DEBUG:CUSTOMER_CONFIRM] ALL CONFIRMED — Booking ${session.bookingId} → completed`);
+        } else {
+            console.log(`[DEBUG:CUSTOMER_CONFIRM] NOT all confirmed — Booking ${session.bookingId} stays ${session.booking.status}`);
         }
 
         return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
@@ -177,24 +193,15 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
 
     // Release payment only when ALL sessions are confirmed
     if (updatedSession._allConfirmed) {
+        console.log(`[DEBUG:PAYMENT_RELEASE] ALL ${updatedSession._totalSessions} sessions confirmed for booking ${session.bookingId} — calling releasePayment`);
         try {
             await releasePayment(sessionId);
-            logger.info("[Session] All sessions confirmed — payment released", {
-                bookingId: session.bookingId,
-                totalSessions: updatedSession._totalSessions,
-            });
+            console.log(`[DEBUG:PAYMENT_RELEASE] ✅ Payment released successfully for booking ${session.bookingId}`);
         } catch (err) {
-            logger.error("[Session] Payment release failed after all sessions confirmed", {
-                bookingId: session.bookingId,
-                error: err.message,
-            });
+            console.log(`[DEBUG:PAYMENT_RELEASE] ❌ Payment release FAILED for booking ${session.bookingId}: ${err.message}`);
         }
     } else {
-        logger.info("[Session] Session confirmed, waiting for remaining", {
-            bookingId: session.bookingId,
-            confirmed: updatedSession._confirmedCount,
-            total: updatedSession._totalSessions,
-        });
+        console.log(`[DEBUG:PAYMENT_RELEASE] ⏳ Waiting — ${updatedSession._confirmedCount}/${updatedSession._totalSessions} confirmed for booking ${session.bookingId}. NO payment release.`);
     }
 
     return updatedSession;
