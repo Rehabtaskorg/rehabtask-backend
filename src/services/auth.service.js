@@ -674,10 +674,9 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     customerProfile: {
                         create: {
                             fullName: profileData.fullName,
-                            phone: profileData.phone || "",
+                            phone: profileData.phone || null,
                             customerType: profileData.customerType || "individual",
                             agencyName: profileData.customerType === "agency" ? profileData.agencyName : null,
-                            location: profileData.location || null,
                         },
                     },
                     ...(existingPatient && {
@@ -698,8 +697,8 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     therapistProfile: {
                         create: {
                             fullName: profileData.fullName,
-                            phone: profileData.phone || "",
-                            approvalStatus: "pending", // Requires admin approval
+                            phone: profileData.phone || null,
+                            approvalStatus: "pending",
                         },
                     },
                 },
