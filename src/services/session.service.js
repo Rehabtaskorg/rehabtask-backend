@@ -53,8 +53,6 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
             },
         });
 
-        // Only transition booking to in_progress if it's currently confirmed
-        // (avoid overwriting in_progress for multi-session bookings)
         if (session.booking.status === "confirmed") {
             await tx.booking.update({
                 where: { id: session.bookingId },
@@ -114,7 +112,6 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     }
 
     // Idempotent: if already confirmed by customer, return as-is.
-    // This allows safe retries when releasePayment fails after confirm.
     if (session.status === "confirmed_by_customer") {
         return session;
     }
@@ -132,7 +129,6 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
             },
         });
 
-        // Check if ALL sessions for this booking are now confirmed
         const allSessions = await tx.session.findMany({
             where: { bookingId: session.bookingId },
         });
@@ -142,7 +138,6 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         ).length;
 
         if (confirmedCount === totalSessions) {
-            // ALL sessions confirmed — mark booking completed
             await tx.booking.update({
                 where: { id: session.bookingId },
                 data: { status: "completed" },
