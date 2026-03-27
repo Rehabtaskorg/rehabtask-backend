@@ -14,8 +14,6 @@ export const runAutoConfirm = async () => {
     const hours = parseInt(process.env.AUTO_CONFIRM_HOURS || "72", 10);
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    console.log(`[DEBUG:AUTO_CONFIRM] Job running | Cutoff: ${cutoff.toISOString()} (${hours}h ago)`);
-
     // ── Phase 1: Auto-confirm expired sessions ──────────────────────────
     const sessions = await prisma.session.findMany({
         where: {
@@ -27,12 +25,8 @@ export const runAutoConfirm = async () => {
         },
     });
 
-    console.log(`[DEBUG:AUTO_CONFIRM] Phase 1: Found ${sessions.length} session(s) past ${hours}h cutoff`);
-
     if (sessions.length > 0) {
-        sessions.forEach(s => {
-            console.log(`[DEBUG:AUTO_CONFIRM]   → Session ${s.id} | Booking ${s.bookingId} | completedAt: ${s.completedAt}`);
-        });
+        logger.info(`[AutoConfirm] Auto-confirming ${sessions.length} session(s)`);
 
         const results = await Promise.allSettled(
             sessions.map(async (session) => {
@@ -95,24 +89,19 @@ export const runAutoConfirm = async () => {
         },
     });
 
-    console.log(`[DEBUG:AUTO_CONFIRM] Phase 2: Found ${stuckBookings.length} stuck booking(s) (completed but payment unreleased)`);
-
     if (stuckBookings.length > 0) {
-        stuckBookings.forEach(b => {
-            console.log(`[DEBUG:AUTO_CONFIRM]   → Booking ${b.id} | Payment: ${b.payment?.status} | Sessions: ${b.sessions.map(s => `${s.sessionNumber}:${s.status}`).join(", ")}`);
-        });
+        logger.warn(`[AutoConfirm] Found ${stuckBookings.length} stuck booking(s) with unreleased payments, attempting recovery`);
 
         const recoveryResults = await Promise.allSettled(
             stuckBookings.map(async (booking) => {
                 const allConfirmed = booking.sessions.every(s => s.status === "confirmed_by_customer");
                 if (!allConfirmed) {
-                    console.log(`[DEBUG:AUTO_CONFIRM] ❌ Booking ${booking.id} has unconfirmed sessions — SKIPPING release`);
+                    logger.warn(`[AutoConfirm] Booking ${booking.id} marked completed but has unconfirmed sessions — skipping release`);
                     return;
                 }
-                console.log(`[DEBUG:AUTO_CONFIRM] ✅ Booking ${booking.id} all sessions confirmed — attempting recovery release`);
                 const lastSession = booking.sessions[booking.sessions.length - 1];
                 await releasePayment(lastSession.id);
-                console.log(`[DEBUG:AUTO_CONFIRM] ✅ Recovered stuck payment for booking ${booking.id}`);
+                logger.info(`[AutoConfirm] Recovered stuck payment for booking ${booking.id}`);
             })
         );
 

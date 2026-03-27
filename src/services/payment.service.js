@@ -387,15 +387,9 @@ const releasePayment = async (sessionId) => {
         where: { bookingId: session.bookingId },
     });
     const unconfirmedCount = allSessions.filter(s => s.status !== "confirmed_by_customer").length;
-    console.log(`[DEBUG:RELEASE_GUARD] Booking ${session.bookingId} | ${allSessions.length} sessions | ${unconfirmedCount} unconfirmed`);
-    allSessions.forEach(s => {
-        console.log(`[DEBUG:RELEASE_GUARD]   → Session ${s.id} (${s.sessionNumber}): ${s.status}`);
-    });
     if (unconfirmedCount > 0) {
-        console.log(`[DEBUG:RELEASE_GUARD] ❌ BLOCKED — ${unconfirmedCount} session(s) not confirmed. Payment stays escrowed.`);
         throw new Error(`Cannot release payment: ${unconfirmedCount} of ${allSessions.length} session(s) not yet confirmed by customer`);
     }
-    console.log(`[DEBUG:RELEASE_GUARD] ✅ All sessions confirmed — proceeding with Stripe transfer`);
 
     const therapist = session.booking.therapist;
 
