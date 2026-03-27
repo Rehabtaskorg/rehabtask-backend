@@ -382,6 +382,16 @@ const releasePayment = async (sessionId) => {
         throw new Error("Payment not in a releasable state");
     }
 
+    // Defense-in-depth: NEVER release payment unless ALL sessions are confirmed.
+    // This guard protects against any caller that bypasses the all-confirmed check.
+    const allSessions = await prisma.session.findMany({
+        where: { bookingId: session.bookingId },
+    });
+    const unconfirmedCount = allSessions.filter(s => s.status !== "confirmed_by_customer").length;
+    if (unconfirmedCount > 0) {
+        throw new Error(`Cannot release payment: ${unconfirmedCount} of ${allSessions.length} session(s) not yet confirmed by customer`);
+    }
+
     const therapist = session.booking.therapist;
 
     if (!therapist.stripeAccountId) {

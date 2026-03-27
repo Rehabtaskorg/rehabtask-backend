@@ -74,34 +74,41 @@ export const runAutoConfirm = async () => {
         }
     }
 
-    // ── Phase 2: Recover stuck sessions ─────────────────────────────────
-    // These are sessions where confirm succeeded but releasePayment failed.
-    // Without this recovery, the therapist's money stays in escrow forever.
-    const stuckSessions = await prisma.session.findMany({
+    // ── Phase 2: Recover stuck bookings ─────────────────────────────────
+    // Find bookings where ALL sessions are confirmed but payment was never
+    // released (caused by a prior releasePayment failure). Without this
+    // recovery the therapist's money stays in escrow forever.
+    // CRITICAL: Only release when EVERY session in the booking is confirmed.
+    const stuckBookings = await prisma.booking.findMany({
         where: {
-            status: "confirmed_by_customer",
-            booking: {
-                payment: { status: { in: ["escrowed", "partially_released"] } },
-            },
+            status: "completed",
+            payment: { status: { in: ["escrowed", "partially_released"] } },
         },
         include: {
-            booking: { include: { payment: true } },
+            payment: true,
+            sessions: { orderBy: { sessionNumber: "asc" } },
         },
     });
 
-    if (stuckSessions.length > 0) {
-        logger.warn(`[AutoConfirm] Found ${stuckSessions.length} stuck session(s) with unreleased payments, attempting recovery`);
+    if (stuckBookings.length > 0) {
+        logger.warn(`[AutoConfirm] Found ${stuckBookings.length} stuck booking(s) with unreleased payments, attempting recovery`);
 
         const recoveryResults = await Promise.allSettled(
-            stuckSessions.map(async (session) => {
-                await releasePayment(session.id);
-                logger.info(`[AutoConfirm] Recovered stuck payment for session ${session.id}`);
+            stuckBookings.map(async (booking) => {
+                const allConfirmed = booking.sessions.every(s => s.status === "confirmed_by_customer");
+                if (!allConfirmed) {
+                    logger.warn(`[AutoConfirm] Booking ${booking.id} marked completed but has unconfirmed sessions — skipping release`);
+                    return;
+                }
+                const lastSession = booking.sessions[booking.sessions.length - 1];
+                await releasePayment(lastSession.id);
+                logger.info(`[AutoConfirm] Recovered stuck payment for booking ${booking.id}`);
             })
         );
 
         const recoveryFailed = recoveryResults.filter((r) => r.status === "rejected").length;
         if (recoveryFailed > 0) {
-            logger.error(`[AutoConfirm] ${recoveryFailed} stuck session(s) failed recovery — manual intervention required`);
+            logger.error(`[AutoConfirm] ${recoveryFailed} stuck booking(s) failed recovery — manual intervention required`);
         }
     }
 }
