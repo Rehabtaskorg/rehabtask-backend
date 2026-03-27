@@ -144,23 +144,36 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
     try {
         const payment = await prisma.payment.findUnique({
             where: { stripePaymentIntentId: paymentIntent.id },
-            include: { booking: true }
+            include: { booking: { include: { payment: true } } },
         });
 
-        if (payment) {
-            await prisma.$transaction(async (tx) => {
-                await tx.payment.update({
-                    where: { id: payment.id },
-                    data: { status: "failed" },
-                });
+        if (!payment) {
+            logger.info("[Webhook] No payment record for failed intent", { paymentIntentId: paymentIntent.id });
+            return;
+        }
 
+        // Only affect the booking if THIS intent is still the active payment.
+        // When a customer retries, the stale intent gets replaced via the reuse
+        // pattern in createPaymentIntent — the booking's current payment record
+        // now points to a NEW stripePaymentIntentId. A late-arriving webhook for
+        // the old intent must not cancel the booking.
+        const isActivePayment = payment.booking.payment?.id === payment.id;
+
+        await prisma.$transaction(async (tx) => {
+            await tx.payment.update({
+                where: { id: payment.id },
+                data: { status: "failed" },
+            });
+
+            if (isActivePayment) {
                 await tx.booking.update({
                     where: { id: payment.bookingId },
                     data: { status: "cancelled" },
                 });
-            });
+            }
+        });
 
-            // Notify customer about failed payment (email)
+        if (isActivePayment) {
             const failedBooking = await prisma.booking.findUnique({
                 where: { id: payment.bookingId },
                 include: {
@@ -176,7 +189,6 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                 }).catch(() => { });
             }
 
-            // Event: payment.failed
             logSystemEvent({
                 action: "payment.failed",
                 entityType: "payment",
@@ -187,17 +199,17 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                     stripePaymentIntentId: paymentIntent.id,
                 },
             });
-
-            console.log("Payment and booking marked as failed/cancelled");
         } else {
-            console.log(`No payment record found for payment intent: ${paymentIntent.id}`);
+            logger.info("[Webhook] Stale PaymentIntent failed — booking not affected", {
+                paymentIntentId: paymentIntent.id,
+                bookingId: payment.bookingId,
+            });
         }
 
     } catch (error) {
-        console.error("Error handing payment failure:", error);
+        console.error("Error handling payment failure:", error);
         throw error;
     }
-
 }
 
 /**
