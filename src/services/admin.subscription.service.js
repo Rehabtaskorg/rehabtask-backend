@@ -23,16 +23,17 @@ export const adminListSubscriptions = async ({
     if (status) where.status = status;
     if (planType) where.planType = planType;
 
-    // Date range filter on createdAt
+    // Date range filter — applies to whichever field is being sorted
+    const dateField = VALID_SORT_FIELDS.includes(sortBy) ? sortBy : "createdAt";
     if (startDate || endDate) {
-        where.createdAt = {};
+        where[dateField] = {};
         if (startDate) {
-            where.createdAt.gte = new Date(startDate);
+            where[dateField].gte = new Date(startDate);
         }
         if (endDate) {
             const end = new Date(endDate);
             end.setUTCHours(23, 59, 59, 999);
-            where.createdAt.lte = end;
+            where[dateField].lte = end;
         }
     }
 
