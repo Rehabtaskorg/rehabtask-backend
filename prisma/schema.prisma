@@ -45,7 +45,7 @@ model CustomerProfile {
   customerType     CustomerType     @map("customer_type")
   fullName         String           @map("full_name") @db.VarChar(255)
   agencyName       String?          @map("agency_name") @db.VarChar(255)
-  phone            String           @db.VarChar(20)
+  phone            String?          @db.VarChar(20)
   location         String?
   stripeCustomerId String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -90,7 +90,7 @@ model TherapistProfile {
   id                       String                 @id @default(uuid()) @db.Uuid
   userId                   String                 @unique @map("user_id") @db.Uuid
   fullName                 String                 @map("full_name") @db.VarChar(255)
-  phone                    String                 @db.VarChar(20)
+  phone                    String?                @db.VarChar(20)
   yearsOfExperience        Int?                   @map("years_of_experience")
   primaryLicenseType       String?                @map("primary_license_type") @db.VarChar(100)
   professionalSummary      String?                @map("professional_summary")

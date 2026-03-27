@@ -132,16 +132,13 @@ export const completeOAuthOnboardingSchema = z.object({
         .min(2, "Full name must be at least 2 characters")
         .max(255, "Full name must not exceed 255 characters"),
 
-    phone: phoneSchema,
+    phone: phoneSchema.optional(),
 
     // Customer fields
     customerType: z.enum(["individual", "agency"]).optional(),
     agencyName: z.string()
         .min(2, "Agency name must be at least 2 characters")
         .max(255, "Agency name must not exceed 255 characters")
-        .optional(),
-    location: z.string()
-        .max(500, "Location must not exceed 500 characters")
         .optional(),
 
 })
