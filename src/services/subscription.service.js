@@ -692,6 +692,10 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     // clear the cancelledAt so the UI reflects the active state
     const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
 
+    // If customer cancelled via Stripe Billing Portal (cancel_at_period_end flipped to true),
+    // set cancelledAt so the UI shows the cancellation banner
+    const cancelledViaPortal = stripeSubscription.cancel_at_period_end === true && !subscription.cancelledAt;
+
     // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
     const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
     let planUpdate = {};
@@ -722,12 +726,17 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
             stripePriceId: currentPriceId || subscription.stripePriceId,
             ...(resumed && { cancelledAt: null, cancelReason: null }),
+            ...(cancelledViaPortal && { cancelledAt: new Date() }),
             ...planUpdate,
         },
     });
 
     if (resumed) {
         logger.info("[Subscription] Customer resumed subscription", { subscriptionId: subscription.id });
+    }
+
+    if (cancelledViaPortal) {
+        logger.info("[Subscription] Customer cancelled via Stripe portal", { subscriptionId: subscription.id });
     }
 
     logger.info("[Subscription] Updated from Stripe", {
