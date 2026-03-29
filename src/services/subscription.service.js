@@ -175,6 +175,39 @@ export const cancelSubscription = async (customerId) => {
     return { message: "Subscription will be cancelled at the end of the current billing period" };
 };
 
+export const resumeSubscription = async (customerId) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: {
+            customerId,
+            status: "active",
+            stripeSubscriptionId: { not: null },
+            cancelledAt: { not: null },
+        },
+    });
+
+    if (!subscription) {
+        throw new Error("No cancelled subscription found to resume");
+    }
+
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        cancel_at_period_end: false,
+    });
+
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { cancelledAt: null },
+    });
+
+    logSystemEvent({
+        action: "subscription.resumed",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { customerId },
+    });
+
+    return { message: "Subscription resumed successfully" };
+};
+
 /**
  * Preview the proration cost for upgrading to a higher plan.
  * Calls Stripe's invoice preview API — no charge, no side effects.
