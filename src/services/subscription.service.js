@@ -668,27 +668,11 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
  * Syncs status and period dates from Stripe.
  */
 export const handleSubscriptionUpdated = async (stripeSubscription) => {
-    console.log("[DEBUG:SUB_UPDATED] Webhook fired", {
-        stripeSubId: stripeSubscription.id,
-        stripeStatus: stripeSubscription.status,
-        cancel_at_period_end: stripeSubscription.cancel_at_period_end,
-        cancel_at: stripeSubscription.cancel_at,
-    });
-
     const subscription = await prisma.subscription.findFirst({
         where: { stripeSubscriptionId: stripeSubscription.id },
     });
 
-    if (!subscription) {
-        console.log("[DEBUG:SUB_UPDATED] No local subscription found for:", stripeSubscription.id);
-        return;
-    }
-
-    console.log("[DEBUG:SUB_UPDATED] Local sub found", {
-        id: subscription.id,
-        localStatus: subscription.status,
-        cancelledAt: subscription.cancelledAt,
-    });
+    if (!subscription) return;
 
     const statusMap = {
         active: "active",
@@ -712,15 +696,6 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 
     const resumed = isNotScheduledToCancel && subscription.cancelledAt;
     const cancelledViaPortal = isScheduledToCancel && !subscription.cancelledAt;
-
-    console.log("[DEBUG:SUB_UPDATED] Detection", {
-        resumed,
-        cancelledViaPortal,
-        isScheduledToCancel,
-        "stripe.cancel_at_period_end": stripeSubscription.cancel_at_period_end,
-        "stripe.cancel_at": stripeSubscription.cancel_at,
-        "local.cancelledAt": subscription.cancelledAt,
-    });
 
     // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
     const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
