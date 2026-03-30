@@ -115,6 +115,16 @@ const getTherapistReviewsController = async (req, res, next) => {
     }
 }
 
+const getPlatformStatsController = async (req, res, next) => {
+    try {
+        const { getPlatformStats } = await import("../services/therapist.service.js");
+        const stats = await getPlatformStats();
+        res.status(200).json({ success: true, data: stats });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     getTherapistProfileController,
     updateTherapistProfileController,
@@ -123,4 +133,5 @@ export {
     searchTherapistsController,
     getTherapistPublicProfileController,
     getTherapistReviewsController,
+    getPlatformStatsController,
 }
