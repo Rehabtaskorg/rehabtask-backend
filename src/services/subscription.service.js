@@ -668,11 +668,27 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
  * Syncs status and period dates from Stripe.
  */
 export const handleSubscriptionUpdated = async (stripeSubscription) => {
+    console.log("[DEBUG:SUB_UPDATED] Webhook fired", {
+        stripeSubId: stripeSubscription.id,
+        stripeStatus: stripeSubscription.status,
+        cancel_at_period_end: stripeSubscription.cancel_at_period_end,
+        cancel_at: stripeSubscription.cancel_at,
+    });
+
     const subscription = await prisma.subscription.findFirst({
         where: { stripeSubscriptionId: stripeSubscription.id },
     });
 
-    if (!subscription) return;
+    if (!subscription) {
+        console.log("[DEBUG:SUB_UPDATED] No local subscription found for:", stripeSubscription.id);
+        return;
+    }
+
+    console.log("[DEBUG:SUB_UPDATED] Local sub found", {
+        id: subscription.id,
+        localStatus: subscription.status,
+        cancelledAt: subscription.cancelledAt,
+    });
 
     const statusMap = {
         active: "active",
@@ -695,6 +711,13 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     // If customer cancelled via Stripe Billing Portal (cancel_at_period_end flipped to true),
     // set cancelledAt so the UI shows the cancellation banner
     const cancelledViaPortal = stripeSubscription.cancel_at_period_end === true && !subscription.cancelledAt;
+
+    console.log("[DEBUG:SUB_UPDATED] Detection", {
+        resumed,
+        cancelledViaPortal,
+        "stripe.cancel_at_period_end": stripeSubscription.cancel_at_period_end,
+        "local.cancelledAt": subscription.cancelledAt,
+    });
 
     // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
     const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
