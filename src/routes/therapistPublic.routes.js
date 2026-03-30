@@ -2,7 +2,8 @@ import express from "express";
 import {
     searchTherapistsController,
     getTherapistPublicProfileController,
-    getTherapistReviewsController
+    getTherapistReviewsController,
+    getPlatformStatsController,
 } from "../controllers/therapist.controller.js";
 import { optionalAuthenticate } from "../middleware/auth.js";
 import { validate, validateMultiple } from "../middleware/validate.js";
@@ -13,6 +14,9 @@ import {
 } from "../validators/therapist.schema.js";
 
 const router = express.Router();
+
+// GET /api/therapists/stats — Public platform statistics for landing page
+router.get("/stats", getPlatformStatsController);
 
 // GET /api/therapists/search — Search with filters (location, specialization, pagination)
 router.get(
