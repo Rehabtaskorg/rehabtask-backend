@@ -3,6 +3,7 @@ import {
     createCheckoutSession,
     createBillingPortalSession,
     cancelSubscription,
+    resumeSubscription,
     upgradeSubscription,
     downgradeSubscription,
     previewUpgrade,
@@ -44,6 +45,15 @@ export const createBillingPortalController = async (req, res, next) => {
 export const cancelSubscriptionController = async (req, res, next) => {
     try {
         const result = await cancelSubscription(req.user.customerProfile.id);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const resumeSubscriptionController = async (req, res, next) => {
+    try {
+        const result = await resumeSubscription(req.user.customerProfile.id);
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);

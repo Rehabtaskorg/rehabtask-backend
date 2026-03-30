@@ -175,6 +175,39 @@ export const cancelSubscription = async (customerId) => {
     return { message: "Subscription will be cancelled at the end of the current billing period" };
 };
 
+export const resumeSubscription = async (customerId) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: {
+            customerId,
+            status: "active",
+            stripeSubscriptionId: { not: null },
+            cancelledAt: { not: null },
+        },
+    });
+
+    if (!subscription) {
+        throw new Error("No cancelled subscription found to resume");
+    }
+
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        cancel_at_period_end: false,
+    });
+
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { cancelledAt: null },
+    });
+
+    logSystemEvent({
+        action: "subscription.resumed",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { customerId },
+    });
+
+    return { message: "Subscription resumed successfully" };
+};
+
 /**
  * Preview the proration cost for upgrading to a higher plan.
  * Calls Stripe's invoice preview API — no charge, no side effects.
@@ -655,9 +688,14 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     const subItem = stripeSubscription.items?.data?.[0];
     const currentPriceId = subItem?.price?.id;
 
-    // If customer resumed their subscription (cancel_at_period_end flipped to false),
-    // clear the cancelledAt so the UI reflects the active state
-    const resumed = stripeSubscription.cancel_at_period_end === false && subscription.cancelledAt;
+    // Stripe has two cancellation mechanisms:
+    // 1. cancel_at_period_end: true — used by our Cancel button
+    // 2. cancel_at: <timestamp> — used by Stripe Billing Portal
+    const isScheduledToCancel = stripeSubscription.cancel_at_period_end === true || !!stripeSubscription.cancel_at;
+    const isNotScheduledToCancel = stripeSubscription.cancel_at_period_end === false && !stripeSubscription.cancel_at;
+
+    const resumed = isNotScheduledToCancel && subscription.cancelledAt;
+    const cancelledViaPortal = isScheduledToCancel && !subscription.cancelledAt;
 
     // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
     const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
@@ -689,12 +727,17 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
             stripePriceId: currentPriceId || subscription.stripePriceId,
             ...(resumed && { cancelledAt: null, cancelReason: null }),
+            ...(cancelledViaPortal && { cancelledAt: new Date() }),
             ...planUpdate,
         },
     });
 
     if (resumed) {
         logger.info("[Subscription] Customer resumed subscription", { subscriptionId: subscription.id });
+    }
+
+    if (cancelledViaPortal) {
+        logger.info("[Subscription] Customer cancelled via Stripe portal", { subscriptionId: subscription.id });
     }
 
     logger.info("[Subscription] Updated from Stripe", {

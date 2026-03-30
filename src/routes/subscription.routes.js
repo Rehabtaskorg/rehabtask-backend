@@ -4,6 +4,7 @@ import {
     createCheckoutController,
     createBillingPortalController,
     cancelSubscriptionController,
+    resumeSubscriptionController,
     previewUpgradeController,
     upgradeSubscriptionController,
     downgradeSubscriptionController,
@@ -19,6 +20,7 @@ router.get("/current", authenticate, authorize(["customer"]), getSubscriptionCon
 router.post("/checkout", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), createCheckoutController);
 router.post("/billing-portal", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createBillingPortalController);
 router.post("/cancel", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, cancelSubscriptionController);
+router.post("/resume", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, resumeSubscriptionController);
 router.post("/preview-upgrade", authenticate, authorize(["customer"]), validate(createCheckoutSchema), previewUpgradeController);
 router.post("/upgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), upgradeSubscriptionController);
 router.post("/downgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), downgradeSubscriptionController);
