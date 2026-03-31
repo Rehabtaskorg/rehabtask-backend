@@ -1,8 +1,6 @@
-import axios from "axios";
-
 /**
  * Verify reCAPTCHA token with Google
- * 
+ *
  * @param {string} token - reCAPTCHA token from client
  * @param {string} remoteIp - Optional IP address of the user
  * @returns {Promise<Object>} Verification result
@@ -30,18 +28,27 @@ export async function verifyRecaptcha(token, remoteIp = null) {
             ...(remoteIp && { remoteip: remoteIp }),
         });
 
-        const response = await axios.post(
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const response = await fetch(
             "https://www.google.com/recaptcha/api/siteverify",
-            params.toString(),
             {
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                timeout: 5000,
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: params.toString(),
+                signal: controller.signal,
             }
         );
 
-        const { success, score, action, "error-codes": errorCodes } = response.data;
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`reCAPTCHA API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+        const { success, score, action, "error-codes": errorCodes } = data;
 
         if (!success) {
             console.error("reCAPTCHA verification failed:", errorCodes);
