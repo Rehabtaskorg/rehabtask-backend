@@ -11,6 +11,7 @@ export const browsePublicRequestsController = async (req, res, next) => {
         });
         res.status(200).json({ success: true, data: result });
     } catch (error) {
+        console.error("[PublicRequests] Error:", error.message);
         next(error);
     }
 };
