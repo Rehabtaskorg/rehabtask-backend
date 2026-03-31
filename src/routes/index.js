@@ -21,6 +21,7 @@ import notificationRoutes from "./notification.routes.js";
 import requestOptionRoutes from "./requestOption.routes.js";
 import subscriptionRoutes from "./subscription.routes.js";
 import visitTypeRoutes from "./visitType.routes.js";
+import publicRequestRoutes from "./publicRequest.routes.js";
 
 const router = express.Router();
 
@@ -45,5 +46,6 @@ router.use("/notifications", notificationRoutes);
 router.use("/request-options", requestOptionRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 router.use("/visit-types", visitTypeRoutes);
+router.use("/public", publicRequestRoutes);
 
 export default router;

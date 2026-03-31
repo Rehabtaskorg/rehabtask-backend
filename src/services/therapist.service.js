@@ -411,7 +411,7 @@ export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => 
 };
 
 export const getPlatformStats = async () => {
-    const [therapistCount, sessionCount, avgRating] = await Promise.all([
+    const [therapistCount, sessionCount, avgRating, distinctCities, distinctStates] = await Promise.all([
         prisma.therapistProfile.count({
             where: { approvalStatus: "approved", onboardingComplete: true },
         }),
@@ -419,12 +419,23 @@ export const getPlatformStats = async () => {
             where: { status: "confirmed_by_customer" },
         }),
         prisma.review.aggregate({ _avg: { rating: true } }),
+        prisma.workArea.findMany({
+            where: { therapist: { approvalStatus: "approved", onboardingComplete: true } },
+            distinct: ["city"],
+            select: { city: true },
+        }),
+        prisma.workArea.findMany({
+            where: { therapist: { approvalStatus: "approved", onboardingComplete: true } },
+            distinct: ["state"],
+            select: { state: true },
+        }),
     ]);
 
     return {
         therapists: therapistCount,
         sessionsCompleted: sessionCount,
         averageRating: avgRating._avg.rating ? parseFloat(avgRating._avg.rating.toFixed(1)) : 4.8,
-        statesCovered: 50,
+        citiesCovered: distinctCities.length,
+        statesCovered: distinctStates.length,
     };
 };
