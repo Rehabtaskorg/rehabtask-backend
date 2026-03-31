@@ -26,7 +26,7 @@ export const browsePublicRequests = async ({
     }
 
     const [requests, total] = await Promise.all([
-        prisma.request.findMany({
+        prisma.therapyRequest.findMany({
             where,
             select: {
                 id: true,
@@ -44,7 +44,7 @@ export const browsePublicRequests = async ({
             skip: (page - 1) * limit,
             take: limit,
         }),
-        prisma.request.count({ where }),
+        prisma.therapyRequest.count({ where }),
     ]);
 
     // Sanitize location to city-level only (strip street addresses)
