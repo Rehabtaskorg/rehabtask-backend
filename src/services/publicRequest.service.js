@@ -51,6 +51,7 @@ export const browsePublicRequests = async ({
                 visitType: true,
                 createdAt: true,
                 _count: { select: { offers: true } },
+                customer: { select: { agencyName: true, fullName: true } },
             },
             orderBy: { createdAt: "desc" },
         });
@@ -83,6 +84,7 @@ export const browsePublicRequests = async ({
                     visitType: true,
                     createdAt: true,
                     _count: { select: { offers: true } },
+                    customer: { select: { agencyName: true, fullName: true } },
                 },
                 orderBy: { createdAt: "desc" },
                 skip: (page - 1) * limit,
@@ -108,6 +110,7 @@ export const browsePublicRequests = async ({
             visitType: r.visitType,
             createdAt: r.createdAt,
             offerCount: r._count.offers,
+            customerName: r.customer?.agencyName || r.customer?.fullName || null,
         };
     });
 
