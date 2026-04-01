@@ -33,6 +33,19 @@ const getRefreshTokenCookieOptions = () => ({
 });
 
 /**
+ * Role cookie — readable by Next.js middleware for route protection.
+ * NOT httpOnly by design: middleware needs to read it on the server edge.
+ * Lifetime matches the access token (1 hour) so they expire together.
+ */
+const getRoleCookieOptions = () => ({
+    httpOnly: false,
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "none" : "lax",
+    maxAge: 60 * 60 * 1000, // 1 hour — matches access token
+    path: "/",
+});
+
+/**
  * Register customer controller
  */
 export const registerCustomerController = async (req, res, next) => {
@@ -113,6 +126,8 @@ export const loginController = async (req, res, next) => {
         // Set Supabase session tokens in httpOnly cookies
         res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
+        // Role cookie — readable by Next.js middleware for route protection
+        res.cookie("app_role", result.user.role, getRoleCookieOptions());
 
         res.status(200).json({
             success: true,
@@ -144,6 +159,7 @@ export const logoutController = async (req, res, next) => {
 
         res.clearCookie("sb_access_token", clearOptions);
         res.clearCookie("sb_refresh_token", clearOptions);
+        res.clearCookie("app_role", { path: "/", secure: isSecureContext, sameSite: isSecureContext ? "none" : "lax" });
 
         res.status(200).json({
             success: true,
@@ -350,6 +366,7 @@ export const processOAuthController = async (req, res, next) => {
             // Set session cookies
             res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
             res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
+            res.cookie("app_role", user.role, getRoleCookieOptions());
 
             return res.status(200).json({
                 success: true,
@@ -386,6 +403,7 @@ export const processOAuthController = async (req, res, next) => {
         // Set session cookies
         res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
+        res.cookie("app_role", user.role, getRoleCookieOptions());
 
         res.status(200).json({
             success: true,
