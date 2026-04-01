@@ -86,19 +86,36 @@ export const createRequest = async (customerId, data, customerProfile) => {
     return request;
 }
 
-export const getCustomerRequests = async (customerId) => {
-    const requests = await prisma.therapyRequest.findMany({
-        where: { customerId },
-        include: {
-            offers: { include: { therapist: true, visitType: true } },
-            patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
-            },
-        },
-        orderBy: { createdAt: "desc" },
-    });
+export const getCustomerRequests = async (customerId, { status, serviceType, page = 1, limit = 20 } = {}) => {
+    const where = { customerId };
 
-    return requests;
+    if (status) {
+        where.status = status;
+    }
+    if (serviceType) {
+        where.serviceType = { equals: serviceType, mode: "insensitive" };
+    }
+
+    const [requests, total] = await Promise.all([
+        prisma.therapyRequest.findMany({
+            where,
+            include: {
+                offers: { include: { therapist: true, visitType: true } },
+                patient: {
+                    select: { id: true, fullName: true, email: true, phone: true }
+                },
+            },
+            orderBy: { createdAt: "desc" },
+            skip: (page - 1) * limit,
+            take: limit,
+        }),
+        prisma.therapyRequest.count({ where }),
+    ]);
+
+    return {
+        requests,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
 }
 
 export const getRequestById = async (requestId, userId) => {
@@ -135,7 +152,7 @@ export const getRequestById = async (requestId, userId) => {
 }
 
 // GEO-FILTERED: Only return requests within the therapist's work area radii
-export const getAvailableRequests = async (therapistId) => {
+export const getAvailableRequests = async (therapistId, { serviceType, show, page = 1, limit = 20 } = {}) => {
     // Fetch therapist's work areas
     const workAreas = await prisma.workArea.findMany({
         where: { therapistId },
@@ -143,34 +160,56 @@ export const getAvailableRequests = async (therapistId) => {
 
     // If therapist hasn't set up work areas, return empty array
     if (!workAreas || workAreas.length === 0) {
-        return [];
+        return { requests: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
 
-    // Fetch all open requests
+    // Build where clause with server-side filters
+    const where = { status: { in: ["created", "offers_received"] } };
+
+    if (serviceType) {
+        where.serviceType = { contains: serviceType, mode: "insensitive" };
+    }
+
+    // Fetch all matching requests (geo-filter requires post-query)
     const requests = await prisma.therapyRequest.findMany({
-        where: { status: { in: ["created", "offers_received"] } },
+        where,
         include: {
             customer: true,
             patient: { select: { id: true, fullName: true, email: true, phone: true } },
             offers: { where: { therapistId } },
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
     });
 
-    // Filter requests that fall within ANY of the therapist's work area radii
-    const filteredRequests = requests.filter((request) => {
-        const requestLast = parseFloat(request.latitude);
+    // Filter by work area radius
+    let filteredRequests = requests.filter((request) => {
+        const requestLat = parseFloat(request.latitude);
         const requestLng = parseFloat(request.longitude);
-
         return workAreas.some((area) => {
             const areaLat = parseFloat(area.latitude);
             const areaLng = parseFloat(area.longitude);
-            const distance = haversineDistance(requestLast, requestLng, areaLat, areaLng);
+            const distance = haversineDistance(requestLat, requestLng, areaLat, areaLng);
             return distance <= area.radiusMiles;
         });
     });
 
-    return filteredRequests;
+    // Server-side "show" filter
+    if (show === "new") {
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        filteredRequests = filteredRequests.filter((r) => new Date(r.createdAt) > cutoff);
+    } else if (show === "my_offers") {
+        filteredRequests = filteredRequests.filter((r) => r.offers?.length > 0);
+    }
+
+    // Paginate the geo-filtered results
+    const total = filteredRequests.length;
+    const start = (page - 1) * limit;
+    const paginatedRequests = filteredRequests.slice(start, start + limit);
+
+    return {
+        requests: paginatedRequests,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
 }
 
 export const updateRequestStatus = async (requestId, status) => {

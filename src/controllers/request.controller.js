@@ -20,9 +20,15 @@ const createRequestController = async (req, res, next) => {
 const getCustomerRequestsController = async (req, res, next) => {
     try {
         const customerId = req.user.customerProfile.id;
-        const requests = await getCustomerRequests(customerId);
+        const { status, serviceType, page, limit } = req.query;
+        const result = await getCustomerRequests(customerId, {
+            status,
+            serviceType,
+            page: page ? parseInt(page) : 1,
+            limit: limit ? parseInt(limit) : 20,
+        });
 
-        res.status(200).json({ success: true, data: requests });
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
@@ -50,9 +56,15 @@ const getRequestByIdController = async (req, res, next) => {
 const getAvailableRequestsController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
-        const requests = await getAvailableRequests(therapistId);
+        const { serviceType, show, page, limit } = req.query;
+        const result = await getAvailableRequests(therapistId, {
+            serviceType,
+            show,
+            page: page ? parseInt(page) : 1,
+            limit: limit ? parseInt(limit) : 20,
+        });
 
-        res.status(200).json({ success: true, data: requests });
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
