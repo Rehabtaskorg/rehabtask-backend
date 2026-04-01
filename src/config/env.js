@@ -38,15 +38,10 @@ const envSchema = z.object({
     AUTO_CONFIRM_HOURS: z.string().default('72'),
     DEFAULT_SERVICE_RADIUS_MILES: z.string().default('25'),
 
-    // Email (Resend - production)
-    RESEND_API_KEY: z.string().optional(),
+    // Email (Resend)
+    RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
     EMAIL_FROM: z.string(),
     ADMIN_EMAIL: z.email(),
-
-    // Email (Gmail — local development transport)
-    GMAIL_USER: z.string().optional(),
-    GMAIL_APP_PASSWORD: z.string().optional(),
-    EMAIL_FROM_NAME: z.string().default('RehabTask'),
 
     // Google Maps
     GOOGLE_MAPS_API_KEY: z.string(),
@@ -114,8 +109,6 @@ export const {
     RESEND_API_KEY,
     EMAIL_FROM,
     ADMIN_EMAIL,
-    GMAIL_USER,
-    GMAIL_APP_PASSWORD,
     GOOGLE_MAPS_API_KEY,
     SENTRY_DSN,
     BETTERSTACK_LOG_TOKEN,
