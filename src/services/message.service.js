@@ -221,6 +221,59 @@ const extractContextMetadata = (userId, contextType, contextData) => {
 }
 
 /**
+ * Find or create a DirectConversation for a user pair.
+ * Normalizes user order (smaller UUID = user1) for the unique constraint.
+ * Race-safe: catches unique constraint violations and fetches the existing row.
+ */
+export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
+    const [user1Id, user2Id] = userIdA < userIdB
+        ? [userIdA, userIdB]
+        : [userIdB, userIdA];
+
+    const existing = await prisma.directConversation.findUnique({
+        where: { user1Id_user2Id: { user1Id, user2Id } },
+    });
+    if (existing) return existing;
+
+    try {
+        return await prisma.directConversation.create({
+            data: { user1Id, user2Id },
+        });
+    } catch (err) {
+        // P2002 = unique constraint violation — another request created it first
+        if (err.code === "P2002") {
+            const found = await prisma.directConversation.findUnique({
+                where: { user1Id_user2Id: { user1Id, user2Id } },
+            });
+            if (found) return found;
+        }
+        throw err;
+    }
+};
+
+/**
+ * Create a system message inside a DirectConversation.
+ * System messages have a systemType (e.g. "offer_sent", "offer_accepted", "booking_created")
+ * and are authored by the actor who triggered the event.
+ * Returns the created message (no socket/email side-effects — those are handled by the caller's flow).
+ */
+export const createSystemMessage = async ({ conversationId, actorId, recipientId, content, systemType, offerId, bookingId, patientId }) => {
+    return prisma.message.create({
+        data: {
+            senderId: actorId,
+            recipientId,
+            conversationId,
+            content,
+            systemType,
+            ...(offerId && { offerId }),
+            ...(bookingId && { bookingId }),
+            ...(patientId && { patientId }),
+            readAt: new Date(), // system messages are pre-read — they're informational, not unread notifications
+        },
+    });
+};
+
+/**
  * Create a new message
  */
 export const createMessage = async ({ senderId, content, contextType, contextId, _preVerifiedContextData }) => {
@@ -262,6 +315,19 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
     });
     const shouldEmailNotify = existingUnreadCount === 0;
 
+    // Dual-write: for offer/booking messages, also link to the DirectConversation
+    // so Phase 3 can read all messages from one place. Direct messages already have conversationId.
+    let dualWriteConversationId = null;
+    if (contextType === "offer" || contextType === "booking") {
+        try {
+            const conversation = await findOrCreateDirectConversation(senderId, recipientId);
+            dualWriteConversationId = conversation.id;
+        } catch (err) {
+            // Non-fatal: dual-write failure should not block the message
+            logger.warn("[MessageService] Dual-write: failed to find/create DirectConversation", { error: err.message, senderId, recipientId });
+        }
+    }
+
     const message = await prisma.message.create({
         data: {
             senderId,
@@ -269,6 +335,7 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
             content: content.trim(),
             [contextField]: contextId,
             ...(patientId && { patientId }),
+            ...(dualWriteConversationId && { conversationId: dualWriteConversationId }),
         }, include: {
             sender: {
                 select: {

@@ -9,6 +9,7 @@ import {
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
+import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
  * Create offer
@@ -85,6 +86,26 @@ export const createOffer = async (therapistId, data) => {
         entityId: offer.id,
         changes: { requestId, rate, sessionType, proposedDate },
     });
+
+    // Dual-write: insert "offer_sent" system message into the DirectConversation
+    // so the unified thread shows this event. Fire-and-forget — don't block offer creation.
+    const therapistUserId = offer.therapist.userId;
+    const customerUserId = offer.request.customer.user.id;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content: `Offer sent — $${parseFloat(offer.rate)}/${offer.sessionType || "session"}`,
+                systemType: "offer_sent",
+                offerId: offer.id,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_sent) failed", { error: err.message, offerId: offer.id });
+        });
 
     // Notify customer about the new offer (fire-and-forget)
     sendNewOfferNotification({
@@ -285,6 +306,34 @@ export const acceptOffer = async (offerId, customerId) => {
         entityId: booking.id,
         changes: { offerId, scheduledDate: offer.proposedDate, rate: parseFloat(offer.rate) },
     });
+
+    // Dual-write: insert "offer_accepted" + "booking_created" system messages into DirectConversation
+    const acceptCustomerUserId = booking.customer.user.id;
+    const acceptTherapistUserId = booking.therapist.user.id;
+    findOrCreateDirectConversation(acceptCustomerUserId, acceptTherapistUserId)
+        .then(async (conversation) => {
+            await createSystemMessage({
+                conversationId: conversation.id,
+                actorId: acceptCustomerUserId,
+                recipientId: acceptTherapistUserId,
+                content: "Offer accepted",
+                systemType: "offer_accepted",
+                offerId,
+                patientId: booking.offer?.request?.patientId || null,
+            });
+            await createSystemMessage({
+                conversationId: conversation.id,
+                actorId: acceptCustomerUserId,
+                recipientId: acceptTherapistUserId,
+                content: "Booking created. Awaiting payment.",
+                systemType: "booking_created",
+                bookingId: booking.id,
+                patientId: booking.offer?.request?.patientId || null,
+            });
+        })
+        .catch((err) => {
+            logger.error("[OfferService] System messages (offer_accepted/booking_created) failed", { error: err.message, offerId, bookingId: booking.id });
+        });
 
     // Email notifications stay outside the transaction (side effects)
     sendOfferAccepted({
