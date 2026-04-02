@@ -84,17 +84,22 @@ export function initSocketIO(httpServer) {
         socket.join(`user:${socket.userId}`);
 
         // Client joins a specific conversation room
-        socket.on("join:conversation", ({ contextType, contextId }) => {
-            if (!contextType || !contextId) return;
-            const room = `conversation:${contextType}:${contextId}`;
-            socket.join(room);
+        // Phase 3: supports both { conversationId } and legacy { contextType, contextId }
+        socket.on("join:conversation", (data) => {
+            if (data.conversationId) {
+                socket.join(`conversation:${data.conversationId}`);
+            } else if (data.contextType && data.contextId) {
+                socket.join(`conversation:${data.contextType}:${data.contextId}`);
+            }
         });
 
         // Client leaves a conversation room
-        socket.on("leave:conversation", ({ contextType, contextId }) => {
-            if (!contextType || !contextId) return;
-            const room = `conversation:${contextType}:${contextId}`;
-            socket.leave(room);
+        socket.on("leave:conversation", (data) => {
+            if (data.conversationId) {
+                socket.leave(`conversation:${data.conversationId}`);
+            } else if (data.contextType && data.contextId) {
+                socket.leave(`conversation:${data.contextType}:${data.contextId}`);
+            }
         });
 
         socket.on("disconnect", () => {
