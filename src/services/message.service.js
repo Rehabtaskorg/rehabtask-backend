@@ -434,17 +434,18 @@ export const getConversationMessagesByConvId = async (userId, conversationId, op
         },
     };
 
+    // Always fetch in descending order (newest first) and reverse for the frontend.
+    // This ensures we get the most recent messages, not the oldest.
+    const cursorDate = cursor
+        ? (await prisma.message.findUnique({ where: { id: cursor }, select: { createdAt: true } }))?.createdAt
+        : null;
+
     const messages = await prisma.message.findMany({
         where: {
             conversationId,
-            ...(cursor && {
-                createdAt: {
-                    [order === "desc" ? "lt" : "gt"]:
-                        (await prisma.message.findUnique({ where: { id: cursor }, select: { createdAt: true } }))?.createdAt,
-                },
-            }),
+            ...(cursorDate && { createdAt: { lt: cursorDate } }),
         },
-        orderBy: { createdAt: order },
+        orderBy: { createdAt: "desc" },
         take: limit,
         include: {
             sender: senderSelect,
@@ -458,9 +459,8 @@ export const getConversationMessagesByConvId = async (userId, conversationId, op
         type: m.systemType ? "system" : "message",
     }));
 
-    // Return in chronological order (asc) regardless of fetch direction
-    const sorted = order === "desc" ? normalized.reverse() : normalized;
-    return sorted;
+    // Return in chronological order (oldest first) for display
+    return normalized.reverse();
 };
 
 /**
@@ -966,6 +966,7 @@ export const getUserConversations = async (userId) => {
             _count: { id: true },
         }),
         // Latest context-bearing message per conversation (for badge: booking > offer > direct)
+        // Includes system messages (offer_sent, booking_created) since they carry offerId/bookingId
         prisma.$queryRaw`
             SELECT DISTINCT ON (conversation_id)
                 conversation_id AS "conversationId",
@@ -974,7 +975,6 @@ export const getUserConversations = async (userId) => {
                 patient_id AS "patientId"
             FROM messages
             WHERE conversation_id = ANY(${conversationIds}::uuid[])
-              AND system_type IS NULL
               AND (offer_id IS NOT NULL OR booking_id IS NOT NULL)
             ORDER BY conversation_id, created_at DESC
         `,
