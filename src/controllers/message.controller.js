@@ -10,14 +10,15 @@ import {
  */
 export const sendMessageController = async (req, res, next) => {
     try {
-        const { content, contextType, contextId } = req.body;
+        const { content, contextType, contextId, replyToId } = req.body;
         const senderId = req.user.id;
 
         const message = await createMessage({
             senderId,
             content,
             contextType,
-            contextId
+            contextId,
+            replyToId,
         });
 
         res.status(201).json({

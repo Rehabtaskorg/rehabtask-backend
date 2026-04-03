@@ -20,6 +20,12 @@ import {
     getContextSchema
 } from "../validators/message.schema.js";
 import { messagingRateLimiter, conversationsRateLimiter } from "../middleware/rateLimiter.js";
+import { uploadAttachments, handleMulterError } from "../middleware/upload.middleware.js";
+import {
+    uploadAttachmentsController,
+    getAttachmentUrlController,
+    getConversationAttachmentsController,
+} from "../controllers/attachment.controller.js";
 
 const router = express.Router();
 
@@ -59,6 +65,29 @@ router.get("/conversations", conversationsRateLimiter, getConversationsControlle
 router.get("/unread-count", getUnreadCountController);
 
 // ─── Phase 3: conversationId-based routes ───────────────────────
+
+/**
+ * POST /api/messages/c/:conversationId/attachments
+ * Upload attachments with optional text message
+ */
+router.post(
+    "/c/:conversationId/attachments",
+    uploadAttachments,
+    handleMulterError,
+    uploadAttachmentsController
+);
+
+/**
+ * GET /api/messages/c/:conversationId/attachments
+ * List all attachments in a conversation (paginated)
+ */
+router.get("/c/:conversationId/attachments", getConversationAttachmentsController);
+
+/**
+ * GET /api/messages/attachments/:attachmentId/url
+ * Get signed download URL for a specific attachment
+ */
+router.get("/attachments/:attachmentId/url", getAttachmentUrlController);
 
 /**
  * GET /api/messages/c/:conversationId
