@@ -922,7 +922,7 @@ export const getUserConversations = async (userId) => {
     const userSelect = {
         id: true,
         role: true,
-        therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+        therapistProfile: { select: { fullName: true, profilePhotoUrl: true, specialization: true, yearsOfExperience: true } },
         customerProfile: { select: { fullName: true, agencyName: true } },
     };
 
