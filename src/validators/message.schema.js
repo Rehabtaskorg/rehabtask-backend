@@ -15,6 +15,10 @@ export const sendMessageSchema = z.object({
 
     contextId: z
         .uuid("Invalid context ID format"),
+
+    replyToId: z
+        .uuid("Invalid reply message ID format")
+        .optional(),
 });
 
 export const sendDirectMessageSchema = z.object({

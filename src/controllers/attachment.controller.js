@@ -12,13 +12,15 @@ export const uploadAttachmentsController = async (req, res, next) => {
     try {
         const { conversationId } = req.params;
         const content = req.body?.content || "";
+        const replyToId = req.body?.replyToId || null;
         const files = req.files;
 
         const result = await uploadMessageAttachments(
             req.user.id,
             conversationId,
             files,
-            content
+            content,
+            replyToId
         );
 
         res.status(201).json({

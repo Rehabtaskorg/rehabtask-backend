@@ -398,6 +398,7 @@ model Message {
 
   content    String  @db.Text
   systemType String? @map("system_type") @db.VarChar(50)
+  replyToId  String? @map("reply_to_id") @db.Uuid
   readAt     DateTime? @map("read_at") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -411,6 +412,8 @@ model Message {
   patient      Patient?            @relation("PatientMessages", fields: [patientId], references: [id])
   conversation DirectConversation? @relation(fields: [conversationId], references: [id])
   attachments  MessageAttachment[]
+  replyTo      Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[] @relation("MessageReplies")
 
   @@index([senderId, recipientId, createdAt])
   @@index([recipientId, readAt])

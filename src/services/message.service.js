@@ -276,7 +276,7 @@ export const createSystemMessage = async ({ conversationId, actorId, recipientId
 /**
  * Create a new message
  */
-export const createMessage = async ({ senderId, content, contextType, contextId, _preVerifiedContextData }) => {
+export const createMessage = async ({ senderId, content, contextType, contextId, replyToId, _preVerifiedContextData }) => {
     if (!content?.trim()) {
         throw new BadRequestError("Message content cannot be empty");
     }
@@ -336,6 +336,7 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
             [contextField]: contextId,
             ...(patientId && { patientId }),
             ...(dualWriteConversationId && { conversationId: dualWriteConversationId }),
+            ...(replyToId && { replyToId }),
         }, include: {
             sender: {
                 select: {
@@ -459,6 +460,18 @@ export const getConversationMessagesByConvId = async (userId, conversationId, op
                     createdAt: true,
                 },
                 orderBy: { createdAt: "asc" },
+            },
+            replyTo: {
+                select: {
+                    id: true,
+                    content: true,
+                    senderId: true,
+                    sender: senderSelect,
+                    attachments: {
+                        select: { id: true, fileName: true, mimeType: true },
+                        take: 1,
+                    },
+                },
             },
         },
     });
