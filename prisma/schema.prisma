@@ -33,6 +33,7 @@ model User {
   commissionConfigs CommissionConfig[]
   directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
+  uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
 
   @@index([email])
   @@index([role, isActive])
@@ -373,9 +374,10 @@ model DirectConversation {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user1    User      @relation("DirectConvUser1", fields: [user1Id], references: [id])
-  user2    User      @relation("DirectConvUser2", fields: [user2Id], references: [id])
-  messages Message[]
+  user1       User                 @relation("DirectConvUser1", fields: [user1Id], references: [id])
+  user2       User                 @relation("DirectConvUser2", fields: [user2Id], references: [id])
+  messages    Message[]
+  attachments MessageAttachment[]
 
   @@unique([user1Id, user2Id])
   @@index([user1Id])
@@ -408,6 +410,7 @@ model Message {
   booking      Booking?            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   patient      Patient?            @relation("PatientMessages", fields: [patientId], references: [id])
   conversation DirectConversation? @relation(fields: [conversationId], references: [id])
+  attachments  MessageAttachment[]
 
   @@index([senderId, recipientId, createdAt])
   @@index([recipientId, readAt])
@@ -715,4 +718,27 @@ enum DisputeType {
   no_show
   communication
   other
+}
+
+model MessageAttachment {
+  id             String   @id @default(uuid()) @db.Uuid
+  messageId      String   @map("message_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  uploadedById   String   @map("uploaded_by_id") @db.Uuid
+
+  fileName       String   @map("file_name") @db.VarChar(255)
+  fileSize       Int      @map("file_size")
+  mimeType       String   @map("mime_type") @db.VarChar(100)
+  storagePath    String   @map("storage_path")
+  bucket         String   @default("message-attachments") @db.VarChar(50)
+
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  message        Message              @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation   DirectConversation   @relation(fields: [conversationId], references: [id])
+  uploadedBy     User                 @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([messageId])
+  @@index([conversationId, createdAt])
+  @@map("message_attachments")
 }

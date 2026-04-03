@@ -450,6 +450,16 @@ export const getConversationMessagesByConvId = async (userId, conversationId, op
         include: {
             sender: senderSelect,
             patient: { select: { id: true, fullName: true } },
+            attachments: {
+                select: {
+                    id: true,
+                    fileName: true,
+                    fileSize: true,
+                    mimeType: true,
+                    createdAt: true,
+                },
+                orderBy: { createdAt: "asc" },
+            },
         },
     });
 

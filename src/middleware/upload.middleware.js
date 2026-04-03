@@ -85,6 +85,42 @@ export const uploadImage = multer({
 }).single('file');
 
 /**
+ * File filter for message attachments
+ * Broader than documents — allows images, PDFs, and spreadsheets
+ */
+const attachmentFilter = (req, file, cb) => {
+    const allowedTypes = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+        'text/csv',
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new BadRequestError(
+            "Invalid file type. Allowed: images (JPEG, PNG, WebP, GIF), PDF, XLSX, CSV."
+        ), false);
+    }
+};
+
+/**
+ * Multer instance for message attachments
+ * - Up to 5 files per request
+ * - Max 10MB per file
+ * - Allowed: images, PDF, XLSX, CSV
+ */
+export const uploadAttachments = multer({
+    storage,
+    fileFilter: attachmentFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB per file
+        files: 5,
+    }
+}).array("files", 5);
+
+/**
  * Error handler for multer errors
  * Use this in routes after multer middleware
  */
