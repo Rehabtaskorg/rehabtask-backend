@@ -1,4 +1,9 @@
-import { createMessage, createDirectMessage, getConversationMessages, markMessagesAsRead, getUnreadCount, getUserConversations, getConversationContext } from "../services/message.service.js";
+import {
+    createMessage, createDirectMessage,
+    getConversationMessages, getConversationMessagesByConvId,
+    markMessagesAsRead, markMessagesAsReadByConvId,
+    getUnreadCount, getUserConversations, getConversationContext
+} from "../services/message.service.js";
 
 /**
  * Send a new message
@@ -146,6 +151,58 @@ export const getConversationContextController = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: context
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+// ─── Phase 3: conversationId-based endpoints ───────────────────────
+
+/**
+ * Get messages by conversationId
+ */
+export const getMessagesByConversationController = async (req, res, next) => {
+    try {
+        const { conversationId } = req.params;
+        const { limit, cursor, order } = req.query;
+
+        const messages = await getConversationMessagesByConvId(
+            req.user.id,
+            conversationId,
+            {
+                limit: limit ? parseInt(limit) : undefined,
+                cursor,
+                order,
+            }
+        );
+
+        const parsedLimit = limit ? parseInt(limit) : 50;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                messages,
+                hasMore: messages.length >= parsedLimit,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Mark messages as read by conversationId
+ */
+export const markAsReadByConversationController = async (req, res, next) => {
+    try {
+        const { conversationId } = req.params;
+        const count = await markMessagesAsReadByConvId(req.user.id, conversationId);
+
+        res.status(200).json({
+            success: true,
+            message: `${count} message(s) marked as read`,
+            data: { count },
         });
     } catch (error) {
         next(error);

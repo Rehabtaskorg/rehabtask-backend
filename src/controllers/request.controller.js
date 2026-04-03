@@ -1,4 +1,4 @@
-import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest, cancelRequest } from "../services/request.service.js";
+import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest, cancelRequest, getOpenRequestsByCustomerUserId } from "../services/request.service.js";
 
 /**
  * Create a new request
@@ -100,6 +100,21 @@ const cancelRequestController = async (req, res, next) => {
     }
 };
 
+/**
+ * Get open requests for a specific customer (therapist-facing, used in messaging sidebar)
+ */
+const getCustomerOpenRequestsController = async (req, res, next) => {
+    try {
+        const { customerUserId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const requests = await getOpenRequestsByCustomerUserId(customerUserId, therapistId);
+
+        res.status(200).json({ success: true, data: requests });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     createRequestController,
     getCustomerRequestsController,
@@ -107,4 +122,5 @@ export {
     getAvailableRequestsController,
     updateRequestController,
     cancelRequestController,
+    getCustomerOpenRequestsController,
 }

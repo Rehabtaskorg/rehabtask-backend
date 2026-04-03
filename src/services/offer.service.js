@@ -9,6 +9,7 @@ import {
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
+import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
  * Create offer
@@ -85,6 +86,26 @@ export const createOffer = async (therapistId, data) => {
         entityId: offer.id,
         changes: { requestId, rate, sessionType, proposedDate },
     });
+
+    // Dual-write: insert "offer_sent" system message into the DirectConversation
+    // so the unified thread shows this event. Fire-and-forget — don't block offer creation.
+    const therapistUserId = offer.therapist.userId;
+    const customerUserId = offer.request.customer.user.id;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content: `Offer sent — $${parseFloat(offer.rate)}/${offer.sessionType || "session"}`,
+                systemType: "offer_sent",
+                offerId: offer.id,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_sent) failed", { error: err.message, offerId: offer.id });
+        });
 
     // Notify customer about the new offer (fire-and-forget)
     sendNewOfferNotification({
@@ -286,6 +307,34 @@ export const acceptOffer = async (offerId, customerId) => {
         changes: { offerId, scheduledDate: offer.proposedDate, rate: parseFloat(offer.rate) },
     });
 
+    // Dual-write: insert "offer_accepted" + "booking_created" system messages into DirectConversation
+    const acceptCustomerUserId = booking.customer.user.id;
+    const acceptTherapistUserId = booking.therapist.user.id;
+    findOrCreateDirectConversation(acceptCustomerUserId, acceptTherapistUserId)
+        .then(async (conversation) => {
+            await createSystemMessage({
+                conversationId: conversation.id,
+                actorId: acceptCustomerUserId,
+                recipientId: acceptTherapistUserId,
+                content: "Offer accepted",
+                systemType: "offer_accepted",
+                offerId,
+                patientId: booking.offer?.request?.patientId || null,
+            });
+            await createSystemMessage({
+                conversationId: conversation.id,
+                actorId: acceptCustomerUserId,
+                recipientId: acceptTherapistUserId,
+                content: "Booking created. Awaiting payment.",
+                systemType: "booking_created",
+                bookingId: booking.id,
+                patientId: booking.offer?.request?.patientId || null,
+            });
+        })
+        .catch((err) => {
+            logger.error("[OfferService] System messages (offer_accepted/booking_created) failed", { error: err.message, offerId, bookingId: booking.id });
+        });
+
     // Email notifications stay outside the transaction (side effects)
     sendOfferAccepted({
         therapist: booking.therapist,
@@ -357,6 +406,25 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         entityId: offerId,
         changes: { rate, sessionType, proposedDate, previousStatus: "change_requested" },
     });
+
+    // System message: offer_revised
+    const reviseCustomerUserId = updated.request.customer.user.id;
+    const reviseTherapistUserId = updated.therapist.userId;
+    findOrCreateDirectConversation(reviseTherapistUserId, reviseCustomerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: reviseTherapistUserId,
+                recipientId: reviseCustomerUserId,
+                content: `Offer revised — $${parseFloat(updated.rate)}/${updated.sessionType || "session"}`,
+                systemType: "offer_revised",
+                offerId,
+                patientId: updated.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_revised) failed", { error: err.message });
+        });
 
     // Notify customer about the revised offer (fire-and-forget)
     sendNewOfferNotification({
@@ -433,6 +501,25 @@ export const declineOffer = async (offerId, customerId) => {
         changes: { therapistId: updatedOffer.therapist.id, requestId: updatedOffer.request.id },
     });
 
+    // System message: offer_declined
+    const declineCustomerUserId = updatedOffer.request.customer.user.id;
+    const declineTherapistUserId = updatedOffer.therapist.user.id;
+    findOrCreateDirectConversation(declineCustomerUserId, declineTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: declineCustomerUserId,
+                recipientId: declineTherapistUserId,
+                content: "Offer declined by patient.",
+                systemType: "offer_declined",
+                offerId,
+                patientId: updatedOffer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_declined) failed", { error: err.message });
+        });
+
     sendOfferDeclined({
         therapist: updatedOffer.therapist,
         customer: updatedOffer.request.customer,
@@ -491,6 +578,25 @@ export const requestOfferChange = async (offerId, customerId, note) => {
             changeRequestNote: note,
         }
     });
+
+    // System message: offer_change_requested
+    const changeCustomerUserId = offer.request.customer.user.id;
+    const changeTherapistUserId = offer.therapist.user.id;
+    findOrCreateDirectConversation(changeCustomerUserId, changeTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: changeCustomerUserId,
+                recipientId: changeTherapistUserId,
+                content: `Patient requested changes: ${note}`,
+                systemType: "offer_change_requested",
+                offerId,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_change_requested) failed", { error: err.message });
+        });
 
     sendOfferChangeRequested({
         therapist: offer.therapist,
@@ -554,6 +660,25 @@ export const withdrawOffer = async (offerId, therapistId) => {
         entityId: offerId,
         changes: { requestId: offer.requestId, previousStatus: offer.status },
     });
+
+    // System message: offer_withdrawn
+    const withdrawCustomerUserId = offer.request.customer.user.id;
+    const withdrawTherapistUserId = offer.therapist.userId;
+    findOrCreateDirectConversation(withdrawCustomerUserId, withdrawTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: withdrawTherapistUserId,
+                recipientId: withdrawCustomerUserId,
+                content: "Offer withdrawn by therapist.",
+                systemType: "offer_withdrawn",
+                offerId,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_withdrawn) failed", { error: err.message });
+        });
 
     sendOfferWithdrawn({
         customer: offer.request.customer,

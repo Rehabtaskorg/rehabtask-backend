@@ -394,8 +394,9 @@ model Message {
   patientId      String? @map("patient_id") @db.Uuid
   conversationId String? @map("conversation_id") @db.Uuid
 
-  content String    @db.Text
-  readAt  DateTime? @map("read_at") @db.Timestamptz(3)
+  content    String  @db.Text
+  systemType String? @map("system_type") @db.VarChar(50)
+  readAt     DateTime? @map("read_at") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

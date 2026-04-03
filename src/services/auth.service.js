@@ -748,10 +748,10 @@ export const refreshAccessToken = async ({ refreshToken }) => {
         throw new AuthenticationError("Failed to refresh token", "TOKEN_REFRESH_FAILED");
     }
 
-    // Check if user is still active
+    // Check if user is still active and get role for cookie refresh
     const user = await prisma.user.findUnique({
         where: { id: data.user.id },
-        select: { isActive: true },
+        select: { isActive: true, role: true },
     });
     if (!user || !user.isActive) {
         throw new AuthenticationError("Your account has been deactivated", "ACCOUNT_DEACTIVATED");
@@ -760,5 +760,6 @@ export const refreshAccessToken = async ({ refreshToken }) => {
     return {
         session: data.session,
         user: data.user,
+        role: user.role,
     };
 };

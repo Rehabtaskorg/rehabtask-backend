@@ -6,7 +6,9 @@ import {
     markAsReadController,
     getUnreadCountController,
     getConversationsController,
-    getConversationContextController
+    getConversationContextController,
+    getMessagesByConversationController,
+    markAsReadByConversationController,
 } from "../controllers/message.controller.js";
 import { authenticate } from "../middleware/auth.js"
 import { validate, validateMultiple } from "../middleware/validate.js"
@@ -55,6 +57,22 @@ router.get("/conversations", conversationsRateLimiter, getConversationsControlle
  * Get total unread message count
  */
 router.get("/unread-count", getUnreadCountController);
+
+// ─── Phase 3: conversationId-based routes ───────────────────────
+
+/**
+ * GET /api/messages/c/:conversationId
+ * Get messages by conversationId (Phase 3)
+ */
+router.get("/c/:conversationId", getMessagesByConversationController);
+
+/**
+ * PUT /api/messages/c/:conversationId/read
+ * Mark messages as read by conversationId (Phase 3)
+ */
+router.put("/c/:conversationId/read", markAsReadByConversationController);
+
+// ─── Legacy routes (kept for backward compatibility) ────────────
 
 /**
  * GET /api/messages/:contextType/:contextId/context

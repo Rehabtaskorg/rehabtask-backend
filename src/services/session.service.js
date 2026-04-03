@@ -4,6 +4,7 @@ import { logger } from "../config/logger.js";
 import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
 import { logAction } from "./audit.service.js";
 import { releasePayment } from "./payment.service.js";
+import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -71,6 +72,24 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         entityId: sessionId,
         changes: { bookingId: session.bookingId, completedAt: updatedSession.completedAt },
     });
+
+    // System message: session_completed
+    const completeTherapistUserId = session.booking.therapist.userId;
+    const completeCustomerUserId = session.booking.customer.user.id;
+    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: completeTherapistUserId,
+                recipientId: completeCustomerUserId,
+                content: "Session marked complete by therapist. Please confirm within 3 days.",
+                systemType: "session_completed",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_completed) failed", { error: err.message });
+        });
 
     // Notify customer to confirm session (fire-and-forget)
     sendSessionCompletionRequest({
@@ -159,6 +178,27 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
             sessionProgress: `${updatedSession._confirmedCount}/${updatedSession._totalSessions}`,
         },
     });
+
+    // System message: session_confirmed
+    const confirmTherapistUserId = session.booking.therapist.user.id;
+    const confirmCustomerUserId = session.booking.customer.userId;
+    const allDone = updatedSession._allConfirmed;
+    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: confirmCustomerUserId,
+                recipientId: confirmTherapistUserId,
+                content: allDone
+                    ? `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}). All sessions complete — payment released.`
+                    : `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}).`,
+                systemType: "session_confirmed",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_confirmed) failed", { error: err.message });
+        });
 
     // Notify therapist that customer confirmed (fire-and-forget)
     sendSessionConfirmed({

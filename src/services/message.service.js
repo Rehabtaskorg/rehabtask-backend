@@ -221,6 +221,59 @@ const extractContextMetadata = (userId, contextType, contextData) => {
 }
 
 /**
+ * Find or create a DirectConversation for a user pair.
+ * Normalizes user order (smaller UUID = user1) for the unique constraint.
+ * Race-safe: catches unique constraint violations and fetches the existing row.
+ */
+export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
+    const [user1Id, user2Id] = userIdA < userIdB
+        ? [userIdA, userIdB]
+        : [userIdB, userIdA];
+
+    const existing = await prisma.directConversation.findUnique({
+        where: { user1Id_user2Id: { user1Id, user2Id } },
+    });
+    if (existing) return existing;
+
+    try {
+        return await prisma.directConversation.create({
+            data: { user1Id, user2Id },
+        });
+    } catch (err) {
+        // P2002 = unique constraint violation — another request created it first
+        if (err.code === "P2002") {
+            const found = await prisma.directConversation.findUnique({
+                where: { user1Id_user2Id: { user1Id, user2Id } },
+            });
+            if (found) return found;
+        }
+        throw err;
+    }
+};
+
+/**
+ * Create a system message inside a DirectConversation.
+ * System messages have a systemType (e.g. "offer_sent", "offer_accepted", "booking_created")
+ * and are authored by the actor who triggered the event.
+ * Returns the created message (no socket/email side-effects — those are handled by the caller's flow).
+ */
+export const createSystemMessage = async ({ conversationId, actorId, recipientId, content, systemType, offerId, bookingId, patientId }) => {
+    return prisma.message.create({
+        data: {
+            senderId: actorId,
+            recipientId,
+            conversationId,
+            content,
+            systemType,
+            ...(offerId && { offerId }),
+            ...(bookingId && { bookingId }),
+            ...(patientId && { patientId }),
+            readAt: new Date(), // system messages are pre-read — they're informational, not unread notifications
+        },
+    });
+};
+
+/**
  * Create a new message
  */
 export const createMessage = async ({ senderId, content, contextType, contextId, _preVerifiedContextData }) => {
@@ -262,6 +315,19 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
     });
     const shouldEmailNotify = existingUnreadCount === 0;
 
+    // Dual-write: for offer/booking messages, also link to the DirectConversation
+    // so Phase 3 can read all messages from one place. Direct messages already have conversationId.
+    let dualWriteConversationId = null;
+    if (contextType === "offer" || contextType === "booking") {
+        try {
+            const conversation = await findOrCreateDirectConversation(senderId, recipientId);
+            dualWriteConversationId = conversation.id;
+        } catch (err) {
+            // Non-fatal: dual-write failure should not block the message
+            logger.warn("[MessageService] Dual-write: failed to find/create DirectConversation", { error: err.message, senderId, recipientId });
+        }
+    }
+
     const message = await prisma.message.create({
         data: {
             senderId,
@@ -269,6 +335,7 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
             content: content.trim(),
             [contextField]: contextId,
             ...(patientId && { patientId }),
+            ...(dualWriteConversationId && { conversationId: dualWriteConversationId }),
         }, include: {
             sender: {
                 select: {
@@ -340,7 +407,65 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
 };
 
 /**
- * Get conversation messages with pagination
+ * Get conversation messages by conversationId.
+ * Phase 3 rewrite: single query on conversationId — no stitching, no context merging.
+ * System dividers are stored as real Message rows with systemType set.
+ */
+export const getConversationMessagesByConvId = async (userId, conversationId, options = {}) => {
+    const { limit = 50, cursor, order = "desc" } = options;
+
+    // Verify access: user must be a participant
+    const conversation = await prisma.directConversation.findFirst({
+        where: {
+            id: conversationId,
+            OR: [{ user1Id: userId }, { user2Id: userId }],
+        },
+    });
+    if (!conversation) {
+        throw new AuthorizationError("Access denied to this conversation");
+    }
+
+    const senderSelect = {
+        select: {
+            id: true,
+            role: true,
+            therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+            customerProfile: { select: { fullName: true, agencyName: true } },
+        },
+    };
+
+    // Always fetch in descending order (newest first) and reverse for the frontend.
+    // This ensures we get the most recent messages, not the oldest.
+    const cursorDate = cursor
+        ? (await prisma.message.findUnique({ where: { id: cursor }, select: { createdAt: true } }))?.createdAt
+        : null;
+
+    const messages = await prisma.message.findMany({
+        where: {
+            conversationId,
+            ...(cursorDate && { createdAt: { lt: cursorDate } }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+            sender: senderSelect,
+            patient: { select: { id: true, fullName: true } },
+        },
+    });
+
+    // Normalize: add `type` field for frontend — system messages get type "system"
+    const normalized = messages.map(m => ({
+        ...m,
+        type: m.systemType ? "system" : "message",
+    }));
+
+    // Return in chronological order (oldest first) for display
+    return normalized.reverse();
+};
+
+/**
+ * Get conversation messages with pagination (LEGACY — kept for backward compatibility)
+ * New code should use getConversationMessagesByConvId() instead.
  */
 export const getConversationMessages = async (userId, contextType, contextId, options = {}) => {
     const { limit = 50, cursor, order = "desc" } = options;
@@ -641,7 +766,47 @@ export const getConversationMessages = async (userId, contextType, contextId, op
 };
 
 /**
- * Mark messages as read in a conversation
+ * Mark all messages as read in a conversation by conversationId.
+ * Phase 3: single update, no cascading across contexts.
+ */
+export const markMessagesAsReadByConvId = async (userId, conversationId) => {
+    // Verify access
+    const conversation = await prisma.directConversation.findFirst({
+        where: {
+            id: conversationId,
+            OR: [{ user1Id: userId }, { user2Id: userId }],
+        },
+    });
+    if (!conversation) {
+        throw new AuthorizationError("Access denied to this conversation");
+    }
+
+    const result = await prisma.message.updateMany({
+        where: {
+            conversationId,
+            recipientId: userId,
+            readAt: null,
+        },
+        data: { readAt: new Date() },
+    });
+
+    // Publish read receipt to the other user
+    if (result.count > 0) {
+        const otherUserId = conversation.user1Id === userId
+            ? conversation.user2Id
+            : conversation.user1Id;
+        emitToRoom(`user:${otherUserId}`, "messages:marked_read", {
+            conversationId,
+            readBy: userId,
+            count: result.count,
+        });
+    }
+
+    return result.count;
+};
+
+/**
+ * Mark messages as read in a conversation (LEGACY — kept for backward compatibility)
  */
 export const markMessagesAsRead = async (userId, contextType, contextId) => {
     const contextData = await verifyConversationAccess(userId, contextType, contextId);
@@ -744,469 +909,173 @@ export const getUnreadCount = async (userId) => {
 }
 
 /**
- * Get all conversations for a user
+ * Get all conversations for a user.
+ *
+ * Phase 3 rewrite: queries DirectConversations directly instead of the old 6-pass
+ * message-assembly algorithm. Every message now has conversationId (Phase 2 backfill),
+ * so one query on DirectConversation + latest message gives us the full picture.
+ *
+ * The "currentContext" badge (booking > offer > direct) is derived from the most recent
+ * non-system message that has a bookingId or offerId. If neither exists, it's "direct".
  */
 export const getUserConversations = async (userId) => {
-    // Query: Recent messages for this user — we only need the latest per conversation context,
-    // so cap at a reasonable limit to avoid loading thousands of rows for power users.
-    const userMessages = await prisma.message.findMany({
+    const userSelect = {
+        id: true,
+        role: true,
+        therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+        customerProfile: { select: { fullName: true, agencyName: true } },
+    };
+
+    // 1. Fetch all DirectConversations for this user
+    const conversations = await prisma.directConversation.findMany({
         where: {
-            OR: [
-                { senderId: userId },
-                { recipientId: userId },
-            ],
+            OR: [{ user1Id: userId }, { user2Id: userId }],
         },
-        orderBy: { createdAt: "desc" },
-        take: 500,
         include: {
-            sender: {
-                select: {
-                    id: true,
-                    role: true,
-                    therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
-                    customerProfile: { select: { fullName: true, agencyName: true } },
-                },
-            },
-            recipient: {
-                select: {
-                    id: true,
-                    role: true,
-                    therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
-                    customerProfile: { select: { fullName: true, agencyName: true } },
-                },
-            },
-            offer: {
-                select: { id: true, status: true, rate: true, sessionType: true, },
-            },
-            booking: {
-                select: { id: true, status: true, scheduledDate: true, sessionType: true, },
-            },
-            patient: {
-                select: { id: true, fullName: true, }
-            },
+            user1: { select: userSelect },
+            user2: { select: userSelect },
         },
     });
 
-    // Query: Unread counts — use groupBy aggregation instead of loading every unread message
-    const unreadGroups = await prisma.message.groupBy({
-        by: ["senderId", "patientId"],
-        where: { recipientId: userId, readAt: null },
-        _count: { id: true },
-    });
+    if (conversations.length === 0) return [];
 
-    const unreadCountMap = {};
-    for (const group of unreadGroups) {
-        const key = `${group.senderId}:${group.patientId ?? "none"}`;
-        unreadCountMap[key] = (unreadCountMap[key] ?? 0) + group._count.id;
-    }
+    const conversationIds = conversations.map(c => c.id);
 
-    const relationships = new Map();
-
-    for (const msg of userMessages) {
-        const otherUserId = msg.senderId === userId ? msg.recipientId : msg.senderId;
-        const otherUser = msg.senderId === userId ? msg.recipient : msg.sender;
-        const patientId = msg.patientId ?? "none";
-
-        const relationshipKey = `${otherUserId}:${patientId}`;
-
-        const msgContextPriority = msg.bookingId ? 3 : msg.offerId ? 2 : 1;
-
-        if (!relationships.has(relationshipKey)) {
-            let currentContext;
-            if (msg.bookingId) {
-                currentContext = { type: "booking", id: msg.bookingId, data: msg.booking };
-            } else if (msg.offerId) {
-                currentContext = { type: "offer", id: msg.offerId, data: msg.offer };
-            } else if (msg.conversationId) {
-                currentContext = { type: "direct", id: msg.conversationId, data: null };
-            } else {
-                continue; // orphan message, skip
-            }
-
-            relationships.set(relationshipKey, {
-                otherUser,
-                patient: msg.patient ?? null,
-                lastMessage: {
-                    id: msg.id,
-                    content: msg.content,
-                    senderId: msg.senderId,
-                    createdAt: msg.createdAt,
-                    readAt: msg.readAt,
-                },
-                currentContext,
-                _contextPriority: msgContextPriority,
-                _offerIds: new Set(msg.offerId ? [msg.offerId] : []),
-                _directConvId: msg.conversationId ?? null,
-                unreadCount: unreadCountMap[relationshipKey] ?? 0,
-                updatedAt: msg.createdAt,
-            });
-        } else {
-            const existing = relationships.get(relationshipKey);
-
-            if (msg.offerId) existing._offerIds.add(msg.offerId);
-            if (msg.conversationId && !existing._directConvId) {
-                existing._directConvId = msg.conversationId;
-            }
-
-            if (msgContextPriority > existing._contextPriority) {
-                if (msg.bookingId) {
-                    existing.currentContext = { type: "booking", id: msg.bookingId, data: msg.booking };
-                } else if (msg.offerId) {
-                    existing.currentContext = { type: "offer", id: msg.offerId, data: msg.offer };
-                }
-                existing._contextPriority = msgContextPriority;
-            }
-        }
-    }
-
-    // Post pass: upgrade offer-only conversations that have a booking
-    // This handles the case where an offer was accepted and a booking exists
-    // but no messages have been sent in the booking context yet.
-    const offerOnlyConversations = Array.from(relationships.values()).filter(
-        (conv) => conv._contextPriority < 3 && conv._offerIds.size > 0
-    );
-
-    if (offerOnlyConversations.length > 0) {
-        const allOfferIds = new Set();
-        for (const conv of offerOnlyConversations) {
-            for (const oid of conv._offerIds) allOfferIds.add(oid);
-        }
-
-        // Find bookings that were created from these offers
-        const bookingsFromOffers = await prisma.booking.findMany({
-            where: { offerId: { in: Array.from(allOfferIds) } },
-            select: {
-                id: true,
-                offerId: true,
-                status: true,
-                scheduledDate: true,
-                sessionType: true,
-            }
-        });
-
-        // Build offerId → booking map
-        const offerToBooking = new Map();
-        for (const booking of bookingsFromOffers) {
-            offerToBooking.set(booking.offerId, booking);
-        }
-
-        // Upgrade conversations whose offer now has a booking
-        for (const conv of offerOnlyConversations) {
-            for (const oid of conv._offerIds) {
-                const booking = offerToBooking.get(oid);
-                if (booking) {
-                    conv.currentContext = {
-                        type: "booking",
-                        id: booking.id,
-                        data: {
-                            id: booking.id,
-                            status: booking.status,
-                            scheduledDate: booking.scheduledDate,
-                            sessionType: booking.sessionType,
-                        },
-                    };
-                    conv._contextPriority = 3;
-                    break; // one booking per offer
-                }
-            }
-        }
-    }
-
-    // Run bookings, offers, and direct conversation queries in parallel (they're independent)
-    const [userBookings, userOffers, directConversations] = await Promise.all([
-        prisma.booking.findMany({
+    // 2. Fetch the latest message per conversation (single query, partitioned by conversationId)
+    //    Also fetch the latest context-bearing message (bookingId or offerId set) for the badge.
+    //    And unread counts per conversation.
+    const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
+        // Latest message per conversation
+        prisma.$queryRaw`
+            SELECT DISTINCT ON (conversation_id)
+                id, sender_id AS "senderId", content, created_at AS "createdAt",
+                read_at AS "readAt", conversation_id AS "conversationId", system_type AS "systemType"
+            FROM messages
+            WHERE conversation_id = ANY(${conversationIds}::uuid[])
+            ORDER BY conversation_id, created_at DESC
+        `,
+        // Unread counts per conversation
+        prisma.message.groupBy({
+            by: ["conversationId"],
             where: {
-                status: { not: "cancelled" },
-                OR: [
-                    { customer: { userId } },
-                    { therapist: { userId } },
-                ]
+                conversationId: { in: conversationIds },
+                recipientId: userId,
+                readAt: null,
+                systemType: null, // system messages don't count as unread
             },
-            select: {
-                id: true,
-                status: true,
-                scheduledDate: true,
-                sessionType: true,
-                patientId: true,
-                offerId: true,
-                updatedAt: true,
-                patient: { select: { id: true, fullName: true } },
-                customer: { select: { userId: true, fullName: true, agencyName: true } },
-                therapist: { select: { userId: true, fullName: true, profilePhotoUrl: true } },
-            }
+            _count: { id: true },
         }),
-        prisma.offer.findMany({
-            where: {
-                status: { in: ["pending", "accepted"] },
-                booking: null,
-                OR: [
-                    { therapist: { userId } },
-                    { request: { customer: { userId } } },
-                ],
-            },
-            select: {
-                id: true,
-                status: true,
-                rate: true,
-                sessionType: true,
-                updatedAt: true,
-                request: {
-                    select: {
-                        patientId: true,
-                        patient: { select: { id: true, fullName: true } },
-                        customer: { select: { userId: true, fullName: true, agencyName: true } },
-                    },
-                },
-                therapist: { select: { userId: true, fullName: true, profilePhotoUrl: true } },
-            },
-        }),
-        prisma.directConversation.findMany({
-            where: {
-                OR: [
-                    { user1Id: userId },
-                    { user2Id: userId },
-                ],
-            },
-            include: {
-                user1: {
-                    select: {
-                        id: true, role: true,
-                        therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
-                        customerProfile: { select: { fullName: true, agencyName: true } },
-                    },
-                },
-                user2: {
-                    select: {
-                        id: true, role: true,
-                        therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
-                        customerProfile: { select: { fullName: true, agencyName: true } },
-                    },
-                },
-            },
-        }),
+        // Latest context-bearing message per conversation (for badge: booking > offer > direct)
+        // Includes system messages (offer_sent, booking_created) since they carry offerId/bookingId
+        prisma.$queryRaw`
+            SELECT DISTINCT ON (conversation_id)
+                conversation_id AS "conversationId",
+                offer_id AS "offerId",
+                booking_id AS "bookingId",
+                patient_id AS "patientId"
+            FROM messages
+            WHERE conversation_id = ANY(${conversationIds}::uuid[])
+              AND (offer_id IS NOT NULL OR booking_id IS NOT NULL)
+            ORDER BY conversation_id, created_at DESC
+        `,
+        // Patient info: get the most recent patientId per conversation
+        prisma.$queryRaw`
+            SELECT DISTINCT ON (conversation_id)
+                conversation_id AS "conversationId",
+                patient_id AS "patientId"
+            FROM messages
+            WHERE conversation_id = ANY(${conversationIds}::uuid[])
+              AND patient_id IS NOT NULL
+            ORDER BY conversation_id, created_at DESC
+        `,
     ]);
 
-    // Booking pass: include bookings with no message yet
-    // If a relationship entry already exists (e.g. from direct/offer messages), upgrade its priority
-    for (const booking of userBookings) {
-        const isCurrentUserCustomer = booking.customer.userId === userId;
-        const otherUserId = isCurrentUserCustomer
-            ? booking.therapist.userId
-            : booking.customer.userId;
-        const patientId = booking.patientId ?? "none";
-        const relationshipKey = `${otherUserId}:${patientId}`;
+    // Build lookup maps
+    const lastMsgMap = new Map(latestMessages.map(m => [m.conversationId, m]));
+    const unreadMap = new Map(unreadCounts.map(u => [u.conversationId, u._count.id]));
+    const contextMap = new Map(contextMessages.map(c => [c.conversationId, c]));
+    const patientMap = new Map(patientMessages.map(p => [p.conversationId, p.patientId]));
 
-        if (relationships.has(relationshipKey)) {
-            // Entry exists — upgrade to booking context if higher priority
-            const existing = relationships.get(relationshipKey);
-            if (booking.offerId) existing._offerIds.add(booking.offerId);
-            if (3 > existing._contextPriority) {
-                existing.currentContext = {
-                    type: "booking",
-                    id: booking.id,
-                    data: {
-                        id: booking.id,
-                        status: booking.status,
-                        scheduledDate: booking.scheduledDate,
-                        sessionType: booking.sessionType,
-                    },
-                };
-                existing._contextPriority = 3;
-            }
-            if (!existing.patient && booking.patient) {
-                existing.patient = booking.patient;
-            }
-            continue;
-        }
-
-        const otherUserProfile = isCurrentUserCustomer ? booking.therapist : booking.customer;
-
-        relationships.set(relationshipKey, {
-            otherUser: {
-                id: otherUserId,
-                role: isCurrentUserCustomer ? "therapist" : "customer",
-                therapistProfile: isCurrentUserCustomer
-                    ? { fullName: otherUserProfile.fullName, profilePhotoUrl: otherUserProfile.profilePhotoUrl }
-                    : null,
-                customerProfile: !isCurrentUserCustomer
-                    ? { fullName: otherUserProfile.fullName, agencyName: otherUserProfile.agencyName }
-                    : null,
-            },
-            patient: booking.patient ?? null,
-            lastMessage: null,
-            currentContext: {
-                type: "booking",
-                id: booking.id,
-                data: {
-                    id: booking.id,
-                    status: booking.status,
-                    scheduledDate: booking.scheduledDate,
-                    sessionType: booking.sessionType,
-                },
-            },
-            _contextPriority: 3,
-            _offerIds: new Set(booking.offerId ? [booking.offerId] : []),
-            _directConvId: null,
-            unreadCount: 0,
-            updatedAt: booking.updatedAt,
-        });
+    // 3. If any conversations have context (offer/booking), fetch those entities for badge data
+    const offerIds = new Set();
+    const bookingIds = new Set();
+    for (const ctx of contextMessages) {
+        if (ctx.bookingId) bookingIds.add(ctx.bookingId);
+        else if (ctx.offerId) offerIds.add(ctx.offerId);
     }
 
-    // Offer pass: Include active offers with no messages and no booking yet
-    // If a relationship entry already exists (e.g. from direct messages), upgrade its priority
-    for (const offer of userOffers) {
-        const isCurrentUserTherapist = offer.therapist.userId === userId;
-        const otherUserId = isCurrentUserTherapist
-            ? offer.request.customer.userId
-            : offer.therapist.userId;
-        const patientId = offer.request.patientId ?? "none";
-        const relationshipKey = `${otherUserId}:${patientId}`;
+    const [offers, bookings, patients] = await Promise.all([
+        offerIds.size > 0
+            ? prisma.offer.findMany({
+                where: { id: { in: Array.from(offerIds) } },
+                select: { id: true, status: true, rate: true, sessionType: true },
+            })
+            : [],
+        bookingIds.size > 0
+            ? prisma.booking.findMany({
+                where: { id: { in: Array.from(bookingIds) } },
+                select: { id: true, status: true, scheduledDate: true, sessionType: true },
+            })
+            : [],
+        patientMap.size > 0
+            ? prisma.patient.findMany({
+                where: { id: { in: Array.from(patientMap.values()).filter(Boolean) } },
+                select: { id: true, fullName: true },
+            })
+            : [],
+    ]);
 
-        if (relationships.has(relationshipKey)) {
-            // Entry exists (e.g. from direct messages) — upgrade to offer context if higher priority
-            const existing = relationships.get(relationshipKey);
-            existing._offerIds.add(offer.id);
-            if (2 > existing._contextPriority) {
-                existing.currentContext = {
-                    type: "offer",
-                    id: offer.id,
-                    data: {
-                        id: offer.id,
-                        status: offer.status,
-                        rate: offer.rate,
-                        sessionType: offer.sessionType,
-                    },
-                };
-                existing._contextPriority = 2;
-            }
-            // Fill in patient data if the existing entry doesn't have it
-            if (!existing.patient && offer.request.patient) {
-                existing.patient = offer.request.patient;
-            }
-            continue;
-        }
+    const offerMap = new Map(offers.map(o => [o.id, o]));
+    const bookingMap = new Map(bookings.map(b => [b.id, b]));
+    const patientDataMap = new Map(patients.map(p => [p.id, p]));
 
-        const otherUserProfile = isCurrentUserTherapist
-            ? offer.request.customer
-            : offer.therapist;
-
-        relationships.set(relationshipKey, {
-            otherUser: {
-                id: otherUserId,
-                role: isCurrentUserTherapist ? "customer" : "therapist",
-                therapistProfile: !isCurrentUserTherapist
-                    ? { fullName: otherUserProfile.fullName, profilePhotoUrl: otherUserProfile.profilePhotoUrl }
-                    : null,
-                customerProfile: isCurrentUserTherapist
-                    ? { fullName: otherUserProfile.fullName, agencyName: otherUserProfile.agencyName }
-                    : null,
-            },
-            patient: offer.request.patient ?? null,
-            lastMessage: null,
-            currentContext: {
-                type: "offer",
-                id: offer.id,
-                data: {
-                    id: offer.id,
-                    status: offer.status,
-                    rate: offer.rate,
-                    sessionType: offer.sessionType,
-                },
-            },
-            _contextPriority: 2,
-            _offerIds: new Set([offer.id]),
-            _directConvId: null,
-            unreadCount: 0,
-            updatedAt: offer.updatedAt,
-        });
-    }
-
-    // Direct conversation pass: Include direct conversations with no messages yet
-    for (const conv of directConversations) {
-        const otherUserId = conv.user1Id === userId ? conv.user2Id : conv.user1Id;
-        const relationshipKey = `${otherUserId}:none`;
-
-        // Check if ANY entry for this otherUserId exists (with any patient) — attach directConvId
-        // This prevents duplicate entries when the same user has both direct + patient-linked conversations
-        let attachedToExisting = false;
-        for (const [key, existing] of relationships.entries()) {
-            if (key.startsWith(`${otherUserId}:`)) {
-                if (!existing._directConvId) existing._directConvId = conv.id;
-                if (!existing.directConversationId) existing.directConversationId = conv.id;
-                attachedToExisting = true;
-                // Don't break — attach to ALL entries for this user (multiple patients)
-            }
-        }
-        if (attachedToExisting) continue;
-
+    // 4. Assemble the response
+    const result = conversations.map(conv => {
         const otherUser = conv.user1Id === userId ? conv.user2 : conv.user1;
+        const lastMsg = lastMsgMap.get(conv.id);
+        const unreadCount = unreadMap.get(conv.id) ?? 0;
+        const ctx = contextMap.get(conv.id);
+        const patientId = patientMap.get(conv.id);
+        const patient = patientId ? patientDataMap.get(patientId) ?? null : null;
 
-        relationships.set(relationshipKey, {
+        // Determine badge context: booking > offer > direct
+        let currentContext;
+        if (ctx?.bookingId) {
+            const booking = bookingMap.get(ctx.bookingId);
+            currentContext = booking
+                ? { type: "booking", id: booking.id, data: booking }
+                : { type: "direct", id: conv.id, data: null };
+        } else if (ctx?.offerId) {
+            const offer = offerMap.get(ctx.offerId);
+            currentContext = offer
+                ? { type: "offer", id: offer.id, data: offer }
+                : { type: "direct", id: conv.id, data: null };
+        } else {
+            currentContext = { type: "direct", id: conv.id, data: null };
+        }
+
+        return {
+            conversationId: conv.id,
             otherUser,
-            patient: null,
-            lastMessage: null,
-            currentContext: { type: "direct", id: conv.id, data: null },
-            _contextPriority: 1,
-            _offerIds: new Set(),
-            _directConvId: conv.id,
-            unreadCount: 0,
-            updatedAt: conv.updatedAt,
-        });
-    }
-
-    // Merge pass: absorb "direct-only" (:none) entries into patient-specific entries
-    // for the same otherUserId. This ensures one conversation per user pair (merged threads).
-    // Without this, agency customers see duplicate entries: one for direct chat and one for
-    // the offer/booking (which has a patientId).
-    const noneKeys = [];
-    for (const [key] of relationships) {
-        if (key.endsWith(":none")) noneKeys.push(key);
-    }
-
-    for (const noneKey of noneKeys) {
-        const otherUserId = noneKey.split(":")[0];
-        const noneEntry = relationships.get(noneKey);
-
-        // Find the highest-priority entry for this user with an actual patient
-        let bestKey = null;
-        let bestEntry = null;
-        for (const [k, v] of relationships) {
-            if (k === noneKey) continue;
-            if (k.startsWith(`${otherUserId}:`)) {
-                if (!bestEntry || v._contextPriority > bestEntry._contextPriority) {
-                    bestKey = k;
-                    bestEntry = v;
+            patient,
+            lastMessage: lastMsg
+                ? {
+                    id: lastMsg.id,
+                    content: lastMsg.systemType ? `[${lastMsg.systemType.replace(/_/g, " ")}]` : lastMsg.content,
+                    senderId: lastMsg.senderId,
+                    createdAt: lastMsg.createdAt,
+                    readAt: lastMsg.readAt,
                 }
-            }
-        }
+                : null,
+            currentContext,
+            directConversationId: conv.id,
+            unreadCount,
+            updatedAt: lastMsg?.createdAt ?? conv.updatedAt,
+        };
+    });
 
-        if (bestEntry) {
-            // Absorb directConvId
-            if (noneEntry._directConvId) {
-                bestEntry._directConvId = noneEntry._directConvId;
-                bestEntry.directConversationId = noneEntry._directConvId;
-            }
-            // Keep the more recent lastMessage
-            if (noneEntry.lastMessage) {
-                if (!bestEntry.lastMessage || new Date(noneEntry.lastMessage.createdAt) > new Date(bestEntry.lastMessage.createdAt)) {
-                    bestEntry.lastMessage = noneEntry.lastMessage;
-                    bestEntry.updatedAt = noneEntry.updatedAt;
-                }
-            }
-            // Merge unread counts
-            bestEntry.unreadCount = (bestEntry.unreadCount ?? 0) + (noneEntry.unreadCount ?? 0);
-
-            relationships.delete(noneKey);
-        }
-    }
-
-    // For conversations that have a direct conversation, always include the directConversationId
-    // so the frontend can use it for the merged thread view
-    return Array.from(relationships.values())
-        .map(({ _contextPriority, _offerIds, _directConvId, ...rest }) => ({
-            ...rest,
-            ..._directConvId ? { directConversationId: _directConvId } : {},
-        }))
+    // Sort by most recent activity, filter out conversations with no messages and no context
+    return result
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
@@ -1321,7 +1190,12 @@ const publishMessageToRealtime = async (message, contextType, contextId) => {
     try {
         const payload = { ...message, _contextType: contextType, _contextId: contextId };
 
-        // Emit to conversation room (for users actively viewing this thread)
+        // Emit to new room format (Phase 3: conversation:{conversationId})
+        if (message.conversationId) {
+            emitToRoom(`conversation:${message.conversationId}`, "message:new", payload);
+        }
+
+        // Also emit to legacy room format (kept for backward compat during rollout)
         emitToRoom(`conversation:${contextType}:${contextId}`, "message:new", payload);
 
         // Also emit to recipient's personal room so they get the message

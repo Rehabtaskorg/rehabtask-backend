@@ -464,3 +464,44 @@ export const cancelRequest = async (requestId, customerId) => {
 
     return cancelledRequest;
 }
+
+/**
+ * Get open requests for a specific customer (therapist-facing).
+ * Used in the messaging sidebar so therapists can view and make offers
+ * on a customer's requests directly from the chat.
+ */
+export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId) => {
+    const customerProfile = await prisma.customerProfile.findFirst({
+        where: { userId: customerUserId },
+        select: { id: true },
+    });
+
+    if (!customerProfile) return [];
+
+    const requests = await prisma.therapyRequest.findMany({
+        where: {
+            customerId: customerProfile.id,
+            status: { in: ["created", "offers_received"] },
+        },
+        include: {
+            patient: { select: { id: true, fullName: true } },
+            offers: {
+                where: { therapistId },
+                select: { id: true, status: true },
+            },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+    });
+
+    return requests.map(r => ({
+        id: r.id,
+        serviceType: r.serviceType,
+        location: r.location,
+        preferredDate: r.preferredDate,
+        status: r.status,
+        patient: r.patient,
+        myOffer: r.offers[0] ?? null,
+        createdAt: r.createdAt,
+    }));
+}
