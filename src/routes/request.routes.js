@@ -2,7 +2,8 @@ import express from "express";
 import {
     createRequestController, getAvailableRequestsController,
     getCustomerRequestsController, getRequestByIdController,
-    updateRequestController, cancelRequestController
+    updateRequestController, cancelRequestController,
+    getCustomerOpenRequestsController,
 } from "../controllers/request.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -14,6 +15,7 @@ const router = express.Router();
 router.post("/", authenticate, authorize(["customer"]), enforceRequestLimit, validate(createRequestSchema), createRequestController);
 router.get("/my-requests", authenticate, authorize(["customer"]), getCustomerRequestsController);
 router.get("/available", authenticate, authorize(["therapist"]), getAvailableRequestsController);
+router.get("/by-customer/:customerUserId", authenticate, authorize(["therapist"]), getCustomerOpenRequestsController);
 router.get("/:requestId", authenticate, getRequestByIdController);
 router.put("/:requestId", authenticate, authorize(["customer"]), validate(updateRequestSchema), updateRequestController);
 router.post("/:requestId/cancel", authenticate, authorize(["customer"]), cancelRequestController);

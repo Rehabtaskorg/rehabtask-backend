@@ -4,6 +4,7 @@ import { sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToC
 import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
 import { logAction, logSystemEvent } from "./audit.service.js";
+import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
  * Get or create a Stripe customer for a given user.
@@ -330,12 +331,30 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     const bookingWithDetails = await prisma.booking.findUnique({
         where: { id: payment.bookingId },
         include: {
-            customer: { include: { user: { select: { email: true } } } },
-            therapist: { select: { fullName: true } },
+            customer: { include: { user: { select: { id: true, email: true } } } },
+            therapist: { select: { userId: true, fullName: true } },
         },
     });
 
     if (bookingWithDetails) {
+        // System message: payment_confirmed
+        const payCustomerUserId = bookingWithDetails.customer.user.id;
+        const payTherapistUserId = bookingWithDetails.therapist?.userId;
+        if (payCustomerUserId && payTherapistUserId) {
+            findOrCreateDirectConversation(payCustomerUserId, payTherapistUserId)
+                .then((conversation) =>
+                    createSystemMessage({
+                        conversationId: conversation.id,
+                        actorId: payCustomerUserId,
+                        recipientId: payTherapistUserId,
+                        content: `Payment received — session confirmed. ($${parseFloat(payment.amount)})`,
+                        systemType: "payment_confirmed",
+                        bookingId: payment.bookingId,
+                    })
+                )
+                .catch(() => { });
+        }
+
         sendPaymentConfirmation({
             customer: bookingWithDetails.customer,
             booking: bookingWithDetails,

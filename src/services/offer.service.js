@@ -407,6 +407,25 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         changes: { rate, sessionType, proposedDate, previousStatus: "change_requested" },
     });
 
+    // System message: offer_revised
+    const reviseCustomerUserId = updated.request.customer.user.id;
+    const reviseTherapistUserId = updated.therapist.userId;
+    findOrCreateDirectConversation(reviseTherapistUserId, reviseCustomerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: reviseTherapistUserId,
+                recipientId: reviseCustomerUserId,
+                content: `Offer revised — $${parseFloat(updated.rate)}/${updated.sessionType || "session"}`,
+                systemType: "offer_revised",
+                offerId,
+                patientId: updated.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_revised) failed", { error: err.message });
+        });
+
     // Notify customer about the revised offer (fire-and-forget)
     sendNewOfferNotification({
         customer: updated.request.customer,
@@ -482,6 +501,25 @@ export const declineOffer = async (offerId, customerId) => {
         changes: { therapistId: updatedOffer.therapist.id, requestId: updatedOffer.request.id },
     });
 
+    // System message: offer_declined
+    const declineCustomerUserId = updatedOffer.request.customer.user.id;
+    const declineTherapistUserId = updatedOffer.therapist.user.id;
+    findOrCreateDirectConversation(declineCustomerUserId, declineTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: declineCustomerUserId,
+                recipientId: declineTherapistUserId,
+                content: "Offer declined by patient.",
+                systemType: "offer_declined",
+                offerId,
+                patientId: updatedOffer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_declined) failed", { error: err.message });
+        });
+
     sendOfferDeclined({
         therapist: updatedOffer.therapist,
         customer: updatedOffer.request.customer,
@@ -540,6 +578,25 @@ export const requestOfferChange = async (offerId, customerId, note) => {
             changeRequestNote: note,
         }
     });
+
+    // System message: offer_change_requested
+    const changeCustomerUserId = offer.request.customer.user.id;
+    const changeTherapistUserId = offer.therapist.user.id;
+    findOrCreateDirectConversation(changeCustomerUserId, changeTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: changeCustomerUserId,
+                recipientId: changeTherapistUserId,
+                content: `Patient requested changes: ${note}`,
+                systemType: "offer_change_requested",
+                offerId,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_change_requested) failed", { error: err.message });
+        });
 
     sendOfferChangeRequested({
         therapist: offer.therapist,
@@ -603,6 +660,25 @@ export const withdrawOffer = async (offerId, therapistId) => {
         entityId: offerId,
         changes: { requestId: offer.requestId, previousStatus: offer.status },
     });
+
+    // System message: offer_withdrawn
+    const withdrawCustomerUserId = offer.request.customer.user.id;
+    const withdrawTherapistUserId = offer.therapist.userId;
+    findOrCreateDirectConversation(withdrawCustomerUserId, withdrawTherapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: withdrawTherapistUserId,
+                recipientId: withdrawCustomerUserId,
+                content: "Offer withdrawn by therapist.",
+                systemType: "offer_withdrawn",
+                offerId,
+                patientId: offer.request.patientId || null,
+            })
+        )
+        .catch((err) => {
+            logger.error("[OfferService] System message (offer_withdrawn) failed", { error: err.message });
+        });
 
     sendOfferWithdrawn({
         customer: offer.request.customer,
