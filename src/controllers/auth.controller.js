@@ -35,13 +35,15 @@ const getRefreshTokenCookieOptions = () => ({
 /**
  * Role cookie — readable by Next.js middleware for route protection.
  * NOT httpOnly by design: middleware needs to read it on the server edge.
- * Lifetime matches the access token (1 hour) so they expire together.
+ * Lifetime matches the refresh token (7 days) so the user stays "known"
+ * to the middleware for the full session duration. The actual auth check
+ * still happens via the httpOnly access/refresh tokens.
  */
 const getRoleCookieOptions = () => ({
     httpOnly: false,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: 60 * 60 * 1000, // 1 hour — matches access token
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — matches refresh token
     path: "/",
 });
 
@@ -464,6 +466,11 @@ export const refreshTokenController = async (req, res, next) => {
         // Update cookies with new tokens
         res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
+
+        // Re-set the role cookie so the middleware stays in sync
+        if (result.role) {
+            res.cookie("app_role", result.role, getRoleCookieOptions());
+        }
 
         res.status(200).json({
             success: true,
