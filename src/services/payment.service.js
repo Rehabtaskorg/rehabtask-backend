@@ -866,6 +866,16 @@ const createAccountSession = async (therapistId, userId) => {
         throw new Error("No Stripe account connected. Please complete account setup first.");
     }
 
+    // Feature flags per Stripe AccountSessions API spec:
+    //   - account_onboarding supports: disable_stripe_user_authentication, external_account_collection
+    //   - balances supports: disable_stripe_user_authentication, edit_payout_schedule,
+    //     external_account_collection, instant_payouts (ENUM: disabled|enabled|use_dashboard_rules),
+    //     standard_payouts
+    //   - payments supports: capture_payments, destination_on_behalf_of_charge_management,
+    //     dispute_management, refund_management  (NO disable_stripe_user_authentication)
+    //   - payouts_list takes no features
+    // disable_stripe_user_authentication is only valid when controller.requirement_collection
+    // is "application" (which our accounts use).
     const session = await stripe.accountSessions.create({
         account: therapist.stripeAccountId,
         components: {
@@ -875,13 +885,14 @@ const createAccountSession = async (therapistId, userId) => {
                     // Therapists don't need to authenticate with Stripe separately
                     // because the platform collects requirements (requirement_collection: "application")
                     disable_stripe_user_authentication: true,
+                    external_account_collection: true,
                 },
             },
             balances: {
                 enabled: true,
                 features: {
-                    // "Cash Out" instant payout button
-                    instant_payouts: true,
+                    // "Cash Out" instant payout button — enum string, not boolean
+                    instant_payouts: "enabled",
                     // Standard scheduled payouts
                     standard_payouts: true,
                     // Let therapists manage their own payout schedule
@@ -900,7 +911,7 @@ const createAccountSession = async (therapistId, userId) => {
                     dispute_management: true,
                     // Payments are captured server-side; therapists have no capture UI
                     capture_payments: false,
-                    disable_stripe_user_authentication: true,
+                    // NOTE: payments component does NOT support disable_stripe_user_authentication
                 },
             },
             payouts_list: {
