@@ -760,9 +760,21 @@ const getTherapistPayoutHistory = async (therapistId) => {
 }
 
 /**
- * Create Stripe Connect account link for therapist onboarding
+ * Create or retrieve a Stripe Custom Connect account for a therapist.
+ *
+ * Custom accounts (not Express) are required for the embedded component
+ * onboarding + white-label earnings dashboard. Key controller flags:
+ *   - requirement_collection: "application"  → platform drives KYC via
+ *     embedded ConnectAccountOnboarding; no Stripe-hosted dashboard needed
+ *   - stripe_dashboard: { type: "none" }     → disables external Stripe
+ *     Express Dashboard entirely (white-label requirement)
+ *   - losses/fees on "application"           → platform bears liability and
+ *     controls fee structure (standard for Connect platforms)
+ *
+ * Idempotent: if the therapist already has a stripeAccountId this function
+ * skips creation and returns the existing ID immediately.
  */
-const createConnectAccountLink = async (therapistId, userId) => {
+const createOrGetConnectAccount = async (therapistId, userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { id: therapistId },
         include: { user: true },
@@ -776,39 +788,126 @@ const createConnectAccountLink = async (therapistId, userId) => {
         throw new Error("Unauthorized");
     }
 
-    let accountId = therapist.stripeAccountId;
-
-    if (!accountId) {
-        const account = await stripe.accounts.create({
-            type: "express",
-            email: therapist.user.email,
-            metadata: {
-                therapistId: therapist.id,
-                userId: therapist.userId,
-            },
-        });
-
-        accountId = account.id;
-
-        await withAdminAccess(async (db) => {
-            await db.therapistProfile.update({
-                where: { id: therapistId },
-                data: { stripeAccountId: account.id }
-            });
-        });
+    // Already has an account — nothing to create
+    if (therapist.stripeAccountId) {
+        return { accountId: therapist.stripeAccountId };
     }
 
-    const accountLink = await stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${process.env.FRONTEND_URL}/therapist/onboarding/stripe?stripe_refresh=true`,
-        return_url: `${process.env.FRONTEND_URL}/therapist/onboarding/stripe?stripe_success=true`,
-        type: "account_onboarding",
+    const account = await stripe.accounts.create({
+        type: "custom",
+        country: "US",
+        email: therapist.user.email,
+        capabilities: {
+            transfers: { requested: true },
+            card_payments: { requested: true },
+        },
+        controller: {
+            // Platform collects all requirements via the embedded onboarding component.
+            // This also unlocks disable_stripe_user_authentication on Account Sessions,
+            // meaning therapists don't need a separate Stripe login to use components.
+            requirement_collection: "application",
+            // Fully white-label: no Stripe-hosted Express Dashboard
+            stripe_dashboard: { type: "none" },
+            // Platform absorbs dispute losses and pays Stripe fees
+            losses: { payments: "application" },
+            fees: { payer: "application" },
+        },
+        metadata: {
+            therapistId: therapist.id,
+            userId: therapist.userId,
+        },
     });
 
-    return {
-        url: accountLink.url,
-        accountId
-    };
+    await withAdminAccess(async (db) => {
+        await db.therapistProfile.update({
+            where: { id: therapistId },
+            data: { stripeAccountId: account.id },
+        });
+    });
+
+    return { accountId: account.id };
+};
+
+/**
+ * Create a short-lived Stripe Account Session for embedded components.
+ *
+ * The returned client_secret is consumed directly by the frontend
+ * StripeConnectProvider's fetchClientSecret callback. It is single-use
+ * and expires after ~60 minutes. Never cache it — Stripe calls
+ * fetchClientSecret automatically when a session expires.
+ *
+ * Components enabled:
+ *   - account_onboarding  → embedded KYC form (Step 5 of onboarding)
+ *   - balances            → balance display + instant payout ("Cash Out")
+ *                           + bank account management
+ *   - payments            → transaction history + dispute management
+ *   - payouts_list        → standalone payout history list
+ *
+ * disable_stripe_user_authentication is set to true because the account
+ * was created with requirement_collection: "application" — this prevents
+ * Stripe from requiring a separate Stripe login inside the embedded UI.
+ */
+const createAccountSession = async (therapistId, userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { id: therapistId },
+    });
+
+    if (!therapist) {
+        throw new Error("Therapist not found");
+    }
+
+    if (therapist.userId !== userId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (!therapist.stripeAccountId) {
+        throw new Error("No Stripe account connected. Please complete account setup first.");
+    }
+
+    const session = await stripe.accountSessions.create({
+        account: therapist.stripeAccountId,
+        components: {
+            account_onboarding: {
+                enabled: true,
+                features: {
+                    // Therapists don't need to authenticate with Stripe separately
+                    // because the platform collects requirements (requirement_collection: "application")
+                    disable_stripe_user_authentication: true,
+                },
+            },
+            balances: {
+                enabled: true,
+                features: {
+                    // "Cash Out" instant payout button
+                    instant_payouts: "enabled",
+                    // Standard scheduled payouts
+                    standard_payouts: true,
+                    // Let therapists manage their own payout schedule
+                    edit_payout_schedule: true,
+                    // Bank account add/remove lives inside this component (no separate flow needed)
+                    external_account_collection: true,
+                    disable_stripe_user_authentication: true,
+                },
+            },
+            payments: {
+                enabled: true,
+                features: {
+                    // Therapists cannot issue refunds — that's a platform/admin action
+                    refund_management: false,
+                    // Therapists should be able to respond to disputes
+                    dispute_management: true,
+                    // Payments are captured server-side; therapists have no capture UI
+                    capture_payments: false,
+                    disable_stripe_user_authentication: true,
+                },
+            },
+            payouts_list: {
+                enabled: true,
+            },
+        },
+    });
+
+    return { clientSecret: session.client_secret };
 };
 
 /**
@@ -839,35 +938,8 @@ const getConnectAccountStatus = async (therapistId) => {
     };
 };
 
-/**
- * Create Stripe Express Dashboard login link
- */
-const createDashboardLink = async (therapistId, userId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { id: therapistId },
-    });
-
-    if (!therapist) {
-        throw new Error("Therapist not found");
-    }
-
-    if (therapist.userId !== userId) {
-        throw new Error("Unauthorized");
-    }
-
-    if (!therapist.stripeAccountId) {
-        throw new Error("No Stripe account connected");
-    }
-
-    // Create a login link for the Express Dashboard
-    const loginLink = await stripe.accounts.createLoginLink(
-        therapist.stripeAccountId
-    );
-
-    return {
-        url: loginLink.url
-    };
-}
+// createDashboardLink removed — the external Stripe Express Dashboard is
+// replaced by the embedded ConnectBalances component in the earnings page.
 
 /**
  * List customer's saved payment methods from Stripe
@@ -1000,9 +1072,9 @@ export {
     processRefund,
     getCustomerPaymentHistory,
     getTherapistPayoutHistory,
-    createConnectAccountLink,
+    createOrGetConnectAccount,
+    createAccountSession,
     getConnectAccountStatus,
-    createDashboardLink,
     getOrCreateStripeCustomer,
     getPaymentMethods,
     createSetupIntent,

@@ -1,9 +1,11 @@
 import {
-    createPaymentIntent, getCustomerPaymentHistory,
-    getTherapistPayoutHistory, createConnectAccountLink,
+    createPaymentIntent,
+    getCustomerPaymentHistory,
+    getTherapistPayoutHistory,
+    createOrGetConnectAccount,
+    createAccountSession,
     getConnectAccountStatus,
     processRefund,
-    createDashboardLink,
     getPaymentMethods,
     createSetupIntent,
     removePaymentMethod,
@@ -61,13 +63,33 @@ const getPayoutHistoryController = async (req, res, next) => {
 }
 
 /**
- * Create Stripe Connect account link
+ * Create or retrieve a Stripe Custom Connect account for the authenticated therapist.
+ * Returns { accountId } — no redirect URL. The frontend renders the embedded
+ * ConnectAccountOnboarding component using a separate Account Session.
  */
 const createConnectAccountController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const userId = req.user.id;
-        const result = await createConnectAccountLink(therapistId, userId);
+        const result = await createOrGetConnectAccount(therapistId, userId);
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Create a short-lived Stripe Account Session for embedded components.
+ * The client_secret is consumed by the frontend StripeConnectProvider's
+ * fetchClientSecret callback. Never cached — Stripe calls fetchClientSecret
+ * automatically on session expiry.
+ */
+const createAccountSessionController = async (req, res, next) => {
+    try {
+        const therapistId = req.user.therapistProfile.id;
+        const userId = req.user.id;
+        const result = await createAccountSession(therapistId, userId);
 
         res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -118,20 +140,8 @@ const processRefundController = async (req, res, next) => {
     }
 }
 
-/**
- * Create Stripe Dashboard login link
- */
-const createDashboardLinkController = async (req, res, next) => {
-    try {
-        const therapistId = req.user.therapistProfile.id;
-        const userId = req.user.id;
-        const result = await createDashboardLink(therapistId, userId);
-
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-}
+// createDashboardLinkController removed — the external Stripe Express Dashboard
+// is replaced by the embedded ConnectBalances component in the earnings page.
 
 /**
  * List saved payment methods
@@ -186,9 +196,9 @@ export {
     getPaymentHistoryController,
     getPayoutHistoryController,
     createConnectAccountController,
+    createAccountSessionController,
     getConnectAccountStatusController,
     processRefundController,
-    createDashboardLinkController,
     getPaymentMethodsController,
     createSetupIntentController,
     removePaymentMethodController,

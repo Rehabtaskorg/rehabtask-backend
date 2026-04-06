@@ -1,9 +1,12 @@
 import express from "express";
 import {
-    createConnectAccountController, createPaymentIntentController,
-    getConnectAccountStatusController, getPaymentHistoryController,
-    getPayoutHistoryController, processRefundController,
-    createDashboardLinkController,
+    createPaymentIntentController,
+    getPaymentHistoryController,
+    getPayoutHistoryController,
+    processRefundController,
+    createConnectAccountController,
+    createAccountSessionController,
+    getConnectAccountStatusController,
     getPaymentMethodsController,
     createSetupIntentController,
     removePaymentMethodController,
@@ -39,8 +42,15 @@ router.get("/commission-rate", authenticate, async (req, res, next) => {
 // Therapist routes
 router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);
 router.get("/connect/status", authenticate, authorize(["therapist"]), getConnectAccountStatusController);
+
+// Account Session — creates a short-lived client_secret for the frontend
+// StripeConnectProvider (embedded onboarding + earnings dashboard components).
+// Rate-limited: Stripe sessions expire after ~60 min and fetchClientSecret is
+// called automatically, so normal usage is well within the 20/hr limit.
+router.post("/account-session", authenticate, authorize(["therapist"]), sensitiveOperationRateLimiter, createAccountSessionController);
+
 router.get("/payouts", authenticate, authorize(["therapist"]), getPayoutHistoryController);
-router.post("/dashboard/create", authenticate, authorize(["therapist"]), createDashboardLinkController);
+// /dashboard/create removed — external Stripe Express Dashboard replaced by embedded ConnectBalances.
 
 // NOTE: Payment release is handled exclusively through the session confirmation flow:
 //   POST /sessions/:sessionId/confirm → confirmByCustomerController → releasePayment()
