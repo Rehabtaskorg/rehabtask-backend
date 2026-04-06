@@ -793,8 +793,10 @@ const createOrGetConnectAccount = async (therapistId, userId) => {
         return { accountId: therapist.stripeAccountId };
     }
 
+    // NOTE: `type` and `controller` are mutually exclusive in the Stripe API.
+    // We use the modern `controller` block (which implicitly creates a Custom-equivalent
+    // account) — do NOT add `type: "custom"` here, Stripe will reject the request.
     const account = await stripe.accounts.create({
-        type: "custom",
         country: "US",
         email: therapist.user.email,
         capabilities: {
