@@ -61,6 +61,12 @@ const handleStripeWebhook = async (req, res) => {
                 await handleAccountUpdated(event.data.object, event.account);
                 break;
 
+            case "capability.updated":
+                // Informational — capability state changes are reflected on the account
+                // and picked up by account.updated. Just log and ack.
+                console.log(`Capability ${event.data.object.id} updated → status: ${event.data.object.status}`);
+                break;
+
             case "account.external_account.created":
                 await handleExternalAccountCreated(event.data.object, event.account);
                 break;

@@ -881,7 +881,7 @@ const createAccountSession = async (therapistId, userId) => {
                 enabled: true,
                 features: {
                     // "Cash Out" instant payout button
-                    instant_payouts: "enabled",
+                    instant_payouts: true,
                     // Standard scheduled payouts
                     standard_payouts: true,
                     // Let therapists manage their own payout schedule
