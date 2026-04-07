@@ -793,47 +793,6 @@ const createOrGetConnectAccount = async (therapistId, userId) => {
         return { accountId: therapist.stripeAccountId };
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Why `controller` and not `type: "custom"`?
-    //
-    // Stripe offers two ways to configure a connected account:
-    //   (a) Legacy: `type: "express" | "standard" | "custom"` — bundled presets
-    //   (b) Modern: `controller: {...}` — granular per-axis configuration
-    //
-    // Stripe officially recommends the controller approach for new integrations:
-    //   https://docs.stripe.com/connect/migrate-to-controller-properties
-    //   "We recommend you update your integration to take advantage of the
-    //    increased modularity and new configurations available."
-    //
-    // Practical note: passing both `type` and `controller` in the same call
-    // is rejected by the live API ("You may not provide the `type` parameter
-    // and `controller` parameters simultaneously"). So we pass only `controller`.
-    //
-    // The four controller fields below produce an account that is functionally
-    // equivalent to the legacy `type: "custom"` preset (per the migration docs):
-    //   requirement_collection: "application" → platform collects KYC
-    //   stripe_dashboard.type:  "none"        → no Stripe-hosted dashboard
-    //   losses.payments:        "application" → platform absorbs dispute losses
-    //   fees.payer:             "application" → platform pays Stripe fees
-    //
-    // Caveats to be aware of:
-    //   1. When you GET this account from the Stripe API, `account.type` will
-    //      be the literal string "none" — NOT "custom", null, or undefined.
-    //      Per the docs: "none — The account was created with no type value
-    //      and its controller properties don't match any of the three account
-    //      types." This is intentional and correct.
-    //
-    //   2. In the Stripe Dashboard's connected accounts list, the "Account
-    //      type" column will display "—" (empty) for these accounts. The
-    //      "Custom" filter will NOT match them. To find them, use the
-    //      "All" view or filter by metadata.therapistId (set below).
-    //
-    //   3. `disable_stripe_user_authentication` on AccountSession components
-    //      requires `requirement_collection: "application"` — without it,
-    //      the embedded onboarding/balances components would force therapists
-    //      to log into Stripe separately, breaking the white-label flow.
-    //      See: https://docs.stripe.com/api/account_sessions/create
-    // ─────────────────────────────────────────────────────────────────────
     const account = await stripe.accounts.create({
         country: "US",
         email: therapist.user.email,
@@ -1044,7 +1003,7 @@ const getPaymentMethods = async (userId) => {
     if (duplicates.length > 0) {
         Promise.allSettled(
             duplicates.map((id) => stripe.paymentMethods.detach(id))
-        ).catch(() => {});
+        ).catch(() => { });
     }
 
     const unique = Array.from(seen.values());
