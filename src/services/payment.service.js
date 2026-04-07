@@ -842,9 +842,16 @@ const createOrGetConnectAccount = async (therapistId, userId) => {
  *   - payments            → transaction history + dispute management
  *   - payouts_list        → standalone payout history list
  *
- * disable_stripe_user_authentication is set to true because the account
- * was created with requirement_collection: "application" — this prevents
- * Stripe from requiring a separate Stripe login inside the embedded UI.
+ * Legacy account compatibility:
+ *   `disable_stripe_user_authentication` is only valid for accounts where
+ *   the platform owns requirements collection (controller-based accounts
+ *   created with `requirement_collection: "application"`). Express and
+ *   Standard accounts created before our migration cannot use this flag —
+ *   Stripe rejects the request with a 400. We retrieve the account before
+ *   creating the session and only set the flag when the account supports
+ *   it. Pre-migration Express therapists fall back to the default Stripe
+ *   auth flow inside the embedded components, while new controller-based
+ *   therapists keep the fully white-label experience.
  */
 const createAccountSession = async (therapistId, userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -863,25 +870,31 @@ const createAccountSession = async (therapistId, userId) => {
         throw new Error("No Stripe account connected. Please complete account setup first.");
     }
 
+    // Retrieve the account so we can branch on its controller config.
+    // Controller-based accounts have controller.requirement_collection === "application";
+    // legacy Express/Standard accounts either lack the controller block entirely
+    // or have requirement_collection === "stripe".
+    const account = await stripe.accounts.retrieve(therapist.stripeAccountId);
+    const platformOwnsRequirements =
+        account?.controller?.requirement_collection === "application";
+
     // Feature flags per Stripe AccountSessions API spec:
-    //   - account_onboarding supports: disable_stripe_user_authentication, external_account_collection
-    //   - balances supports: disable_stripe_user_authentication, edit_payout_schedule,
-    //     external_account_collection, instant_payouts (ENUM: disabled|enabled|use_dashboard_rules),
-    //     standard_payouts
-    //   - payments supports: capture_payments, destination_on_behalf_of_charge_management,
-    //     dispute_management, refund_management  (NO disable_stripe_user_authentication)
-    //   - payouts_list takes no features
-    // disable_stripe_user_authentication is only valid when controller.requirement_collection
-    // is "application" (which our accounts use).
+    //   - account_onboarding: disable_stripe_user_authentication, external_account_collection
+    //   - balances: disable_stripe_user_authentication, edit_payout_schedule,
+    //     external_account_collection, instant_payouts, standard_payouts
+    //   - payments: capture_payments, dispute_management, refund_management
+    //     (NO disable_stripe_user_authentication)
+    //   - payouts_list: no features
     const session = await stripe.accountSessions.create({
         account: therapist.stripeAccountId,
         components: {
             account_onboarding: {
                 enabled: true,
                 features: {
-                    // Therapists don't need to authenticate with Stripe separately
-                    // because the platform collects requirements (requirement_collection: "application")
-                    disable_stripe_user_authentication: true,
+                    // Only valid for controller-based accounts (see comment block above)
+                    ...(platformOwnsRequirements && {
+                        disable_stripe_user_authentication: true,
+                    }),
                     external_account_collection: true,
                 },
             },
@@ -899,7 +912,10 @@ const createAccountSession = async (therapistId, userId) => {
                     edit_payout_schedule: true,
                     // Bank account add/remove lives inside this component (no separate flow needed)
                     external_account_collection: true,
-                    disable_stripe_user_authentication: true,
+                    // Only valid for controller-based accounts (see comment block above)
+                    ...(platformOwnsRequirements && {
+                        disable_stripe_user_authentication: true,
+                    }),
                 },
             },
             payments: {
