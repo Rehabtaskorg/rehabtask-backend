@@ -235,6 +235,41 @@ export const sessionCompletionRequest = ({ customer, therapist, session, booking
     `),
 });
 
+// Customer requested revision on a completed session (to therapist)
+export const sessionRevisionRequested = ({ therapist, customer, session, booking, reason }) => ({
+    subject: `${customer.fullName} requested a revision on your session`,
+    html: layout(`
+        ${heading('Revision Requested')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> reviewed the session you marked complete and would like some changes before confirming.`)}
+        ${hr()}
+        ${field('Session Type', booking.sessionType)}
+        ${field('Originally Completed', formatDate(session.completedAt))}
+        ${hr()}
+        ${label('What the customer wants changed')}
+        ${value(`"${reason}"`)}
+        ${hr()}
+        ${text('Open the booking to upload any updated documentation in the chat, then resubmit the session with a date you can commit to.')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
+    `),
+});
+
+// Therapist resubmitted the session after a revision (to customer)
+export const sessionRevisionSubmitted = ({ customer, therapist, session, booking }) => ({
+    subject: `${therapist.fullName} resubmitted your session — please review`,
+    html: layout(`
+        ${heading('Session Resubmitted')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${therapist.fullName}</strong> has addressed your revision request and resubmitted the session. Please review the updates and confirm or request additional changes.`)}
+        ${hr()}
+        ${field('Session Type', booking.sessionType)}
+        ${session.revisionDueBy ? field('Therapist commitment', formatDate(session.revisionDueBy)) : ''}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Review Session')}
+        ${muted('If not confirmed within 72 hours, the session will be auto-confirmed.')}
+    `),
+});
+
 // Session Confirmed (to therapist)
 export const sessionConfirmed = ({ therapist, customer, booking }) => ({
     subject: 'Session confirmed by customer — payout in progress',

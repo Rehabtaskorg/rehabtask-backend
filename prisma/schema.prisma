@@ -328,6 +328,13 @@ model Session {
   completedAt           DateTime?     @map("completed_at") @db.Timestamptz(3)
   confirmedByCustomerAt DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
   cancellationReason    String?       @map("cancellation_reason")
+
+  revisionRequestedAt     DateTime? @map("revision_requested_at") @db.Timestamptz(3)
+  revisionReason          String?   @map("revision_reason")
+  revisionDueBy           DateTime? @map("revision_due_by") @db.Timestamptz(3)
+  revisionCount           Int       @default(0) @map("revision_count")
+  revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
+
   createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking               Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -678,6 +685,7 @@ enum SessionStatus {
   pending_schedule
   scheduled
   completed_by_therapist
+  in_revision
   confirmed_by_customer
   cancelled
 }

@@ -2,7 +2,8 @@ import express from "express";
 import {
     cancelSessionController, completeTherapistController,
     confirmByCustomerController, getCustomerSessionsController,
-    getSessionController, getTherapistSessionsController, scheduleSessionController
+    getSessionController, getTherapistSessionsController, scheduleSessionController,
+    requestRevisionController, submitRevisionController
 } from "../controllers/session.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -15,5 +16,7 @@ router.post("/:sessionId/complete", authenticate, authorize(["therapist"]), comp
 router.post("/:sessionId/confirm", authenticate, authorize(["customer"]), confirmByCustomerController);
 router.post("/:sessionId/cancel", authenticate, cancelSessionController);
 router.post("/:sessionId/schedule", authenticate, authorize(["therapist"]), scheduleSessionController);
+router.post("/:sessionId/request-revision", authenticate, authorize(["customer"]), requestRevisionController);
+router.post("/:sessionId/submit-revision", authenticate, authorize(["therapist"]), submitRevisionController);
 
 export default router;

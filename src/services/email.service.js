@@ -16,6 +16,8 @@ import {
     sessionReminder,
     sessionCompletionRequest,
     sessionConfirmed,
+    sessionRevisionRequested,
+    sessionRevisionSubmitted,
     payoutConfirmation,
     newMessageNotification,
     offerDeclined,
@@ -144,6 +146,20 @@ export const sendSessionCompletionRequest = async ({ customer, therapist, sessio
  */
 export const sendSessionConfirmed = async ({ therapist, customer, session, booking }) => {
     return dispatch(therapist.user.email, sessionConfirmed, { therapist, customer, session, booking });
+};
+
+/**
+ * Customer requested a revision on a session — notify therapist
+ */
+export const sendSessionRevisionRequested = async ({ therapist, customer, session, booking, reason }) => {
+    return dispatch(therapist.user.email, sessionRevisionRequested, { therapist, customer, session, booking, reason });
+};
+
+/**
+ * Therapist resubmitted session after revision — notify customer
+ */
+export const sendSessionRevisionSubmitted = async ({ customer, therapist, session, booking }) => {
+    return dispatch(customer.user.email, sessionRevisionSubmitted, { customer, therapist, session, booking });
 };
 
 /**

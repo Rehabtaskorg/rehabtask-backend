@@ -1,6 +1,7 @@
 import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
-    getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession
+    getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession,
+    requestSessionRevision, submitSessionRevision
 } from "../services/session.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -91,6 +92,36 @@ const getTherapistSessionsController = async (req, res, next) => {
 }
 
 /**
+ * Customer requests revision on a completed session
+ */
+const requestRevisionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const customerId = req.user.customerProfile.id;
+        const session = await requestSessionRevision(sessionId, customerId, reason);
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Therapist resubmits a session after addressing revision
+ */
+const submitRevisionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { dueBy } = req.body;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await submitSessionRevision(sessionId, therapistId, { dueBy });
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
  * Schedule a pending session (therapist sets the date)
  */
 const scheduleSessionController = async (req, res, next) => {
@@ -113,4 +144,6 @@ export {
     getCustomerSessionsController,
     getTherapistSessionsController,
     scheduleSessionController,
+    requestRevisionController,
+    submitRevisionController,
 };
