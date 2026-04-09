@@ -100,7 +100,7 @@ export const getCustomerRequests = async (customerId, { status, serviceType, pag
         prisma.therapyRequest.findMany({
             where,
             include: {
-                offers: { include: { therapist: true, visitType: true } },
+                offers: { include: { therapist: true, visitTypeRef: true } },
                 patient: {
                     select: { id: true, fullName: true, email: true, phone: true }
                 },
@@ -132,7 +132,7 @@ export const getRequestById = async (requestId, userId) => {
                 where: user?.therapistProfile
                     ? { therapistId: user.therapistProfile.id }
                     : undefined,
-                include: { therapist: true, visitType: true },
+                include: { therapist: true, visitTypeRef: true },
                 orderBy: { createdAt: "desc" }
             },
             patient: {

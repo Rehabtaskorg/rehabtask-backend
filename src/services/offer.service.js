@@ -10,12 +10,17 @@ import {
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { resolveVisitPlan } from "../utils/visitPlan.js";
 
 /**
  * Create offer
  */
 export const createOffer = async (therapistId, data) => {
-    const { requestId, rate, sessionType, proposedDate, description, visitTypeId } = data;
+    const {
+        requestId, rate, sessionType, proposedDate, description, visitTypeId,
+        // Visit plan override (all optional). See src/utils/visitPlan.js.
+        visitType, visitsPerWeek, numberOfWeeks,
+    } = data;
 
     const request = await prisma.therapyRequest.findUnique({ where: { id: requestId } });
 
@@ -55,9 +60,14 @@ export const createOffer = async (therapistId, data) => {
             status: "pending",
             expiresAt,
             ...(visitTypeId && { visitTypeId }),
+            // Visit plan override — only persist if therapist provided it.
+            // Null/undefined leaves the columns NULL, meaning "accept customer's plan".
+            ...(visitType != null && { visitType }),
+            ...(visitsPerWeek != null && { visitsPerWeek }),
+            ...(numberOfWeeks != null && { numberOfWeeks }),
         },
         include: {
-            visitType: true,
+            visitTypeRef: true,
             therapist: true,
             request: {
                 include: {
@@ -127,7 +137,7 @@ export const getTherapistOffers = async (therapistId) => {
     const offers = await prisma.offer.findMany({
         where: { therapistId },
         include: {
-            visitType: true,
+            visitTypeRef: true,
             request: {
                 include: {
                     customer: true,
@@ -153,7 +163,7 @@ export const getOfferById = async (offerId, userId) => {
     const offer = await prisma.offer.findUnique({
         where: { id: offerId },
         include: {
-            visitType: true,
+            visitTypeRef: true,
             request: {
                 include: {
                     customer: true,
@@ -213,6 +223,13 @@ export const acceptOffer = async (offerId, customerId) => {
         throw new Error("Offer has expired");
     }
 
+    // Resolve the effective visit plan BEFORE the transaction so we snapshot it
+    // onto the booking row (copy-on-accept). From this moment forward the booking
+    // is the authoritative source for payment amount and session materialization.
+    // If the therapist left all override fields NULL, this falls back to the
+    // request's values — preserving exact legacy behavior for non-override offers.
+    const effectivePlan = resolveVisitPlan({ offer, request: offer.request });
+
     // All DB mutations in a single transaction to prevent partial state corruption
     const { updatedOffer, booking } = await prisma.$transaction(async (tx) => {
         // Update offer to accepted — the status check above + transaction isolation
@@ -250,6 +267,10 @@ export const acceptOffer = async (offerId, customerId) => {
                     sessionType: offer.sessionType,
                     status: "accepted",
                     patientId: offer.request.patientId || null,
+                    // Copy-on-accept: authoritative visit plan snapshot.
+                    visitType:     effectivePlan.visitType,
+                    visitsPerWeek: effectivePlan.visitsPerWeek,
+                    numberOfWeeks: effectivePlan.numberOfWeeks,
                 },
                 include: {
                     therapist: {
@@ -352,7 +373,12 @@ export const acceptOffer = async (offerId, customerId) => {
  * Revise an offer that has status "change_requested"
  */
 export const reviseOffer = async (therapistId, offerId, data) => {
-    const { rate, sessionType, proposedDate, description, visitTypeId } = data;
+    const {
+        rate, sessionType, proposedDate, description, visitTypeId,
+        // Visit plan override — on revise, `null` explicitly clears a previous override,
+        // `undefined` leaves it unchanged. See createOffer for semantics.
+        visitType, visitsPerWeek, numberOfWeeks,
+    } = data;
 
     const existing = await prisma.offer.findUnique({
         where: { id: offerId },
@@ -384,9 +410,13 @@ export const reviseOffer = async (therapistId, offerId, data) => {
             expiresAt,
             changeRequestNote: null,
             ...(visitTypeId !== undefined && { visitTypeId }),
+            // `!== undefined` allows explicit null to clear the override.
+            ...(visitType !== undefined && { visitType }),
+            ...(visitsPerWeek !== undefined && { visitsPerWeek }),
+            ...(numberOfWeeks !== undefined && { numberOfWeeks }),
         },
         include: {
-            visitType: true,
+            visitTypeRef: true,
             therapist: true,
             request: {
                 include: {
