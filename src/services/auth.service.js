@@ -132,7 +132,15 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
             });
 
             // Create 30-day trial subscription with Standard limits
+            logger.info("[DEBUG register] About to create trial subscription", {
+                userId: createdUser.id,
+                customerProfileId: createdUser.customerProfile?.id,
+                email: normalizedEmail,
+            });
             await createTrialSubscription(createdUser.customerProfile.id, db);
+            logger.info("[DEBUG register] Trial subscription created inside transaction", {
+                customerProfileId: createdUser.customerProfile?.id,
+            });
 
             return createdUser;
         });

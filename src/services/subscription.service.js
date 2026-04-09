@@ -31,7 +31,17 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
     const trialEndsAt = new Date(Date.now() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
     const { requestLimit, therapistLimit } = PLAN_CONFIG.standard;
 
-    return tx.subscription.create({
+    logger.info("[DEBUG createTrialSubscription] Creating trial", {
+        customerId,
+        planType: "standard",
+        status: "trialing",
+        trialEndsAt: trialEndsAt.toISOString(),
+        trialDurationDays: TRIAL_DURATION_DAYS,
+        requestLimit,
+        therapistLimit,
+    });
+
+    const created = await tx.subscription.create({
         data: {
             customerId,
             planType: "standard",
@@ -41,6 +51,16 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
             requestLimit,
         },
     });
+
+    logger.info("[DEBUG createTrialSubscription] Created row", {
+        id: created.id,
+        customerId: created.customerId,
+        planType: created.planType,
+        status: created.status,
+        trialEndsAt: created.trialEndsAt,
+    });
+
+    return created;
 };
 
 /**
@@ -48,6 +68,8 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
  * Lazy creation: if no subscription exists (existing user), auto-creates a Free plan.
  */
 export const getActiveSubscription = async (customerId) => {
+    logger.info("[DEBUG getActiveSubscription] Looking up", { customerId });
+
     const subscription = await prisma.subscription.findFirst({
         where: {
             customerId,
@@ -56,11 +78,38 @@ export const getActiveSubscription = async (customerId) => {
         orderBy: { createdAt: "desc" },
     });
 
-    if (subscription) return subscription;
+    if (subscription) {
+        logger.info("[DEBUG getActiveSubscription] Found existing", {
+            id: subscription.id,
+            customerId: subscription.customerId,
+            planType: subscription.planType,
+            status: subscription.status,
+            trialEndsAt: subscription.trialEndsAt,
+            createdAt: subscription.createdAt,
+        });
+        return subscription;
+    }
+
+    // Also check: is there ANY subscription for this customer (including non-active)?
+    const anySub = await prisma.subscription.findFirst({
+        where: { customerId },
+        orderBy: { createdAt: "desc" },
+    });
+    logger.warn("[DEBUG getActiveSubscription] No active subscription found — falling through to lazy Free creation", {
+        customerId,
+        anySubExists: !!anySub,
+        anySubSnapshot: anySub ? {
+            id: anySub.id,
+            planType: anySub.planType,
+            status: anySub.status,
+            trialEndsAt: anySub.trialEndsAt,
+            createdAt: anySub.createdAt,
+        } : null,
+    });
 
     // Lazy creation for existing users with no subscription
     const { requestLimit, therapistLimit } = PLAN_CONFIG.free;
-    return prisma.subscription.create({
+    const lazy = await prisma.subscription.create({
         data: {
             customerId,
             planType: "free",
@@ -69,6 +118,8 @@ export const getActiveSubscription = async (customerId) => {
             requestLimit,
         },
     });
+    logger.warn("[DEBUG getActiveSubscription] Lazy-created FREE subscription", { id: lazy.id, customerId });
+    return lazy;
 };
 
 /**
