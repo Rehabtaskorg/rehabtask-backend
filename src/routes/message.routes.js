@@ -64,7 +64,6 @@ router.get("/conversations", conversationsRateLimiter, getConversationsControlle
  */
 router.get("/unread-count", getUnreadCountController);
 
-// ─── Phase 3: conversationId-based routes ───────────────────────
 
 /**
  * POST /api/messages/c/:conversationId/attachments
@@ -100,8 +99,6 @@ router.get("/c/:conversationId", getMessagesByConversationController);
  * Mark messages as read by conversationId (Phase 3)
  */
 router.put("/c/:conversationId/read", markAsReadByConversationController);
-
-// ─── Legacy routes (kept for backward compatibility) ────────────
 
 /**
  * GET /api/messages/:contextType/:contextId/context
