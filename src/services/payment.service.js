@@ -1057,9 +1057,11 @@ const getTherapistPayoutHistory = async (therapistId) => {
                 status: { in: ["released", "partially_released", "escrowed"] },
             },
             include: {
+                sessionPayouts: { orderBy: { createdAt: "desc" } },
                 booking: {
                     include: {
                         customer: true,
+                        sessions: { select: { id: true, status: true } },
                         offer: {
                             include: {
                                 request: true,
