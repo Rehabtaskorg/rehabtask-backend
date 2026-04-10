@@ -1,5 +1,5 @@
 import { prisma } from "../config/prisma.js";
-import { releasePayment } from "../services/payment.service.js";
+import { releaseSessionPayout } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
 
 /**
@@ -7,8 +7,8 @@ import { logger } from "../config/logger.js";
  * confirmed by customer within AUTO_CONFIRM_HOURS (default: 72)
  * Runs every 1 hour via jobs/index.js
  *
- * Also recovers stuck sessions: confirmed_by_customer but payment still escrowed
- * (caused by prior releasePayment failures).
+ * Also recovers stuck sessions: confirmed_by_customer but payout never created
+ * (caused by prior releaseSessionPayout failures).
  */
 export const runAutoConfirm = async () => {
     const hours = parseInt(process.env.AUTO_CONFIRM_HOURS || "72", 10);
@@ -21,7 +21,12 @@ export const runAutoConfirm = async () => {
             completedAt: { lt: cutoff },
         },
         include: {
-            booking: true,
+            booking: {
+                include: {
+                    therapist: true,
+                    payment: true,
+                },
+            },
         },
     });
 
@@ -57,12 +62,28 @@ export const runAutoConfirm = async () => {
                     return false;
                 });
 
-                // Only release payment when ALL sessions are confirmed
-                if (allConfirmed) {
-                    await releasePayment(session.id);
-                    logger.info(`[AutoConfirm] All sessions confirmed — payment released for booking ${session.bookingId}`);
-                } else {
-                    logger.info(`[AutoConfirm] Auto-confirmed session ${session.id}, waiting for remaining sessions`);
+                // Per-session payout — release for this session immediately
+                const payment = session.booking.payment;
+                if (payment && ["escrowed", "partially_released"].includes(payment.status)) {
+                    try {
+                        // Refresh payment to get latest releasedAmount
+                        const currentPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
+                        await releaseSessionPayout({
+                            session: { ...session, status: "confirmed_by_customer" },
+                            payment: currentPayment,
+                            booking: session.booking,
+                            isLast: allConfirmed,
+                        });
+                        logger.info(`[AutoConfirm] Per-session payout released for session ${session.id}`, {
+                            bookingId: session.bookingId,
+                            isLast: allConfirmed,
+                        });
+                    } catch (payoutErr) {
+                        logger.error(`[AutoConfirm] Per-session payout failed for session ${session.id}`, {
+                            bookingId: session.bookingId,
+                            error: payoutErr.message,
+                        });
+                    }
                 }
             })
         );
@@ -73,41 +94,59 @@ export const runAutoConfirm = async () => {
         }
     }
 
-    // ── Phase 2: Recover stuck bookings ─────────────────────────────────
-    // Find bookings where ALL sessions are confirmed but payment was never
-    // released (caused by a prior releasePayment failure). Without this
-    // recovery the therapist's money stays in escrow forever.
-    // CRITICAL: Only release when EVERY session in the booking is confirmed.
-    const stuckBookings = await prisma.booking.findMany({
+    // Find confirmed sessions that never got a SessionPayout (caused by a
+    // prior releaseSessionPayout failure). Without this recovery the
+    // therapist's money stays in escrow forever.
+    const stuckSessions = await prisma.session.findMany({
         where: {
-            status: "completed",
-            payment: { status: { in: ["escrowed", "partially_released"] } },
+            status: "confirmed_by_customer",
+            payout: null, // no SessionPayout record exists
+            booking: {
+                payment: { status: { in: ["escrowed", "partially_released"] } },
+            },
         },
         include: {
-            payment: true,
-            sessions: { orderBy: { sessionNumber: "asc" } },
+            booking: {
+                include: {
+                    therapist: true,
+                    payment: true,
+                    sessions: { orderBy: { sessionNumber: "asc" } },
+                },
+            },
         },
     });
 
-    if (stuckBookings.length > 0) {
-        logger.warn(`[AutoConfirm] Found ${stuckBookings.length} stuck booking(s) with unreleased payments, attempting recovery`);
+    if (stuckSessions.length > 0) {
+        logger.warn(`[AutoConfirm] Found ${stuckSessions.length} stuck session(s) without payouts, attempting recovery`);
 
         const recoveryResults = await Promise.allSettled(
-            stuckBookings.map(async (booking) => {
-                const allConfirmed = booking.sessions.every(s => s.status === "confirmed_by_customer");
-                if (!allConfirmed) {
-                    logger.warn(`[AutoConfirm] Booking ${booking.id} marked completed but has unconfirmed sessions — skipping release`);
-                    return;
-                }
-                const lastSession = booking.sessions[booking.sessions.length - 1];
-                await releasePayment(lastSession.id);
-                logger.info(`[AutoConfirm] Recovered stuck payment for booking ${booking.id}`);
+            stuckSessions.map(async (session) => {
+                const allSessions = session.booking.sessions;
+                const allConfirmed = allSessions.every(s => s.status === "confirmed_by_customer");
+                // This is the last payout if all sessions are confirmed and this
+                // is the last confirmed session by sessionNumber
+                const confirmedSorted = allSessions
+                    .filter(s => s.status === "confirmed_by_customer")
+                    .sort((a, b) => (a.sessionNumber ?? 0) - (b.sessionNumber ?? 0));
+                const isLast = allConfirmed && confirmedSorted[confirmedSorted.length - 1]?.id === session.id;
+
+                const currentPayment = await prisma.payment.findUnique({ where: { id: session.booking.payment.id } });
+                await releaseSessionPayout({
+                    session,
+                    payment: currentPayment,
+                    booking: session.booking,
+                    isLast,
+                });
+                logger.info(`[AutoConfirm] Recovered stuck payout for session ${session.id}`, {
+                    bookingId: session.bookingId,
+                    isLast,
+                });
             })
         );
 
         const recoveryFailed = recoveryResults.filter((r) => r.status === "rejected").length;
         if (recoveryFailed > 0) {
-            logger.error(`[AutoConfirm] ${recoveryFailed} stuck booking(s) failed recovery — manual intervention required`);
+            logger.error(`[AutoConfirm] ${recoveryFailed} stuck session(s) failed recovery — manual intervention required`);
         }
     }
 }

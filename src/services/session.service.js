@@ -8,7 +8,7 @@ import {
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
 import { logAction } from "./audit.service.js";
-import { releasePayment } from "./payment.service.js";
+import { releaseSessionPayout } from "./payment.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
@@ -211,8 +211,8 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                 actorId: confirmCustomerUserId,
                 recipientId: confirmTherapistUserId,
                 content: allDone
-                    ? `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}). All sessions complete — payment released.`
-                    : `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}).`,
+                    ? `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}). All sessions complete — final payout released.`
+                    : `Session confirmed (${updatedSession._confirmedCount}/${updatedSession._totalSessions}). Payout released for this session.`,
                 systemType: "session_confirmed",
                 bookingId: session.bookingId,
             })
@@ -231,25 +231,37 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         logger.error('[SessionService] Session confirmed notification failed', { error: err.message });
     });
 
-    // Release payment only when ALL sessions are confirmed
-    if (updatedSession._allConfirmed) {
-        try {
-            await releasePayment(sessionId);
-            logger.info("[Session] All sessions confirmed — payment released", {
-                bookingId: session.bookingId,
-                totalSessions: updatedSession._totalSessions,
+    // Per-session payout: release the therapist's pro-rated share for THIS
+    // session immediately. The last confirmed session gets the remainder so
+    // the total across all SessionPayout rows equals payment.therapistPayout.
+    try {
+        const paymentRecord = await prisma.payment.findUnique({
+            where: { bookingId: session.bookingId },
+        });
+        if (paymentRecord && ["escrowed", "partially_released"].includes(paymentRecord.status)) {
+            const bookingWithTherapist = await prisma.booking.findUnique({
+                where: { id: session.bookingId },
+                include: { therapist: true },
             });
-        } catch (err) {
-            logger.error("[Session] Payment release failed after all sessions confirmed", {
+            await releaseSessionPayout({
+                session: updatedSession,
+                payment: paymentRecord,
+                booking: bookingWithTherapist,
+                isLast: updatedSession._allConfirmed,
+            });
+            logger.info("[Session] Per-session payout released", {
                 bookingId: session.bookingId,
-                error: err.message,
+                sessionId,
+                confirmed: updatedSession._confirmedCount,
+                total: updatedSession._totalSessions,
+                isLast: updatedSession._allConfirmed,
             });
         }
-    } else {
-        logger.info("[Session] Session confirmed, waiting for remaining", {
+    } catch (err) {
+        logger.error("[Session] Per-session payout failed", {
             bookingId: session.bookingId,
-            confirmed: updatedSession._confirmedCount,
-            total: updatedSession._totalSessions,
+            sessionId,
+            error: err.message,
         });
     }
 

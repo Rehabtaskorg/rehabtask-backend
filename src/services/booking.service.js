@@ -22,8 +22,11 @@ export const getBookingById = async (bookingId, userId) => {
                     request: { include: { visitTypeRef: true } },
                 },
             },
-            payment: true,
-            sessions: { orderBy: { sessionNumber: "asc" } },
+            payment: { include: { sessionPayouts: true } },
+            sessions: {
+                orderBy: { sessionNumber: "asc" },
+                include: { payout: true },
+            },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },
@@ -59,11 +62,14 @@ export const getCustomerBookings = async (customerId) => {
                     request: { include: { visitTypeRef: true } },
                 },
             },
-            payment: true,
+            payment: { include: { sessionPayouts: true } },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },
-            sessions: { orderBy: { sessionNumber: "asc" } },
+            sessions: {
+                orderBy: { sessionNumber: "asc" },
+                include: { payout: true },
+            },
         },
         orderBy: { scheduledDate: "desc" },
     });
@@ -86,8 +92,11 @@ export const getTherapistBookings = async (therapistId) => {
                     request: { include: { visitTypeRef: true } },
                 },
             },
-            payment: true,
-            sessions: { orderBy: { sessionNumber: "asc" } },
+            payment: { include: { sessionPayouts: true } },
+            sessions: {
+                orderBy: { sessionNumber: "asc" },
+                include: { payout: true },
+            },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
             },

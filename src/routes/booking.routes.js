@@ -3,7 +3,8 @@ import {
     getBookingByIdController, getCustomerBookingsController,
     getTherapistBookingsController,
     rescheduleBookingController,
-    respondToRescheduleController
+    respondToRescheduleController,
+    finalizeBookingController,
 } from "../controllers/booking.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -16,5 +17,6 @@ router.get("/therapist", authenticate, authorize(["therapist"]), getTherapistBoo
 router.get("/:bookingId", authenticate, getBookingByIdController);
 router.post("/:bookingId/reschedule", authenticate, authorize(["therapist"]), validate(rescheduleSchema), rescheduleBookingController);
 router.post("/:bookingId/reschedule/respond", authenticate, authorize(["customer"]), validate(respondToRescheduleSchema), respondToRescheduleController)
+router.post("/:bookingId/finalize", authenticate, authorize(["therapist"]), finalizeBookingController);
 
 export default router;

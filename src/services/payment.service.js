@@ -552,6 +552,378 @@ const releasePayment = async (sessionId) => {
 }
 
 /**
+ * Release a per-session payout for a single confirmed session.
+ *
+ * Called by confirmSessionByCustomer after each session is confirmed.
+ * Creates a Stripe transfer for the pro-rated therapist share, records a
+ * SessionPayout audit row, and increments payment.releasedAmount.
+ *
+ * Rounding strategy: sessions 1..N-1 get floor(perSessionPayout). The
+ * last session (isLast=true) gets payment.therapistPayout - alreadyReleased
+ * so the total is exact to the penny.
+ *
+ * @param {object} opts
+ * @param {object} opts.session - Session row (must be confirmed_by_customer)
+ * @param {object} opts.payment - Payment row for the booking
+ * @param {object} opts.booking - Booking row with therapist relation
+ * @param {boolean} opts.isLast - Whether this is the final payout for the booking
+ * @returns {Promise<object>} The created SessionPayout record
+ */
+const releaseSessionPayout = async ({ session, payment, booking, isLast }) => {
+    // Guard: already paid (idempotent)
+    const existingPayout = await prisma.sessionPayout.findUnique({
+        where: { sessionId: session.id },
+    });
+    if (existingPayout) {
+        logger.info("[PaymentService] Session payout already exists, skipping", {
+            sessionId: session.id,
+            payoutId: existingPayout.id,
+        });
+        return existingPayout;
+    }
+
+    const therapist = booking.therapist;
+    if (!therapist.stripeAccountId) {
+        throw new Error("Therapist has not connected Stripe account");
+    }
+
+    if (!["escrowed", "partially_released"].includes(payment.status)) {
+        throw new Error(`Payment not in a releasable state (current: ${payment.status})`);
+    }
+
+    const alreadyReleased = parseFloat(payment.releasedAmount ?? 0);
+    const totalTherapistPayout = parseFloat(payment.therapistPayout);
+    const totalAmount = parseFloat(payment.amount);
+    const totalFee = parseFloat(payment.platformFee);
+    const perSessionRate = parseFloat(booking.rate);
+
+    // Get sum of previous session payouts for precise remainder calculation
+    const previousPayouts = await prisma.sessionPayout.findMany({
+        where: { paymentId: payment.id },
+    });
+    const previousPayoutSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0);
+    const previousFeeSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.platformFee), 0);
+    const previousAmountSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    let perSessionTherapistPayout;
+    let perSessionFee;
+    let perSessionAmount;
+
+    if (isLast) {
+        // Last payout gets the exact remainder — no rounding error
+        perSessionTherapistPayout = parseFloat((totalTherapistPayout - previousPayoutSum).toFixed(2));
+        perSessionFee = parseFloat((totalFee - previousFeeSum).toFixed(2));
+        perSessionAmount = parseFloat((totalAmount - previousAmountSum).toFixed(2));
+    } else {
+        // Standard per-session calculation with floor for predictability
+        perSessionAmount = perSessionRate;
+        perSessionFee = Math.floor(perSessionRate * (totalFee / totalAmount) * 100) / 100;
+        perSessionTherapistPayout = parseFloat((perSessionAmount - perSessionFee).toFixed(2));
+    }
+
+    // Safety: never transfer a negative or zero amount
+    if (perSessionTherapistPayout <= 0) {
+        logger.warn("[PaymentService] Per-session payout is zero or negative, skipping transfer", {
+            sessionId: session.id,
+            perSessionTherapistPayout,
+            isLast,
+        });
+        return null;
+    }
+
+    // Create Stripe transfer
+    let transfer;
+    try {
+        transfer = await stripe.transfers.create({
+            amount: Math.round(perSessionTherapistPayout * 100),
+            currency: "usd",
+            destination: therapist.stripeAccountId,
+            metadata: {
+                paymentId: payment.id,
+                sessionId: session.id,
+                bookingId: booking.id,
+                sessionNumber: session.sessionNumber,
+                isPerSession: "true",
+            },
+            description: `Session ${session.sessionNumber} payout for booking ${booking.id}`,
+        }, {
+            idempotencyKey: `session-payout-${session.id}`,
+        });
+    } catch (stripeError) {
+        logger.error("[PaymentService] Per-session transfer failed", {
+            sessionId: session.id,
+            error: stripeError.message,
+        });
+        throw new Error(`Failed to transfer session payout: ${stripeError.message}`);
+    }
+
+    // Create the SessionPayout record + update payment.releasedAmount in a transaction
+    const newReleasedAmount = parseFloat((alreadyReleased + perSessionTherapistPayout).toFixed(2));
+    const allSessionsPaid = isLast || newReleasedAmount >= totalTherapistPayout - 0.01;
+
+    const sessionPayout = await prisma.$transaction(async (tx) => {
+        const payout = await tx.sessionPayout.create({
+            data: {
+                sessionId: session.id,
+                paymentId: payment.id,
+                stripeTransferId: transfer.id,
+                amount: perSessionAmount,
+                platformFee: perSessionFee,
+                therapistPayout: perSessionTherapistPayout,
+            },
+        });
+
+        await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+                releasedAmount: newReleasedAmount,
+                status: allSessionsPaid ? "released" : "partially_released",
+                ...(allSessionsPaid && { releasedAt: new Date() }),
+            },
+        });
+
+        return payout;
+    });
+
+    // Audit event
+    logSystemEvent({
+        action: "payment.released_to_therapist",
+        entityType: "session_payout",
+        entityId: sessionPayout.id,
+        changes: {
+            sessionId: session.id,
+            bookingId: booking.id,
+            therapistPayout: perSessionTherapistPayout,
+            stripeTransferId: transfer.id,
+            sessionNumber: session.sessionNumber,
+            isLast,
+        },
+    });
+
+    logger.info("[PaymentService] Per-session payout released", {
+        sessionId: session.id,
+        sessionNumber: session.sessionNumber,
+        bookingId: booking.id,
+        amount: perSessionTherapistPayout,
+        transferId: transfer.id,
+        isLast,
+        newReleasedAmount,
+    });
+
+    return sessionPayout;
+};
+
+/**
+ * Finalize an incomplete booking — pay out all confirmed-but-unpaid sessions
+ * and refund the customer for undelivered sessions.
+ *
+ * Therapist-only action. Used when a care series is abandoned (patient stops
+ * showing up, care plan changes, etc.).
+ *
+ * @param {string} bookingId
+ * @param {string} therapistId - for authorization
+ * @returns {Promise<object>} { booking, payment, paidSessions, refundedSessions, refundAmount }
+ */
+const finalizeBooking = async (bookingId, therapistId) => {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+            therapist: { include: { user: { select: { id: true, email: true } } } },
+            customer: { include: { user: { select: { id: true, email: true } } } },
+            payment: { include: { sessionPayouts: true } },
+            sessions: { orderBy: { sessionNumber: "asc" } },
+        },
+    });
+
+    if (!booking) throw new Error("Booking not found");
+    if (booking.therapistId !== therapistId) throw new Error("Unauthorized");
+
+    if (!["confirmed", "in_progress"].includes(booking.status)) {
+        throw new Error(`Booking cannot be finalized in '${booking.status}' status`);
+    }
+
+    const payment = booking.payment;
+    if (!payment || !["escrowed", "partially_released"].includes(payment.status)) {
+        throw new Error("Payment not in a releasable state");
+    }
+
+    const confirmedSessions = booking.sessions.filter(s => s.status === "confirmed_by_customer");
+    const undeliveredSessions = booking.sessions.filter(s => s.status !== "confirmed_by_customer" && s.status !== "cancelled");
+
+    if (confirmedSessions.length === 0) {
+        throw new Error("No confirmed sessions to finalize. Use cancellation instead.");
+    }
+    if (undeliveredSessions.length === 0) {
+        throw new Error("All sessions are confirmed. This booking should be completed, not finalized.");
+    }
+
+    // Find confirmed sessions that haven't been paid yet
+    const paidSessionIds = new Set(booking.payment.sessionPayouts.map(p => p.sessionId));
+    const unpaidConfirmedSessions = confirmedSessions.filter(s => !paidSessionIds.has(s.id));
+
+    // Pay out each unpaid confirmed session
+    const newPayouts = [];
+    for (let i = 0; i < unpaidConfirmedSessions.length; i++) {
+        const session = unpaidConfirmedSessions[i];
+        const isLastDeliveredPayout = i === unpaidConfirmedSessions.length - 1;
+
+        // Refresh payment to get current releasedAmount after each payout.
+        // Note: `booking` is NOT refreshed — only booking.rate and
+        // booking.therapist.stripeAccountId are read by releaseSessionPayout,
+        // neither of which changes during this loop.
+        const currentPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
+
+        // For finalize, "isLast" means it's the last of the DELIVERED sessions.
+        // We don't want the last-session-gets-remainder logic to use the FULL
+        // therapistPayout (which includes undelivered sessions). Instead we cap
+        // the total released to deliveredSessions × perSessionRate × (1 - fee%).
+        const payout = await releaseSessionPayout({
+            session,
+            payment: currentPayment,
+            booking,
+            isLast: false, // never use remainder logic during finalize — refund handles the rest
+        });
+        if (payout) newPayouts.push(payout);
+    }
+
+    // Cancel all undelivered sessions
+    await prisma.session.updateMany({
+        where: {
+            id: { in: undeliveredSessions.map(s => s.id) },
+        },
+        data: {
+            status: "cancelled",
+            cancellationReason: "Series finalized by therapist",
+        },
+    });
+
+    // Calculate refund amount for undelivered sessions
+    const perSessionRate = parseFloat(booking.rate);
+    const refundAmount = parseFloat((undeliveredSessions.length * perSessionRate).toFixed(2));
+
+    // Refresh payment state after all payouts
+    const refreshedPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
+    const totalReleased = parseFloat(refreshedPayment.releasedAmount ?? 0);
+
+    // Issue Stripe refund for undelivered portion
+    let refund = null;
+    if (refundAmount > 0 && payment.stripePaymentIntentId) {
+        try {
+            refund = await stripe.refunds.create({
+                payment_intent: payment.stripePaymentIntentId,
+                amount: Math.round(refundAmount * 100),
+                metadata: {
+                    bookingId: booking.id,
+                    reason: "series_finalized",
+                    undeliveredSessions: undeliveredSessions.length,
+                },
+            }, {
+                idempotencyKey: `finalize-refund-${booking.id}`,
+            });
+        } catch (stripeError) {
+            logger.error("[PaymentService] CRITICAL: Finalization refund failed — payouts already processed, refund needs manual intervention", {
+                bookingId: booking.id,
+                paymentId: payment.id,
+                refundAmount,
+                error: stripeError.message,
+            });
+            // Audit trail so support can find and resolve these
+            logSystemEvent({
+                action: "payment.refund_failed",
+                entityType: "payment",
+                entityId: payment.id,
+                changes: {
+                    bookingId: booking.id,
+                    refundAmount,
+                    reason: "finalize_refund_failed",
+                    stripeError: stripeError.message,
+                    payoutsCompleted: true,
+                },
+            });
+            throw new Error(`Refund failed: ${stripeError.message}. Payouts were processed — contact support for the refund.`);
+        }
+    }
+
+    // Update payment and booking status
+    const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+            status: "released",
+            releasedAt: new Date(),
+            ...(refund && {
+                stripeRefundId: refund.id,
+                refundedAmount: refundAmount,
+                refundedAt: new Date(),
+            }),
+        },
+    });
+
+    await prisma.booking.update({
+        where: { id: booking.id },
+        data: { status: "finalized" },
+    });
+
+    // Audit events
+    logSystemEvent({
+        action: "booking.finalized",
+        entityType: "booking",
+        entityId: booking.id,
+        changes: {
+            confirmedSessions: confirmedSessions.length,
+            undeliveredSessions: undeliveredSessions.length,
+            totalReleased,
+            refundAmount,
+            stripeRefundId: refund?.id,
+        },
+    });
+
+    logSystemEvent({
+        action: "admin_fee.applied",
+        entityType: "payment",
+        entityId: payment.id,
+        changes: {
+            totalAmount: parseFloat(payment.amount),
+            platformFee: parseFloat(payment.platformFee),
+            therapistPayout: totalReleased,
+            refundedAmount: refundAmount,
+        },
+    });
+
+    // Notify therapist
+    sendPayoutConfirmation({
+        therapist: booking.therapist,
+        payment: updatedPayment,
+        booking,
+    }).catch(() => {});
+
+    // Notify customer about the refund
+    if (refund) {
+        sendPaymentReleasedToCustomer({
+            customer: booking.customer,
+            therapist: booking.therapist,
+            payment: updatedPayment,
+            booking,
+        }).catch(() => {});
+    }
+
+    logger.info("[PaymentService] Booking finalized", {
+        bookingId: booking.id,
+        confirmedSessions: confirmedSessions.length,
+        undeliveredSessions: undeliveredSessions.length,
+        totalReleased,
+        refundAmount,
+    });
+
+    return {
+        booking: { ...booking, status: "finalized" },
+        payment: updatedPayment,
+        paidSessions: confirmedSessions.length,
+        refundedSessions: undeliveredSessions.length,
+        refundAmount,
+    };
+};
+
+/**
  * Process refund
  */
 const processRefund = async (bookingId, userId, reason) => {
@@ -1121,6 +1493,8 @@ export {
     createPaymentIntent,
     handlePaymentSuccess,
     releasePayment,
+    releaseSessionPayout,
+    finalizeBooking,
     processRefund,
     getCustomerPaymentHistory,
     getTherapistPayoutHistory,

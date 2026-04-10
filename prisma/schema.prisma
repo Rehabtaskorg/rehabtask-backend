@@ -352,9 +352,10 @@ model Session {
   revisionCount           Int       @default(0) @map("revision_count")
   revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  booking   Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payout    SessionPayout?
 
   @@index([bookingId])
   @@index([status, completedAt])
@@ -377,11 +378,14 @@ model Payment {
   escrowedAt            DateTime?        @map("escrowed_at") @db.Timestamptz(3)
   releasedAt            DateTime?        @map("released_at") @db.Timestamptz(3)
   refundedAt            DateTime?        @map("refunded_at") @db.Timestamptz(3)
+  stripeRefundId        String?          @unique @map("stripe_refund_id") @db.VarChar(255)
+  refundedAmount        Decimal?         @map("refunded_amount") @db.Decimal(10, 2)
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking               Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   customer              CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   therapist             TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  sessionPayouts        SessionPayout[]
 
   @@index([bookingId])
   @@index([stripePaymentIntentId])
@@ -389,6 +393,24 @@ model Payment {
   @@index([therapistId, status, releasedAt])
   @@index([status, escrowedAt])
   @@map("payments")
+}
+
+model SessionPayout {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @unique @map("session_id") @db.Uuid
+  paymentId        String   @map("payment_id") @db.Uuid
+  stripeTransferId String   @unique @map("stripe_transfer_id") @db.VarChar(255)
+  amount           Decimal  @db.Decimal(10, 2)
+  platformFee      Decimal  @map("platform_fee") @db.Decimal(10, 2)
+  therapistPayout  Decimal  @map("therapist_payout") @db.Decimal(10, 2)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([stripeTransferId])
+  @@map("session_payouts")
 }
 
 model DirectConversation {
@@ -696,6 +718,7 @@ enum BookingStatus {
   completed
   cancelled
   reschedule_requested
+  finalized
 }
 
 enum SessionStatus {
