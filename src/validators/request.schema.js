@@ -9,11 +9,15 @@ export const createRequestSchema = z.object({
     longitude: z.number({ coerce: true }),
     patientId: z.string().uuid().optional().nullable(),
     rate: z.number({ coerce: true }).positive("Rate must be a positive number"),
-    visitType: z.string().trim().min(1, "Visit type is required").max(100),
+    visitType: z.string().trim().min(1).max(100).optional().nullable(),
+    visitTypeId: z.string().uuid().optional().nullable(),
     emr: z.string().trim().min(1, "EMR system is required").max(100),
     visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
-});
+}).refine(
+    (data) => Boolean(data.visitTypeId) || Boolean(data.visitType),
+    { message: "Visit type is required", path: ["visitTypeId"] }
+);
 
 export const updateRequestSchema = z.object({
     serviceType: z.string().trim().min(1).max(100).optional(),
@@ -23,7 +27,8 @@ export const updateRequestSchema = z.object({
     latitude: z.number({ coerce: true }).optional(),
     longitude: z.number({ coerce: true }).optional(),
     rate: z.number({ coerce: true }).positive("Rate must be a positive number").optional(),
-    visitType: z.string().trim().min(1).max(100).optional(),
+    visitType: z.string().trim().min(1).max(100).optional().nullable(),
+    visitTypeId: z.string().uuid().optional().nullable(),
     emr: z.string().trim().min(1).max(100).optional(),
     visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),

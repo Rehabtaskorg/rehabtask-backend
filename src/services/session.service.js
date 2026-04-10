@@ -1,7 +1,12 @@
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
-import { sendSessionCompletionRequest, sendSessionConfirmed } from "./email.service.js";
+import {
+    sendSessionCompletionRequest,
+    sendSessionConfirmed,
+    sendSessionRevisionRequested,
+    sendSessionRevisionSubmitted,
+} from "./email.service.js";
 import { logAction } from "./audit.service.js";
 import { releasePayment } from "./payment.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
@@ -38,6 +43,13 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         throw new BadRequestError(
             "You must connect and complete your Stripe account setup before marking a session as complete.",
             "STRIPE_NOT_CONNECTED"
+        );
+    }
+
+    if (session.status === "in_revision") {
+        throw new BadRequestError(
+            "This session has a pending revision request. Use the resubmit flow instead.",
+            "SESSION_IN_REVISION"
         );
     }
 
@@ -133,6 +145,15 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     // Idempotent: if already confirmed by customer, return as-is.
     if (session.status === "confirmed_by_customer") {
         return session;
+    }
+
+    // Block confirmation while a revision is pending — the customer must
+    // wait for the therapist to resubmit before they can confirm.
+    if (session.status === "in_revision") {
+        throw new BadRequestError(
+            "This session is awaiting therapist response to your revision request. You can confirm once they resubmit.",
+            "SESSION_IN_REVISION"
+        );
     }
 
     if (session.status !== "completed_by_therapist") {
@@ -234,6 +255,226 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
 
     return updatedSession;
 }
+
+/**
+ * Customer requests revision on a session the therapist marked complete.
+ *
+ * Pauses the auto-confirm cron implicitly by moving the session out of
+ * `completed_by_therapist` — the cron's where clause filters on that exact
+ * status, so once we're in `in_revision` the cron skips this row entirely.
+ * No new timer state, no scheduled job to cancel.
+ *
+ * Per product decision: unlimited rounds, unlimited pause. revisionCount is
+ * tracked for audit/analytics, not enforced.
+ */
+export const requestSessionRevision = async (sessionId, customerId, reason) => {
+    if (!reason || typeof reason !== "string" || reason.trim().length < 10) {
+        throw new BadRequestError(
+            "Please describe what needs to change in at least 10 characters.",
+            "REVISION_REASON_TOO_SHORT"
+        );
+    }
+
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { include: { user: { select: { id: true, email: true } } } },
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new Error("Session not found");
+    }
+
+    if (session.booking.customerId !== customerId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (session.status !== "completed_by_therapist") {
+        throw new BadRequestError(
+            "You can only request a revision after the therapist marks the session complete.",
+            "INVALID_SESSION_STATUS"
+        );
+    }
+
+    const trimmedReason = reason.trim();
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: {
+            status: "in_revision",
+            revisionRequestedAt: new Date(),
+            revisionReason: trimmedReason,
+            revisionCount: { increment: 1 },
+            // Clear any prior revisionDueBy so the therapist sets a fresh one
+            revisionDueBy: null,
+        },
+    });
+
+    // Audit
+    logAction({
+        actorId: session.booking.customer.user.id,
+        action: "session.revision_requested",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            revisionRound: updatedSession.revisionCount,
+            reason: trimmedReason,
+        },
+    });
+
+    // System message in the booking conversation — this is where the
+    // therapist will see the request inline alongside any chat attachments
+    // they've already shared with the customer.
+    const customerUserId = session.booking.customer.user.id;
+    const therapistUserId = session.booking.therapist.user.id;
+    findOrCreateDirectConversation(customerUserId, therapistUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: customerUserId,
+                recipientId: therapistUserId,
+                content: `Customer requested revision: "${trimmedReason}"`,
+                systemType: "session_revision_requested",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_revision_requested) failed", { error: err.message });
+        });
+
+    // Notify therapist by email (fire-and-forget)
+    sendSessionRevisionRequested({
+        therapist: session.booking.therapist,
+        customer: session.booking.customer,
+        session: updatedSession,
+        booking: session.booking,
+        reason: trimmedReason,
+    }).catch((err) => {
+        logger.error("[SessionService] Revision requested email failed", { error: err.message });
+    });
+
+    return updatedSession;
+};
+
+/**
+ * Therapist responds to a revision request and re-submits the session.
+ *
+ * Critical: completedAt is reset to NOW so the existing autoConfirm cron
+ * starts a fresh 72h window for the customer to review the revised work.
+ * Without this reset the original completedAt is now stale and the cron
+ * would auto-confirm immediately on its next tick.
+ *
+ * revisionDueBy is a soft commitment date — stored and shown in the UI but
+ * NOT enforced by any cron. It's communication, not enforcement.
+ */
+export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
+    if (!dueBy) {
+        throw new BadRequestError(
+            "Please set a date for when you'll have the revision ready.",
+            "REVISION_DUE_BY_REQUIRED"
+        );
+    }
+
+    const dueByDate = new Date(dueBy);
+    if (Number.isNaN(dueByDate.getTime())) {
+        throw new BadRequestError("Invalid date format.", "REVISION_DUE_BY_INVALID");
+    }
+    if (dueByDate <= new Date()) {
+        throw new BadRequestError(
+            "The committed date must be in the future.",
+            "REVISION_DUE_BY_NOT_FUTURE"
+        );
+    }
+
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { include: { user: { select: { id: true, email: true } } } },
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new Error("Session not found");
+    }
+
+    if (session.booking.therapistId !== therapistId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (session.status !== "in_revision") {
+        throw new BadRequestError(
+            "Only sessions awaiting revision can be resubmitted.",
+            "INVALID_SESSION_STATUS"
+        );
+    }
+
+    const now = new Date();
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: {
+            status: "completed_by_therapist",
+            // Reset completedAt so the customer gets a fresh 72h auto-confirm window
+            completedAt: now,
+            revisionDueBy: dueByDate,
+            revisionLastSubmittedAt: now,
+        },
+    });
+
+    logAction({
+        actorId: session.booking.therapist.user.id,
+        action: "session.revision_submitted",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            revisionRound: updatedSession.revisionCount,
+            committedDueBy: dueByDate,
+        },
+    });
+
+    // System message
+    const therapistUserId = session.booking.therapist.user.id;
+    const customerUserId = session.booking.customer.user.id;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content: `Therapist resubmitted the session. Please review and confirm.`,
+                systemType: "session_revision_submitted",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_revision_submitted) failed", { error: err.message });
+        });
+
+    // Notify customer
+    sendSessionRevisionSubmitted({
+        customer: session.booking.customer,
+        therapist: session.booking.therapist,
+        session: updatedSession,
+        booking: session.booking,
+    }).catch((err) => {
+        logger.error("[SessionService] Revision submitted email failed", { error: err.message });
+    });
+
+    return updatedSession;
+};
 
 /**
  * Cancel session

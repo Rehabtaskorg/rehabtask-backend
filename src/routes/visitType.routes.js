@@ -1,13 +1,18 @@
 import { Router } from "express";
-import { authenticate, authorize } from "../middleware/auth.js";
-import { getVisitTypesController, getVisitTypesByDisciplineController } from "../controllers/visitType.controller.js";
+import { authenticate } from "../middleware/auth.js";
+import {
+    getVisitTypesController,
+    getVisitTypesByDisciplineController,
+} from "../controllers/visitType.controller.js";
 
 const router = Router();
 
-// Therapist: get visit types for their discipline
-router.get("/", authenticate, authorize(["therapist"]), getVisitTypesController);
+// Unified endpoint — both customer and therapist audiences.
+// Query params: serviceType, licenseType, discipline, audience.
+// Therapists calling with no params get their own discipline (legacy behavior).
+router.get("/", authenticate, getVisitTypesController);
 
-// Public: get visit types by discipline query param (for customer view)
+// Legacy alias kept for older clients.
 router.get("/by-discipline", authenticate, getVisitTypesByDisciplineController);
 
 export default router;

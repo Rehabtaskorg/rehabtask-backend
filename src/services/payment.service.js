@@ -5,6 +5,7 @@ import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
 import { logAction, logSystemEvent } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 
 /**
  * Get or create a Stripe customer for a given user.
@@ -60,7 +61,13 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         include: {
             customer: { include: { user: true } },
             therapist: { select: { id: true, userId: true, fullName: true, stripeAccountId: true, user: true } },
-            offer: { include: { request: true } },
+            visitTypeRef: true,
+            offer: {
+                include: {
+                    visitTypeRef: true,
+                    request: { include: { visitTypeRef: true } },
+                },
+            },
         },
     });
 
@@ -76,11 +83,17 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         throw new Error("Booking must be in pending or accepted status");
     }
 
-    // Calculate total amount: rate × total sessions (multi-session support)
-    const request = booking.offer?.request;
-    const totalSessions = (request?.visitsPerWeek && request?.numberOfWeeks)
-        ? request.visitsPerWeek * request.numberOfWeeks
-        : 1;
+    // Calculate total amount: rate × total sessions (multi-session support).
+    // Visit plan resolves through booking → offer → request, so new bookings
+    // use the therapist's accepted override (copy-on-accept), and legacy bookings
+    // (where booking.visitsPerWeek is NULL) fall back to the request's values —
+    // preserving exact pre-migration behavior.
+    const plan = resolveVisitPlan({
+        booking,
+        offer: booking.offer,
+        request: booking.offer?.request,
+    });
+    const totalSessions = computeTotalSessions(plan);
     const perSessionRate = parseFloat(booking.rate);
     const amount = perSessionRate * totalSessions;
 
@@ -257,7 +270,13 @@ const handlePaymentSuccess = async (paymentIntentId) => {
         include: {
             booking: {
                 include: {
-                    offer: { include: { request: true } },
+                    visitTypeRef: true,
+                    offer: {
+                        include: {
+                            visitTypeRef: true,
+                            request: { include: { visitTypeRef: true } },
+                        },
+                    },
                     sessions: true,
                 },
             },
@@ -273,11 +292,15 @@ const handlePaymentSuccess = async (paymentIntentId) => {
         return payment;
     }
 
-    // Calculate total sessions from request frequency (default 1 for single-session)
-    const request = payment.booking.offer?.request;
-    const totalSessions = (request?.visitsPerWeek && request?.numberOfWeeks)
-        ? request.visitsPerWeek * request.numberOfWeeks
-        : 1;
+    // Calculate total sessions via the shared resolver. Same precedence as
+    // createPaymentIntent — booking (authoritative post-acceptance) first,
+    // then offer override, then request (legacy fallback).
+    const plan = resolveVisitPlan({
+        booking: payment.booking,
+        offer: payment.booking.offer,
+        request: payment.booking.offer?.request,
+    });
+    const totalSessions = computeTotalSessions(plan);
 
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({

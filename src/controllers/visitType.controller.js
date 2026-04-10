@@ -1,17 +1,45 @@
-import { getVisitTypesByDiscipline, getAllVisitTypes, createVisitType, updateVisitType, seedVisitTypes } from "../services/visitType.service.js";
+import {
+    getVisitTypes,
+    getAllVisitTypes,
+    createVisitType,
+    updateVisitType,
+    seedVisitTypes,
+} from "../services/visitType.service.js";
 
 /**
- * GET /visit-types — therapist gets visit types for their discipline
+ * GET /visit-types
+ *
+ * Unified endpoint for both customer and therapist audiences. Accepts:
+ *   - ?serviceType=Physical Therapy       (customer-facing service type)
+ *   - ?licenseType=Physical Therapist     (therapist license — legacy fallback)
+ *   - ?discipline=Physical Therapist      (raw discipline passthrough — legacy)
+ *   - ?audience=customer|therapist        (default: therapist)
+ *
+ * Customer audience filters to customerVisible=true.
+ * Therapist audience includes the "All" discipline bucket (Missed Visit etc.).
+ *
+ * If no lens is provided and the caller is authenticated as a therapist,
+ * falls back to their profile's primaryLicenseType — preserves the old
+ * "just call GET /visit-types with no params" behavior.
  */
 export const getVisitTypesController = async (req, res, next) => {
     try {
-        const therapist = req.user.therapistProfile;
-        if (!therapist) {
-            return res.status(403).json({ success: false, message: "Only therapists can access visit types" });
-        }
+        const { serviceType, licenseType, discipline, audience } = req.query;
 
-        const licenseType = therapist.primaryLicenseType || "";
-        const visitTypes = await getVisitTypesByDiscipline(licenseType);
+        // Legacy behavior: therapist calling with no params gets their own discipline.
+        const therapistProfile = req.user?.therapistProfile;
+        const effectiveLicenseType =
+            licenseType || (!serviceType && !discipline ? therapistProfile?.primaryLicenseType : undefined);
+
+        const effectiveAudience = audience === "customer" ? "customer" : "therapist";
+
+        const visitTypes = await getVisitTypes({
+            discipline,
+            serviceType,
+            licenseType: effectiveLicenseType,
+            audience: effectiveAudience,
+        });
+
         res.json({ success: true, data: visitTypes });
     } catch (error) {
         next(error);
@@ -19,7 +47,8 @@ export const getVisitTypesController = async (req, res, next) => {
 };
 
 /**
- * GET /visit-types/all — public list filtered by discipline query param
+ * GET /visit-types/by-discipline — legacy alias kept for older clients.
+ * New code should use GET /visit-types?discipline=... or ?serviceType=...
  */
 export const getVisitTypesByDisciplineController = async (req, res, next) => {
     try {
@@ -27,7 +56,7 @@ export const getVisitTypesByDisciplineController = async (req, res, next) => {
         if (!discipline) {
             return res.status(400).json({ success: false, message: "discipline query parameter is required" });
         }
-        const visitTypes = await getVisitTypesByDiscipline(discipline);
+        const visitTypes = await getVisitTypes({ discipline, audience: "therapist" });
         res.json({ success: true, data: visitTypes });
     } catch (error) {
         next(error);

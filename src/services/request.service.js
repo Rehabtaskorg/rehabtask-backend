@@ -6,7 +6,10 @@ import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
-    const { serviceType, description, preferredDate, location, latitude, longitude, patientId, rate, visitType, emr, visitsPerWeek, numberOfWeeks } = data;
+    const {
+        serviceType, description, preferredDate, location, latitude, longitude,
+        patientId, rate, visitType, visitTypeId, emr, visitsPerWeek, numberOfWeeks,
+    } = data;
 
     // IF patientId is provided, validate the patient belongs to this agency
     if (patientId) {
@@ -34,7 +37,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
             status: "created",
             ...(patientId && { patientId }),
             ...(rate != null && { rate }),
-            ...(visitType && { visitType }),
+            ...(visitTypeId && { visitTypeId }),
+            ...(!visitTypeId && visitType && { visitType }),
             ...(emr && { emr }),
             ...(visitsPerWeek != null && { visitsPerWeek }),
             ...(numberOfWeeks != null && { numberOfWeeks }),
@@ -50,8 +54,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
         changes: { serviceType, location, preferredDate, patientId: patientId || null },
     });
 
-    // Auto-persist custom visit type and EMR values to the lookup table
-    if (visitType) await ensureOption("visit_type", visitType);
+    // Auto-persist EMR and legacy string visit_type values to the lookup table.
+    if (!visitTypeId && visitType) await ensureOption("visit_type", visitType);
     if (emr) await ensureOption("emr", emr);
 
     // Notify matching therapists (fire-and-forget)
@@ -100,7 +104,8 @@ export const getCustomerRequests = async (customerId, { status, serviceType, pag
         prisma.therapyRequest.findMany({
             where,
             include: {
-                offers: { include: { therapist: true, visitType: true } },
+                visitTypeRef: true,
+                offers: { include: { therapist: true, visitTypeRef: true } },
                 patient: {
                     select: { id: true, fullName: true, email: true, phone: true }
                 },
@@ -127,12 +132,13 @@ export const getRequestById = async (requestId, userId) => {
     const request = await prisma.therapyRequest.findUnique({
         where: { id: requestId },
         include: {
+            visitTypeRef: true,
             customer: { include: { user: true } },
             offers: {
                 where: user?.therapistProfile
                     ? { therapistId: user.therapistProfile.id }
                     : undefined,
-                include: { therapist: true, visitType: true },
+                include: { therapist: true, visitTypeRef: true },
                 orderBy: { createdAt: "desc" }
             },
             patient: {
@@ -174,9 +180,10 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
     const requests = await prisma.therapyRequest.findMany({
         where,
         include: {
+            visitTypeRef: true,
             customer: true,
             patient: { select: { id: true, fullName: true, email: true, phone: true } },
-            offers: { where: { therapistId } },
+            offers: { where: { therapistId }, include: { visitTypeRef: true } },
         },
         orderBy: { createdAt: "desc" },
     });
@@ -271,7 +278,16 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
     if (data.latitude !== undefined) updateData.latitude = data.latitude;
     if (data.longitude !== undefined) updateData.longitude = data.longitude;
     if (data.rate !== undefined) updateData.rate = data.rate;
-    if (data.visitType !== undefined) updateData.visitType = data.visitType;
+    // Visit type: prefer FK, keep legacy string as backup during transition window.
+    // If the client sends visitTypeId, we also clear the string so there's no drift
+    // between the two sources.
+    if (data.visitTypeId !== undefined) {
+        updateData.visitTypeId = data.visitTypeId;
+        if (data.visitTypeId) updateData.visitType = null;
+    }
+    if (data.visitType !== undefined && data.visitTypeId === undefined) {
+        updateData.visitType = data.visitType;
+    }
     if (data.emr !== undefined) updateData.emr = data.emr;
 
     const hasActiveOffers = existing.offers.length > 0;
@@ -319,8 +335,8 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         changes,
     });
 
-    // Auto-persist custom visit type and EMR values
-    if (data.visitType) await ensureOption("visit_type", data.visitType);
+    // Auto-persist EMR and legacy visit_type string values.
+    if (!data.visitTypeId && data.visitType) await ensureOption("visit_type", data.visitType);
     if (data.emr) await ensureOption("emr", data.emr);
 
     // Notify withdrawn therapists (fire-and-forget)

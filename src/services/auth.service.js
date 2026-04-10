@@ -667,7 +667,7 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
     // Update user role if needed
     const updatedUser = await withAdminAccess(async (db) => {
         if (role === "customer") {
-            return db.user.update({
+            const updated = await db.user.update({
                 where: { id: userId },
                 data: {
                     role: "customer",
@@ -689,6 +689,11 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     customerProfile: true,
                 },
             });
+
+            // Create 30-day trial subscription with Standard limits
+            await createTrialSubscription(updated.customerProfile.id, db);
+
+            return updated;
         } else if (role === "therapist") {
             return db.user.update({
                 where: { id: userId },
