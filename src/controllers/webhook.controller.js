@@ -332,6 +332,11 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                 return;
             }
 
+            if (transfer.metadata?.isPerSession === "true") {
+                console.log(`Payment ${payment.id} transfer is per-session payout, skipping webhook recovery (handled by releaseSessionPayout)`);
+                return;
+            }
+
             try {
                 // Verify transfer is valid, not reversed, and not failed
                 const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
@@ -346,7 +351,7 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                     return;
                 }
 
-                // Update payment to released state (only for non-admin recovery)
+                // Update payment to released state (only for non-admin, non-per-session recovery)
                 await prisma.payment.update({
                     where: { id: payment.id },
                     data: {
@@ -364,6 +369,12 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                 // TODO: CRITICAL -Alert admin immediately
                 // TODO: Create support ticket
             }
+            return;
+        }
+
+        // Skip per-session transfers when payment is already partially_released —
+        // releaseSessionPayout handles the status transitions.
+        if (payment.status === "partially_released" && transfer.metadata?.isPerSession === "true") {
             return;
         }
 

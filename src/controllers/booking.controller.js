@@ -5,6 +5,7 @@ import {
     rescheduleBooking,
     respondToReschedule
 } from "../services/booking.service.js";
+import { finalizeBooking } from "../services/payment.service.js";
 
 /**
  * Get a booking by ID
@@ -71,10 +72,22 @@ const respondToRescheduleController = async (req, res, next) => {
     }
 }
 
+const finalizeBookingController = async (req, res, next) => {
+    try {
+        const { bookingId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const result = await finalizeBooking(bookingId, therapistId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     getBookingByIdController,
     getCustomerBookingsController,
     getTherapistBookingsController,
     rescheduleBookingController,
-    respondToRescheduleController
+    respondToRescheduleController,
+    finalizeBookingController,
 };
