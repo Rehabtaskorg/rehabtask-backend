@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { supabaseAdmin } from "../src/config/supabase.js";
 import { prisma } from "../src/config/prisma.js";
+import { seedVisitTypes } from "../src/services/visitType.service.js";
 
 async function seed() {
     const email = process.env.ADMIN_EMAIL;
@@ -144,6 +145,7 @@ async function seedCommissionRates() {
 seed()
     .then(() => seedRequestOptions())
     .then(() => seedCommissionRates())
+    .then(() => seedVisitTypes())
     .catch((err) => {
         console.error("Seed failed:", err);
         process.exit(1);

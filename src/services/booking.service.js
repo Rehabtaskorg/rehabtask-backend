@@ -15,9 +15,11 @@ export const getBookingById = async (bookingId, userId) => {
         include: {
             customer: { include: { user: true } },
             therapist: { include: { user: true } },
+            visitTypeRef: true,
             offer: {
                 include: {
-                    request: true
+                    visitTypeRef: true,
+                    request: { include: { visitTypeRef: true } },
                 },
             },
             payment: true,
@@ -50,7 +52,13 @@ export const getCustomerBookings = async (customerId) => {
         where: { customerId },
         include: {
             therapist: true,
-            offer: { include: { request: true, }, },
+            visitTypeRef: true,
+            offer: {
+                include: {
+                    visitTypeRef: true,
+                    request: { include: { visitTypeRef: true } },
+                },
+            },
             payment: true,
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }
@@ -71,9 +79,11 @@ export const getTherapistBookings = async (therapistId) => {
         where: { therapistId },
         include: {
             customer: true,
+            visitTypeRef: true,
             offer: {
                 include: {
-                    request: true
+                    visitTypeRef: true,
+                    request: { include: { visitTypeRef: true } },
                 },
             },
             payment: true,

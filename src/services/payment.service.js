@@ -61,7 +61,13 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
         include: {
             customer: { include: { user: true } },
             therapist: { select: { id: true, userId: true, fullName: true, stripeAccountId: true, user: true } },
-            offer: { include: { request: true } },
+            visitTypeRef: true,
+            offer: {
+                include: {
+                    visitTypeRef: true,
+                    request: { include: { visitTypeRef: true } },
+                },
+            },
         },
     });
 
@@ -264,7 +270,13 @@ const handlePaymentSuccess = async (paymentIntentId) => {
         include: {
             booking: {
                 include: {
-                    offer: { include: { request: true } },
+                    visitTypeRef: true,
+                    offer: {
+                        include: {
+                            visitTypeRef: true,
+                            request: { include: { visitTypeRef: true } },
+                        },
+                    },
                     sessions: true,
                 },
             },

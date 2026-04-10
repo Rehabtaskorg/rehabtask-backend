@@ -59,9 +59,12 @@ export const createOffer = async (therapistId, data) => {
             description,
             status: "pending",
             expiresAt,
+            // visitTypeId is the therapist's chosen visit type — either matching
+            // the request's (no override) or proposing a different one (override).
+            // The semantic distinction is resolved via resolveVisitPlan() at read time.
             ...(visitTypeId && { visitTypeId }),
-            // Visit plan override — only persist if therapist provided it.
-            // Null/undefined leaves the columns NULL, meaning "accept customer's plan".
+            // Legacy string override — kept accepted during the Phase 2 transition
+            // window. New clients should send visitTypeId instead.
             ...(visitType != null && { visitType }),
             ...(visitsPerWeek != null && { visitsPerWeek }),
             ...(numberOfWeeks != null && { numberOfWeeks }),
@@ -71,6 +74,7 @@ export const createOffer = async (therapistId, data) => {
             therapist: true,
             request: {
                 include: {
+                    visitTypeRef: true,
                     customer: {
                         include: { user: { select: { id: true, email: true } } }
                     },
@@ -140,6 +144,7 @@ export const getTherapistOffers = async (therapistId) => {
             visitTypeRef: true,
             request: {
                 include: {
+                    visitTypeRef: true,
                     customer: true,
                     patient: {
                         select: { id: true, fullName: true, email: true, phone: true }
@@ -166,6 +171,7 @@ export const getOfferById = async (offerId, userId) => {
             visitTypeRef: true,
             request: {
                 include: {
+                    visitTypeRef: true,
                     customer: true,
                     patient: {
                         select: { id: true, fullName: true, email: true, phone: true }
@@ -199,11 +205,16 @@ export const getOfferById = async (offerId, userId) => {
  * Accept offer (customer)
  */
 export const acceptOffer = async (offerId, customerId) => {
-    // Validate offer exists and belongs to this customer before starting transaction
+    // Validate offer exists and belongs to this customer before starting transaction.
+    // Include visitTypeRef on both offer and request so resolveVisitPlan can pull
+    // the FK-loaded catalog row during copy-on-accept.
     const offer = await prisma.offer.findUnique({
         where: { id: offerId },
         include: {
-            request: true,
+            visitTypeRef: true,
+            request: {
+                include: { visitTypeRef: true },
+            },
         },
     });
 
@@ -267,8 +278,8 @@ export const acceptOffer = async (offerId, customerId) => {
                     sessionType: offer.sessionType,
                     status: "accepted",
                     patientId: offer.request.patientId || null,
-                    // Copy-on-accept: authoritative visit plan snapshot.
-                    visitType:     effectivePlan.visitType,
+                    visitTypeId: effectivePlan.visitTypeId,
+                    visitType: effectivePlan.visitType,
                     visitsPerWeek: effectivePlan.visitsPerWeek,
                     numberOfWeeks: effectivePlan.numberOfWeeks,
                 },
@@ -420,6 +431,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
             therapist: true,
             request: {
                 include: {
+                    visitTypeRef: true,
                     customer: {
                         include: { user: { select: { id: true, email: true } } },
                     },
