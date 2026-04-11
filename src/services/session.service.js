@@ -376,17 +376,16 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
 };
 
 /**
- * Therapist responds to a revision request and re-submits the session.
+ * Step 1: Therapist acknowledges a revision request and commits to a due date.
  *
- * Critical: completedAt is reset to NOW so the existing autoConfirm cron
- * starts a fresh 72h window for the customer to review the revised work.
- * Without this reset the original completedAt is now stale and the cron
- * would auto-confirm immediately on its next tick.
+ * Status stays `in_revision` — the therapist is saying "I've seen your request
+ * and I'll have it done by [date]." The customer sees the committed date and
+ * knows when to check back.
  *
- * revisionDueBy is a soft commitment date — stored and shown in the UI but
- * NOT enforced by any cron. It's communication, not enforcement.
+ * revisionDueBy is a soft commitment — shown in the UI but NOT enforced by
+ * any cron. Per product decision: unlimited rounds, unlimited pause.
  */
-export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
+export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     if (!dueBy) {
         throw new BadRequestError(
             "Please set a date for when you'll have the revision ready.",
@@ -427,27 +426,22 @@ export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) =
 
     if (session.status !== "in_revision") {
         throw new BadRequestError(
-            "Only sessions awaiting revision can be resubmitted.",
+            "Only sessions in revision can be responded to.",
             "INVALID_SESSION_STATUS"
         );
     }
 
-    const now = new Date();
-
     const updatedSession = await prisma.session.update({
         where: { id: sessionId },
         data: {
-            status: "completed_by_therapist",
-            // Reset completedAt so the customer gets a fresh 72h auto-confirm window
-            completedAt: now,
+            // Status stays in_revision — therapist is committing to a date, not resubmitting yet
             revisionDueBy: dueByDate,
-            revisionLastSubmittedAt: now,
         },
     });
 
     logAction({
         actorId: session.booking.therapist.user.id,
-        action: "session.revision_submitted",
+        action: "session.revision_responded",
         entityType: "session",
         entityId: sessionId,
         changes: {
@@ -466,13 +460,110 @@ export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) =
                 conversationId: conversation.id,
                 actorId: therapistUserId,
                 recipientId: customerUserId,
-                content: `Therapist resubmitted the session. Please review and confirm.`,
-                systemType: "session_revision_submitted",
+                content: `Therapist acknowledged your revision request and will resubmit by ${dueByDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`,
+                systemType: "session_revision_responded",
                 bookingId: session.bookingId,
             })
         )
         .catch((err) => {
-            logger.error("[SessionService] System message (session_revision_submitted) failed", { error: err.message });
+            logger.error("[SessionService] System message (session_revision_responded) failed", { error: err.message });
+        });
+
+    // Notify customer that therapist acknowledged
+    sendSessionRevisionSubmitted({
+        customer: session.booking.customer,
+        therapist: session.booking.therapist,
+        session: updatedSession,
+        booking: session.booking,
+    }).catch((err) => {
+        logger.error("[SessionService] Revision responded email failed", { error: err.message });
+    });
+
+    return updatedSession;
+};
+
+/**
+ * Step 2: Therapist resubmits the session after completing the revision work.
+ *
+ * Status changes to `completed_by_therapist`. completedAt is reset to NOW so
+ * the autoConfirm cron starts a fresh 72h window for the customer to review.
+ *
+ * The therapist must have already responded (set revisionDueBy) before they
+ * can resubmit. This enforces the two-step flow.
+ */
+export const resubmitSession = async (sessionId, therapistId) => {
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { include: { user: { select: { id: true, email: true } } } },
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new Error("Session not found");
+    }
+
+    if (session.booking.therapistId !== therapistId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (session.status !== "in_revision") {
+        throw new BadRequestError(
+            "Only sessions in revision can be resubmitted.",
+            "INVALID_SESSION_STATUS"
+        );
+    }
+
+    if (!session.revisionDueBy) {
+        throw new BadRequestError(
+            "Please set a response date before resubmitting. Use 'Respond' to commit to a date first.",
+            "REVISION_DUE_BY_NOT_SET"
+        );
+    }
+
+    const now = new Date();
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: {
+            status: "completed_by_therapist",
+            completedAt: now,
+            revisionLastSubmittedAt: now,
+        },
+    });
+
+    logAction({
+        actorId: session.booking.therapist.user.id,
+        action: "session.revision_resubmitted",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            revisionRound: updatedSession.revisionCount,
+        },
+    });
+
+    // System message
+    const therapistUserId = session.booking.therapist.user.id;
+    const customerUserId = session.booking.customer.user.id;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content: `Therapist has resubmitted the session. Please review and confirm.`,
+                systemType: "session_revision_resubmitted",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_revision_resubmitted) failed", { error: err.message });
         });
 
     // Notify customer
@@ -482,10 +573,19 @@ export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) =
         session: updatedSession,
         booking: session.booking,
     }).catch((err) => {
-        logger.error("[SessionService] Revision submitted email failed", { error: err.message });
+        logger.error("[SessionService] Revision resubmitted email failed", { error: err.message });
     });
 
     return updatedSession;
+};
+
+/**
+ * @deprecated Use respondToRevision + resubmitSession instead.
+ * Kept for backward compat during the transition window.
+ */
+export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
+    await respondToRevision(sessionId, therapistId, { dueBy });
+    return resubmitSession(sessionId, therapistId);
 };
 
 /**

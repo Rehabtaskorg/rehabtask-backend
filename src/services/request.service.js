@@ -289,6 +289,8 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         updateData.visitType = data.visitType;
     }
     if (data.emr !== undefined) updateData.emr = data.emr;
+    if (data.visitsPerWeek !== undefined) updateData.visitsPerWeek = data.visitsPerWeek || null;
+    if (data.numberOfWeeks !== undefined) updateData.numberOfWeeks = data.numberOfWeeks || null;
 
     const hasActiveOffers = existing.offers.length > 0;
 

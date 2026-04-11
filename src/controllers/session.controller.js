@@ -1,7 +1,8 @@
 import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
     getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession,
-    requestSessionRevision, submitSessionRevision
+    requestSessionRevision, submitSessionRevision,
+    respondToRevision, resubmitSession,
 } from "../services/session.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -136,6 +137,35 @@ const scheduleSessionController = async (req, res, next) => {
     }
 }
 
+/**
+ * Step 1: Therapist responds to revision with a committed date
+ */
+const respondToRevisionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { dueBy } = req.body;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await respondToRevision(sessionId, therapistId, { dueBy });
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Step 2: Therapist resubmits the session after completing the revision
+ */
+const resubmitSessionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await resubmitSession(sessionId, therapistId);
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     completeTherapistController,
     confirmByCustomerController,
@@ -146,4 +176,6 @@ export {
     scheduleSessionController,
     requestRevisionController,
     submitRevisionController,
+    respondToRevisionController,
+    resubmitSessionController,
 };
