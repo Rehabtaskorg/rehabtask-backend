@@ -1620,7 +1620,7 @@ const createCustomerAccountSession = async (customerId, userId) => {
             balances: {
                 enabled: true,
                 features: {
-                    instant_payouts: true,
+                    instant_payouts: false,
                     standard_payouts: true,
                     edit_payout_schedule: false,
                     external_account_collection: true,
