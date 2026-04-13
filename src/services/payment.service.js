@@ -1,6 +1,9 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
-import { sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer } from "./email.service.js";
+import {
+    sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer,
+    sendCustomerRefundAvailable, sendCustomerRefundTransferred, sendCustomerRefundReturnedToCard,
+} from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
 import { logAction, logSystemEvent } from "./audit.service.js";
@@ -936,12 +939,20 @@ const finalizeBooking = async (bookingId, therapistId) => {
 
     // Notify customer about the refund
     if (refundAmount > 0) {
-        sendPaymentReleasedToCustomer({
-            customer: booking.customer,
-            therapist: booking.therapist,
-            payment: updatedPayment,
-            booking,
-        }).catch(() => {});
+        if (customerRefund?.status === "transferred") {
+            sendCustomerRefundTransferred({
+                customer: booking.customer,
+                refundAmount,
+            }).catch(() => {});
+        } else {
+            sendCustomerRefundAvailable({
+                customer: booking.customer,
+                therapist: booking.therapist,
+                refundAmount,
+                bookingId: booking.id,
+                daysUntilExpiry: REFUND_EXPIRY_DAYS,
+            }).catch(() => {});
+        }
     }
 
     logger.info("[PaymentService] Booking finalized", {
@@ -1798,6 +1809,12 @@ const transferPendingRefund = async (refundId) => {
         transferId: transfer.id,
     });
 
+    // Notify customer
+    sendCustomerRefundTransferred({
+        customer: refund.customer,
+        refundAmount: parseFloat(refund.amount),
+    }).catch(() => {});
+
     return updated;
 };
 
@@ -1844,6 +1861,7 @@ const processExpiredPendingRefunds = async () => {
         },
         include: {
             payment: { select: { stripePaymentIntentId: true } },
+            customer: { include: { user: { select: { email: true } } } },
         },
     });
 
@@ -1889,6 +1907,11 @@ const processExpiredPendingRefunds = async () => {
                 amount: parseFloat(refund.amount),
                 stripeRefundId: stripeRefund.id,
             });
+
+            sendCustomerRefundReturnedToCard({
+                customer: refund.customer,
+                refundAmount: parseFloat(refund.amount),
+            }).catch(() => {});
 
             processed++;
         } catch (err) {

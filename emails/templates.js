@@ -812,3 +812,73 @@ export const existingAccountNotification = ({ email, resetLink }) => ({
         ${muted('If you didn\'t attempt to register, you can safely ignore this email. Your account is secure and no changes have been made.')}
     `),
 });
+
+// ── Customer Refund Emails ──
+
+// Refund Available — sent when a booking is finalized and a refund is created
+export const customerRefundAvailable = ({ customer, therapist, refundAmount, bookingId, daysUntilExpiry }) => ({
+    subject: `You have a refund of ${formatCurrency(refundAmount)} available`,
+    html: layout(`
+        ${heading('You Have a Refund Available')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`A booking with ${therapist.fullName} was finalized early, and you are owed a refund for the undelivered sessions.`)}
+        ${hr()}
+        <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Refund Available</p>
+        ${hr()}
+        ${text('To receive this refund directly to your bank account, set up your payout account. It only takes a few minutes.')}
+        ${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}
+        ${hr()}
+        ${muted(`If you don't set up a payout account within ${daysUntilExpiry} days, the refund will be automatically returned to your original payment method.`)}
+    `),
+});
+
+// Refund Reminder — sent at day 7 and day 14
+export const customerRefundReminder = ({ customer, refundAmount, daysRemaining }) => ({
+    subject: `Reminder: Your ${formatCurrency(refundAmount)} refund is waiting`,
+    html: layout(`
+        ${heading('Your Refund is Still Waiting')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`You have ${formatCurrency(refundAmount)} in pending refunds. Set up your payout account to receive the funds directly to your bank account.`)}
+        ${hr()}
+        <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#d97706;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">${daysRemaining} days remaining</p>
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}
+        ${hr()}
+        ${muted(`After ${daysRemaining} days, the refund will be automatically returned to your original payment method.`)}
+    `),
+});
+
+// Refund Transferred — sent when refund is transferred to customer's Connect account
+export const customerRefundTransferred = ({ customer, refundAmount }) => ({
+    subject: `Your refund of ${formatCurrency(refundAmount)} has been sent`,
+    html: layout(`
+        ${heading('Refund Sent to Your Account')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your refund has been sent to your linked bank account. It should arrive within 2-3 business days.')}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#059669;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">Refund Sent</p>
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
+        ${hr()}
+        ${muted('If you have any questions about this refund, please contact our support team.')}
+    `),
+});
+
+// Refund Returned to Card — sent when the 30-day fallback kicks in
+export const customerRefundReturnedToCard = ({ customer, refundAmount }) => ({
+    subject: `Your refund of ${formatCurrency(refundAmount)} has been returned to your card`,
+    html: layout(`
+        ${heading('Refund Returned to Your Card')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Since a payout account was not set up within 30 days, your refund has been returned to your original payment method.')}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Returned to Original Payment Method</p>
+        ${hr()}
+        ${text('The refund should appear on your statement within 5-10 business days, depending on your bank.')}
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
+    `),
+});
