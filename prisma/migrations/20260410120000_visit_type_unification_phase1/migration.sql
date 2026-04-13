@@ -16,7 +16,6 @@
 --     bookings.visit_type) remain in place; they're cleaned up in Phase 3
 --     after the frontend has been on FK writes for 2+ weeks.
 --
--- See docs/VISIT-TYPE-UNIFICATION.md for the full plan.
 --
 
 -- 1. Customer visibility flag on the catalog.
