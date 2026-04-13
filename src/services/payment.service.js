@@ -1090,7 +1090,20 @@ const getCustomerPaymentHistory = async (customerId) => {
                             request: true,
                         },
                     },
+                    sessions: { orderBy: { sessionNumber: "asc" } },
                 },
+            },
+            customerRefunds: {
+                select: {
+                    id: true,
+                    amount: true,
+                    status: true,
+                    transferredAt: true,
+                    fallbackRefundAt: true,
+                    expiresAt: true,
+                    createdAt: true,
+                },
+                orderBy: { createdAt: "desc" },
             },
         },
         orderBy: { createdAt: "desc" },
@@ -1761,7 +1774,9 @@ const transferPendingRefund = async (refundId) => {
     const refund = await prisma.customerRefund.findUnique({
         where: { id: refundId },
         include: {
-            customer: true,
+            customer: {
+                include: { user: { select: { email: true } } },
+            },
         },
     });
 
