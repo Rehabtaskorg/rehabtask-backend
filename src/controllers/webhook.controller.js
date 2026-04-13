@@ -396,51 +396,89 @@ const handleAccountUpdated = async (account, accountId) => {
     try {
         const stripeAccountId = accountId || account.id;
 
-        // Find therapist with this Stripe account
+        // Try therapist first (most common case)
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId },
         });
 
-        if (!therapist) {
-            console.log(`No therapist found for Stripe account: ${stripeAccountId}`);
-            return;
+        if (therapist) {
+            return handleTherapistAccountUpdated(account, therapist);
         }
 
-        // Check if onboarding is complete
-        const isOnboardingComplete =
-            account.details_submitted === true &&
-            account.charges_enabled === true;
+        // Try customer (for refund payout accounts)
+        const customer = await prisma.customerProfile.findUnique({
+            where: { stripeAccountId },
+        });
 
-        // Only update if status changed
-        if (isOnboardingComplete && !therapist.stripeOnboardingComplete) {
-            await withAdminAccess(async (db) => {
-                await db.therapistProfile.update({
-                    where: { stripeAccountId },
-                    data: {
-                        stripeOnboardingComplete: true,
-                    },
-                });
-            });
-
-            console.log(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
-
-            // TODO: Send notification to therapist
-            // TODO: If this was their last onboarding step, mark overall onboarding complete
-        } else if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
-            // Account was complete but now isn't (rare, but possible)
-            await withAdminAccess(async (db) => {
-                await db.therapistProfile.update({
-                    where: { stripeAccountId },
-                    data: {
-                        stripeOnboardingComplete: false
-                    },
-                });
-            });
-
-            console.log(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+        if (customer) {
+            return handleCustomerAccountUpdated(account, customer);
         }
+
+        console.log(`No therapist or customer found for Stripe account: ${stripeAccountId}`);
     } catch (error) {
         console.error(`Error handling account.updated:`, error.message);
+    }
+}
+
+const handleTherapistAccountUpdated = async (account, therapist) => {
+    const isOnboardingComplete =
+        account.details_submitted === true &&
+        account.charges_enabled === true;
+
+    if (isOnboardingComplete && !therapist.stripeOnboardingComplete) {
+        await withAdminAccess(async (db) => {
+            await db.therapistProfile.update({
+                where: { stripeAccountId: account.id },
+                data: { stripeOnboardingComplete: true },
+            });
+        });
+        console.log(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
+    } else if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
+        await withAdminAccess(async (db) => {
+            await db.therapistProfile.update({
+                where: { stripeAccountId: account.id },
+                data: { stripeOnboardingComplete: false },
+            });
+        });
+        console.log(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+    }
+}
+
+const handleCustomerAccountUpdated = async (account, customer) => {
+    // Customer Connect accounts only need transfers capability (no charges)
+    const isOnboardingComplete =
+        account.details_submitted === true &&
+        account.payouts_enabled === true;
+
+    if (isOnboardingComplete && !customer.stripeOnboardingComplete) {
+        await withAdminAccess(async (db) => {
+            await db.customerProfile.update({
+                where: { stripeAccountId: account.id },
+                data: { stripeOnboardingComplete: true },
+            });
+        });
+
+        logger.info(`Customer Connect onboarding completed: ${customer.fullName} (${customer.id})`);
+
+        // Auto-transfer any pending refunds now that payout is enabled
+        try {
+            const results = await paymentService.processPendingRefundsForCustomer(customer.id);
+            if (results.length > 0) {
+                logger.info(`[Webhook] Auto-transferred ${results.filter(r => r.status === "transferred").length} pending refunds for customer ${customer.id}`);
+            }
+        } catch (err) {
+            logger.error(`[Webhook] Failed to auto-transfer pending refunds for customer ${customer.id}`, {
+                error: err.message,
+            });
+        }
+    } else if (!isOnboardingComplete && customer.stripeOnboardingComplete) {
+        await withAdminAccess(async (db) => {
+            await db.customerProfile.update({
+                where: { stripeAccountId: account.id },
+                data: { stripeOnboardingComplete: false },
+            });
+        });
+        logger.info(`Customer Connect onboarding status reverted: ${customer.fullName}`);
     }
 }
 

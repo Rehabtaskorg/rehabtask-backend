@@ -805,42 +805,81 @@ const finalizeBooking = async (bookingId, therapistId) => {
     const refreshedPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
     const totalReleased = parseFloat(refreshedPayment.releasedAmount ?? 0);
 
-    // Issue Stripe refund for undelivered portion
-    let refund = null;
-    if (refundAmount > 0 && payment.stripePaymentIntentId) {
-        try {
-            refund = await stripe.refunds.create({
-                payment_intent: payment.stripePaymentIntentId,
-                amount: Math.round(refundAmount * 100),
-                metadata: {
-                    bookingId: booking.id,
-                    reason: "series_finalized",
-                    undeliveredSessions: undeliveredSessions.length,
-                },
-            }, {
-                idempotencyKey: `finalize-refund-${booking.id}`,
-            });
-        } catch (stripeError) {
-            logger.error("[PaymentService] CRITICAL: Finalization refund failed — payouts already processed, refund needs manual intervention", {
-                bookingId: booking.id,
-                paymentId: payment.id,
-                refundAmount,
-                error: stripeError.message,
-            });
-            // Audit trail so support can find and resolve these
-            logSystemEvent({
-                action: "payment.refund_failed",
-                entityType: "payment",
-                entityId: payment.id,
-                changes: {
+    // ── Refund logic: transfer to Connect or create pending record ──
+    let customerRefund = null;
+    let stripeTransfer = null;
+
+    if (refundAmount > 0) {
+        const customer = booking.customer;
+
+        if (customer.stripeAccountId && customer.stripeOnboardingComplete) {
+            // Customer has a verified Connect account → transfer immediately
+            try {
+                stripeTransfer = await stripe.transfers.create({
+                    amount: Math.round(refundAmount * 100),
+                    currency: "usd",
+                    destination: customer.stripeAccountId,
+                    metadata: {
+                        type: "customer_refund",
+                        bookingId: booking.id,
+                        paymentId: payment.id,
+                        reason: "series_finalized",
+                        undeliveredSessions: undeliveredSessions.length,
+                    },
+                }, {
+                    idempotencyKey: `finalize-refund-${booking.id}`,
+                });
+
+                customerRefund = await prisma.customerRefund.create({
+                    data: {
+                        customerId: customer.id,
+                        paymentId: payment.id,
+                        bookingId: booking.id,
+                        amount: refundAmount,
+                        status: "transferred",
+                        stripeTransferId: stripeTransfer.id,
+                        transferredAt: new Date(),
+                        reason: "series_finalized",
+                        expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+                    },
+                });
+
+                logger.info("[PaymentService] Refund transferred to customer Connect account", {
                     bookingId: booking.id,
                     refundAmount,
-                    reason: "finalize_refund_failed",
-                    stripeError: stripeError.message,
-                    payoutsCompleted: true,
+                    transferId: stripeTransfer.id,
+                });
+            } catch (stripeError) {
+                logger.error("[PaymentService] CRITICAL: Refund transfer failed — creating pending record instead", {
+                    bookingId: booking.id,
+                    refundAmount,
+                    error: stripeError.message,
+                });
+                // Fall through to pending_connect path below
+            }
+        }
+
+        if (!customerRefund) {
+            // No Connect account, or transfer failed → create pending refund record
+            // The 30-day cron will fall back to card refund if customer never sets up Connect
+            customerRefund = await prisma.customerRefund.create({
+                data: {
+                    customerId: customer.id,
+                    paymentId: payment.id,
+                    bookingId: booking.id,
+                    amount: refundAmount,
+                    status: "pending_connect",
+                    reason: "series_finalized",
+                    expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
                 },
             });
-            throw new Error(`Refund failed: ${stripeError.message}. Payouts were processed — contact support for the refund.`);
+
+            logger.info("[PaymentService] Pending refund created (awaiting customer Connect setup)", {
+                bookingId: booking.id,
+                refundAmount,
+                expiresAt: customerRefund.expiresAt,
+                customerHasConnect: !!customer.stripeAccountId,
+            });
         }
     }
 
@@ -850,11 +889,8 @@ const finalizeBooking = async (bookingId, therapistId) => {
         data: {
             status: "released",
             releasedAt: new Date(),
-            ...(refund && {
-                stripeRefundId: refund.id,
-                refundedAmount: refundAmount,
-                refundedAt: new Date(),
-            }),
+            refundedAmount: refundAmount > 0 ? refundAmount : undefined,
+            refundedAt: refundAmount > 0 ? new Date() : undefined,
         },
     });
 
@@ -873,7 +909,9 @@ const finalizeBooking = async (bookingId, therapistId) => {
             undeliveredSessions: undeliveredSessions.length,
             totalReleased,
             refundAmount,
-            stripeRefundId: refund?.id,
+            refundMethod: stripeTransfer ? "connect_transfer" : "pending_connect",
+            customerRefundId: customerRefund?.id,
+            stripeTransferId: stripeTransfer?.id,
         },
     });
 
@@ -897,7 +935,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
     }).catch(() => {});
 
     // Notify customer about the refund
-    if (refund) {
+    if (refundAmount > 0) {
         sendPaymentReleasedToCustomer({
             customer: booking.customer,
             therapist: booking.therapist,
@@ -912,6 +950,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
         undeliveredSessions: undeliveredSessions.length,
         totalReleased,
         refundAmount,
+        refundMethod: stripeTransfer ? "connect_transfer" : (refundAmount > 0 ? "pending_connect" : "none"),
     });
 
     return {
@@ -920,6 +959,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
         paidSessions: confirmedSessions.length,
         refundedSessions: undeliveredSessions.length,
         refundAmount,
+        customerRefund,
     };
 };
 
@@ -1491,6 +1531,382 @@ const setDefaultPaymentMethod = async (userId, paymentMethodId) => {
     return { success: true };
 };
 
+// ─── Customer Connect Account (for receiving refunds) ───
+
+const REFUND_EXPIRY_DAYS = 30;
+
+/**
+ * Create or retrieve a Stripe Connect account for a customer.
+ * Customers need Connect accounts to receive refund transfers.
+ * Uses Custom (controller) accounts — same pattern as therapists.
+ *
+ * Only requests `transfers` capability (no card_payments — customers
+ * don't process payments, they only receive refund transfers).
+ */
+const createOrGetCustomerConnectAccount = async (customerId, userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { id: customerId },
+        include: { user: true },
+    });
+
+    if (!customer) throw new Error("Customer not found");
+    if (customer.userId !== userId) throw new Error("Unauthorized");
+
+    if (customer.stripeAccountId) {
+        return { accountId: customer.stripeAccountId };
+    }
+
+    const account = await stripe.accounts.create({
+        country: "US",
+        email: customer.user.email,
+        capabilities: {
+            transfers: { requested: true },
+        },
+        controller: {
+            requirement_collection: "application",
+            stripe_dashboard: { type: "none" },
+            losses: { payments: "application" },
+            fees: { payer: "application" },
+        },
+        metadata: {
+            customerId: customer.id,
+            userId: customer.userId,
+            accountPurpose: "customer_refund_recipient",
+        },
+    });
+
+    await withAdminAccess(async (db) => {
+        await db.customerProfile.update({
+            where: { id: customerId },
+            data: { stripeAccountId: account.id },
+        });
+    });
+
+    return { accountId: account.id };
+};
+
+/**
+ * Create an Account Session for customer Connect embedded components.
+ * Customers only need: account_onboarding + balances (to see refund payouts).
+ * No payments component — customers don't process payments.
+ */
+const createCustomerAccountSession = async (customerId, userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { id: customerId },
+    });
+
+    if (!customer) throw new Error("Customer not found");
+    if (customer.userId !== userId) throw new Error("Unauthorized");
+    if (!customer.stripeAccountId) {
+        throw new Error("No payout account connected. Please set up your payout account first.");
+    }
+
+    const account = await stripe.accounts.retrieve(customer.stripeAccountId);
+    const platformOwnsRequirements =
+        account?.controller?.requirement_collection === "application";
+
+    const session = await stripe.accountSessions.create({
+        account: customer.stripeAccountId,
+        components: {
+            account_onboarding: {
+                enabled: true,
+                features: {
+                    ...(platformOwnsRequirements && {
+                        disable_stripe_user_authentication: true,
+                    }),
+                    external_account_collection: true,
+                },
+            },
+            balances: {
+                enabled: true,
+                features: {
+                    instant_payouts: true,
+                    standard_payouts: true,
+                    edit_payout_schedule: false,
+                    external_account_collection: true,
+                    ...(platformOwnsRequirements && {
+                        disable_stripe_user_authentication: true,
+                    }),
+                },
+            },
+        },
+    });
+
+    return { clientSecret: session.client_secret };
+};
+
+/**
+ * Get Connect account status for a customer.
+ */
+const getCustomerConnectStatus = async (customerId, userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { id: customerId },
+    });
+
+    if (!customer) throw new Error("Customer not found");
+    if (customer.userId !== userId) throw new Error("Unauthorized");
+
+    if (!customer.stripeAccountId) {
+        return {
+            connected: false,
+            detailsSubmitted: false,
+            payoutsEnabled: false,
+            onboardingComplete: false,
+        };
+    }
+
+    const account = await stripe.accounts.retrieve(customer.stripeAccountId);
+
+    return {
+        connected: true,
+        detailsSubmitted: account.details_submitted || false,
+        payoutsEnabled: account.payouts_enabled || false,
+        onboardingComplete: customer.stripeOnboardingComplete,
+    };
+};
+
+/**
+ * Get customer refund summary (for the Payments & Refunds dashboard).
+ */
+const getCustomerRefundSummary = async (customerId) => {
+    const payments = await prisma.payment.findMany({
+        where: { customerId },
+        select: {
+            amount: true,
+            status: true,
+            refundedAmount: true,
+        },
+    });
+
+    const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const inEscrow = payments
+        .filter(p => ["escrowed", "partially_released"].includes(p.status))
+        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    const refunds = await prisma.customerRefund.findMany({
+        where: { customerId },
+        select: { amount: true, status: true, expiresAt: true },
+    });
+
+    // Also include legacy card refunds from Payment.refundedAmount
+    const legacyRefunded = payments
+        .filter(p => p.refundedAmount)
+        .reduce((sum, p) => sum + parseFloat(p.refundedAmount), 0);
+
+    const transferredRefunds = refunds
+        .filter(r => r.status === "transferred")
+        .reduce((sum, r) => sum + parseFloat(r.amount), 0);
+
+    const cardRefunds = refunds
+        .filter(r => r.status === "refunded_to_card")
+        .reduce((sum, r) => sum + parseFloat(r.amount), 0);
+
+    const totalRefunded = transferredRefunds + cardRefunds + legacyRefunded;
+
+    const pendingRefunds = refunds.filter(r => r.status === "pending_connect");
+    const pendingAmount = pendingRefunds.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+
+    // Nearest expiry for pending refunds
+    const nearestExpiry = pendingRefunds.length > 0
+        ? pendingRefunds.reduce((min, r) => r.expiresAt < min ? r.expiresAt : min, pendingRefunds[0].expiresAt)
+        : null;
+
+    return {
+        totalPaid: parseFloat(totalPaid.toFixed(2)),
+        inEscrow: parseFloat(inEscrow.toFixed(2)),
+        totalRefunded: parseFloat(totalRefunded.toFixed(2)),
+        pendingRefundAmount: parseFloat(pendingAmount.toFixed(2)),
+        pendingRefundCount: pendingRefunds.length,
+        nearestExpiryDate: nearestExpiry,
+    };
+};
+
+/**
+ * Get customer refund history.
+ */
+const getCustomerRefundHistory = async (customerId) => {
+    const refunds = await prisma.customerRefund.findMany({
+        where: { customerId },
+        include: {
+            booking: {
+                select: {
+                    id: true,
+                    sessionType: true,
+                    therapist: { select: { fullName: true, profilePhotoUrl: true } },
+                },
+            },
+        },
+        orderBy: { createdAt: "desc" },
+    });
+
+    return refunds;
+};
+
+/**
+ * Transfer a pending refund to a customer's Connect account.
+ * Called when:
+ *   1. Customer finishes Connect onboarding (webhook triggers this)
+ *   2. Admin manually triggers a pending refund transfer
+ *
+ * Idempotent: if the refund already has a stripeTransferId, it's a no-op.
+ */
+const transferPendingRefund = async (refundId) => {
+    const refund = await prisma.customerRefund.findUnique({
+        where: { id: refundId },
+        include: {
+            customer: true,
+        },
+    });
+
+    if (!refund) throw new Error("Refund not found");
+    if (refund.status !== "pending_connect") {
+        logger.info(`[PaymentService] Refund ${refundId} is not pending_connect (status: ${refund.status}), skipping`);
+        return refund;
+    }
+    if (refund.stripeTransferId) {
+        logger.info(`[PaymentService] Refund ${refundId} already has transfer ${refund.stripeTransferId}, skipping`);
+        return refund;
+    }
+
+    if (!refund.customer.stripeAccountId) {
+        throw new Error("Customer does not have a Connect account");
+    }
+
+    const transfer = await stripe.transfers.create({
+        amount: Math.round(parseFloat(refund.amount) * 100),
+        currency: "usd",
+        destination: refund.customer.stripeAccountId,
+        metadata: {
+            type: "customer_refund",
+            customerRefundId: refund.id,
+            bookingId: refund.bookingId,
+            paymentId: refund.paymentId,
+        },
+    }, {
+        idempotencyKey: `customer-refund-${refund.id}`,
+    });
+
+    const updated = await prisma.customerRefund.update({
+        where: { id: refundId },
+        data: {
+            status: "transferred",
+            stripeTransferId: transfer.id,
+            transferredAt: new Date(),
+        },
+    });
+
+    logger.info("[PaymentService] Customer refund transferred", {
+        refundId,
+        amount: parseFloat(refund.amount),
+        customerId: refund.customerId,
+        transferId: transfer.id,
+    });
+
+    return updated;
+};
+
+/**
+ * Process all pending refunds for a customer who just completed Connect onboarding.
+ * Called from the account.updated webhook when payouts_enabled flips to true.
+ */
+const processPendingRefundsForCustomer = async (customerId) => {
+    const pendingRefunds = await prisma.customerRefund.findMany({
+        where: {
+            customerId,
+            status: "pending_connect",
+        },
+    });
+
+    if (pendingRefunds.length === 0) return [];
+
+    const results = [];
+    for (const refund of pendingRefunds) {
+        try {
+            const transferred = await transferPendingRefund(refund.id);
+            results.push({ refundId: refund.id, status: "transferred", transferId: transferred.stripeTransferId });
+        } catch (err) {
+            logger.error("[PaymentService] Failed to transfer pending refund", {
+                refundId: refund.id,
+                error: err.message,
+            });
+            results.push({ refundId: refund.id, status: "failed", error: err.message });
+        }
+    }
+
+    return results;
+};
+
+/**
+ * Fallback: issue card refund for expired pending_connect refunds.
+ * Called by the daily cron job.
+ */
+const processExpiredPendingRefunds = async () => {
+    const expired = await prisma.customerRefund.findMany({
+        where: {
+            status: "pending_connect",
+            expiresAt: { lt: new Date() },
+        },
+        include: {
+            payment: { select: { stripePaymentIntentId: true } },
+        },
+    });
+
+    if (expired.length === 0) return { processed: 0 };
+
+    let processed = 0;
+    let failed = 0;
+
+    for (const refund of expired) {
+        try {
+            if (!refund.payment.stripePaymentIntentId) {
+                logger.error("[PaymentService] Cannot issue fallback refund — no PaymentIntent", {
+                    refundId: refund.id,
+                });
+                failed++;
+                continue;
+            }
+
+            const stripeRefund = await stripe.refunds.create({
+                payment_intent: refund.payment.stripePaymentIntentId,
+                amount: Math.round(parseFloat(refund.amount) * 100),
+                metadata: {
+                    type: "customer_refund_fallback",
+                    customerRefundId: refund.id,
+                    bookingId: refund.bookingId,
+                    reason: "connect_setup_expired",
+                },
+            }, {
+                idempotencyKey: `fallback-refund-${refund.id}`,
+            });
+
+            await prisma.customerRefund.update({
+                where: { id: refund.id },
+                data: {
+                    status: "refunded_to_card",
+                    stripeRefundId: stripeRefund.id,
+                    fallbackRefundAt: new Date(),
+                },
+            });
+
+            logger.info("[PaymentService] Fallback card refund processed", {
+                refundId: refund.id,
+                amount: parseFloat(refund.amount),
+                stripeRefundId: stripeRefund.id,
+            });
+
+            processed++;
+        } catch (err) {
+            logger.error("[PaymentService] Fallback refund failed", {
+                refundId: refund.id,
+                error: err.message,
+            });
+            failed++;
+        }
+    }
+
+    return { processed, failed, total: expired.length };
+};
+
 export {
     createPaymentIntent,
     handlePaymentSuccess,
@@ -1508,4 +1924,13 @@ export {
     createSetupIntent,
     removePaymentMethod,
     setDefaultPaymentMethod,
+    createOrGetCustomerConnectAccount,
+    createCustomerAccountSession,
+    getCustomerConnectStatus,
+    getCustomerRefundSummary,
+    getCustomerRefundHistory,
+    transferPendingRefund,
+    processPendingRefundsForCustomer,
+    processExpiredPendingRefunds,
+    REFUND_EXPIRY_DAYS,
 }

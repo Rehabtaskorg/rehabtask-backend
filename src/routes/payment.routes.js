@@ -11,6 +11,11 @@ import {
     createSetupIntentController,
     removePaymentMethodController,
     setDefaultPaymentMethodController,
+    createCustomerConnectAccountController,
+    createCustomerAccountSessionController,
+    getCustomerConnectStatusController,
+    getCustomerRefundSummaryController,
+    getCustomerRefundHistoryController,
 } from "../controllers/payment.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
@@ -29,6 +34,15 @@ router.get("/methods", authenticate, authorize(["customer"]), getPaymentMethodsC
 router.post("/methods/setup", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createSetupIntentController);
 router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
 router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
+
+// Customer Connect account (for receiving refunds)
+router.post("/customer-connect/create", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createCustomerConnectAccountController);
+router.get("/customer-connect/status", authenticate, authorize(["customer"]), getCustomerConnectStatusController);
+router.post("/customer-connect/account-session", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createCustomerAccountSessionController);
+
+// Customer refund endpoints
+router.get("/refunds/summary", authenticate, authorize(["customer"]), getCustomerRefundSummaryController);
+router.get("/refunds/history", authenticate, authorize(["customer"]), getCustomerRefundHistoryController);
 
 // Commission rate (authenticated — therapists need this for offer UI)
 router.get("/commission-rate", authenticate, async (req, res, next) => {

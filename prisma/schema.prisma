@@ -41,27 +41,31 @@ model User {
 }
 
 model CustomerProfile {
-  id               String           @id @default(uuid()) @db.Uuid
-  userId           String           @unique @map("user_id") @db.Uuid
-  customerType     CustomerType     @map("customer_type")
-  fullName         String           @map("full_name") @db.VarChar(255)
-  agencyName       String?          @map("agency_name") @db.VarChar(255)
-  phone            String?          @db.VarChar(20)
-  location         String?
-  stripeCustomerId String?          @unique @map("stripe_customer_id") @db.VarChar(255)
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  bookings         Booking[]
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  patients         Patient[]        @relation("AgencyPatients")
-  payments         Payment[]
-  subscriptions    Subscription[]
-  requests         TherapyRequest[]
-  reviews          Review[]
+  id                          String           @id @default(uuid()) @db.Uuid
+  userId                      String           @unique @map("user_id") @db.Uuid
+  customerType                CustomerType     @map("customer_type")
+  fullName                    String           @map("full_name") @db.VarChar(255)
+  agencyName                  String?          @map("agency_name") @db.VarChar(255)
+  phone                       String?          @db.VarChar(20)
+  location                    String?
+  stripeCustomerId            String?          @unique @map("stripe_customer_id") @db.VarChar(255)
+  stripeAccountId             String?          @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeOnboardingComplete    Boolean          @default(false) @map("stripe_onboarding_complete")
+  createdAt                   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bookings                    Booking[]
+  user                        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patients                    Patient[]        @relation("AgencyPatients")
+  payments                    Payment[]
+  subscriptions               Subscription[]
+  requests                    TherapyRequest[]
+  reviews                     Review[]
+  customerRefunds             CustomerRefund[]
 
   @@index([userId])
   @@index([customerType])
   @@index([stripeCustomerId])
+  @@index([stripeAccountId])
   @@map("customer_profiles")
 }
 
@@ -333,6 +337,7 @@ model Booking {
   messages                 Message[]
   review                   Review?
   disputes                 Dispute[]
+  customerRefunds          CustomerRefund[]
 
   @@index([customerId, status, scheduledDate])
   @@index([patientId, status, scheduledDate])
@@ -394,6 +399,7 @@ model Payment {
   customer              CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   therapist             TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   sessionPayouts        SessionPayout[]
+  customerRefunds       CustomerRefund[]
 
   @@index([bookingId])
   @@index([stripePaymentIntentId])
@@ -419,6 +425,34 @@ model SessionPayout {
   @@index([paymentId])
   @@index([stripeTransferId])
   @@map("session_payouts")
+}
+
+model CustomerRefund {
+  id                    String               @id @default(uuid()) @db.Uuid
+  customerId            String               @map("customer_id") @db.Uuid
+  paymentId             String               @map("payment_id") @db.Uuid
+  bookingId             String               @map("booking_id") @db.Uuid
+  amount                Decimal              @db.Decimal(10, 2)
+  status                CustomerRefundStatus
+  stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
+  stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
+  reason                String?              @db.VarChar(255)
+  connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
+  fallbackRefundAt      DateTime?            @map("fallback_refund_at") @db.Timestamptz(3)
+  transferredAt         DateTime?            @map("transferred_at") @db.Timestamptz(3)
+  expiresAt             DateTime             @map("expires_at") @db.Timestamptz(3)
+  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer              CustomerProfile      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  payment               Payment              @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  booking               Booking              @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
+  @@index([status, expiresAt])
+  @@index([paymentId])
+  @@index([bookingId])
+  @@map("customer_refunds")
 }
 
 model DirectConversation {
@@ -745,6 +779,12 @@ enum PaymentStatus {
   released
   refunded
   failed
+}
+
+enum CustomerRefundStatus {
+  pending_connect
+  transferred
+  refunded_to_card
 }
 
 enum DayOfWeek {
