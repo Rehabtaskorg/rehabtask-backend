@@ -41,14 +41,25 @@ export const getAgencyPatients = async (customerProfile) => {
 export const createPatient = async (customerProfile, data) => {
     requireAgency(customerProfile);
 
-    const { fullName, email, phone } = data;
+    const {
+        fullName, email, phone,
+        addressLine1, addressLine2, city, state, zipCode,
+        latitude, longitude,
+    } = data;
 
     const patient = await prisma.patient.create({
         data: {
             agencyId: customerProfile.id,
             fullName,
-            email,
+            email: email || null,
             phone: phone || null,
+            addressLine1: addressLine1 || null,
+            addressLine2: addressLine2 || null,
+            city: city || null,
+            state: state || null,
+            zipCode: zipCode || null,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
             isActive: true,
         },
     });
@@ -120,8 +131,15 @@ export const updatePatient = async (customerProfile, patientId, data) => {
         where: { id: patientId },
         data: {
             ...(data.fullName && { fullName: data.fullName }),
-            ...(data.email && { email: data.email }),
+            ...(data.email !== undefined && { email: data.email || null }),
             ...(data.phone !== undefined && { phone: data.phone || null }),
+            ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),
+            ...(data.addressLine2 !== undefined && { addressLine2: data.addressLine2 || null }),
+            ...(data.city !== undefined && { city: data.city || null }),
+            ...(data.state !== undefined && { state: data.state || null }),
+            ...(data.zipCode !== undefined && { zipCode: data.zipCode || null }),
+            ...(data.latitude !== undefined && { latitude: data.latitude ?? null }),
+            ...(data.longitude !== undefined && { longitude: data.longitude ?? null }),
         }
     });
 

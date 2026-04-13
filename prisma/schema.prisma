@@ -68,9 +68,16 @@ model CustomerProfile {
 model Patient {
   id                 String           @id @default(uuid()) @db.Uuid
   agencyId           String           @map("agency_id") @db.Uuid
-  email              String           @db.VarChar(255)
+  email              String?          @db.VarChar(255)
   fullName           String           @map("full_name") @db.VarChar(255)
   phone              String?          @db.VarChar(20)
+  addressLine1       String?          @map("address_line_1") @db.VarChar(255)
+  addressLine2       String?          @map("address_line_2") @db.VarChar(255)
+  city               String?          @db.VarChar(100)
+  state              String?          @db.VarChar(50)
+  zipCode            String?          @map("zip_code") @db.VarChar(10)
+  latitude           Decimal?         @db.Decimal(10, 8)
+  longitude          Decimal?         @db.Decimal(11, 8)
   userId             String?          @unique @map("user_id") @db.Uuid
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -84,6 +91,7 @@ model Patient {
   @@index([agencyId])
   @@index([userId])
   @@index([email])
+  @@index([latitude, longitude])
   @@map("patients")
 }
 
