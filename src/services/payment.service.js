@@ -1338,11 +1338,7 @@ const createAccountSession = async (therapistId, userId) => {
             balances: {
                 enabled: true,
                 features: {
-                    // "Cash Out" instant payout button.
-                    // NOTE: live Stripe API expects a boolean here despite some
-                    // docs describing it as an enum — `"enabled"` is rejected with
-                    // `Invalid boolean: enabled`.
-                    instant_payouts: true,
+                    instant_payouts: false,
                     // Standard scheduled payouts
                     standard_payouts: true,
                     // Let therapists manage their own payout schedule
