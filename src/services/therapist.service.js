@@ -36,6 +36,23 @@ export const updateTherapistProfile = async (userId, data) => {
     // Prevent changing license fields through this endpoint
     const { licenseNumber, licenseState, ...allowedData } = data;
 
+    // Cap guard: attemptedVisitRate cannot exceed ratePerVisit.
+    if (allowedData.attemptedVisitRate != null) {
+        const effectiveRate = allowedData.ratePerVisit !== undefined
+            ? allowedData.ratePerVisit
+            : (therapist.ratePerVisit != null ? parseFloat(therapist.ratePerVisit) : null);
+        if (effectiveRate == null) {
+            throw new BadRequestError(
+                "Set your session rate before setting an attempted visit rate."
+            );
+        }
+        if (allowedData.attemptedVisitRate > effectiveRate) {
+            throw new BadRequestError(
+                "Attempted visit rate cannot be greater than your session rate."
+            );
+        }
+    }
+
     const updated = await withAdminAccess(async (tx) => {
         return tx.therapistProfile.update({
             where: { userId },
@@ -356,6 +373,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         primaryLicenseType: therapist.primaryLicenseType,
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
+        attemptedVisitRate: therapist.attemptedVisitRate,
         workAreas: therapist.workAreas.map((wa) => ({
             id: wa.id,
             zipCode: wa.zipCode,

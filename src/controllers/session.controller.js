@@ -4,6 +4,7 @@ import {
     requestSessionRevision, submitSessionRevision,
     respondToRevision, resubmitSession,
     markSessionMissed,
+    markSessionAttempted,
 } from "../services/session.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -197,6 +198,22 @@ const markMissedByCustomerController = async (req, res, next) => {
     }
 };
 
+/**
+ * Therapist: record an attempted visit (arrived but patient not home).
+ * Splits escrowed funds between therapist (attemptedVisitRate) and customer refund
+ * (booking.rate - attemptedVisitRate). Session closes in 'attempted' state.
+ */
+const markAttemptedByTherapistController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const result = await markSessionAttempted(sessionId, req.user.id, reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     completeTherapistController,
     confirmByCustomerController,
@@ -211,4 +228,5 @@ export {
     resubmitSessionController,
     markMissedByTherapistController,
     markMissedByCustomerController,
+    markAttemptedByTherapistController,
 };

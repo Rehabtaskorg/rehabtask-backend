@@ -17,6 +17,23 @@ const visitPlanOverride = {
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
 };
 
+// Attempted visit rate on an offer: optional, nullable, may be $0.
+const attemptedVisitRateField = z.number({ invalid_type_error: "Attempted visit rate must be a number" })
+    .min(0, "Attempted visit rate must be 0 or greater")
+    .max(10000, "Attempted visit rate must be $10,000 or less")
+    .multipleOf(0.01, "Attempted visit rate must have at most 2 decimal places")
+    .nullable()
+    .optional();
+
+const attemptedRateCapRefine = (data) => {
+    if (data.attemptedVisitRate == null) return true;
+    return data.attemptedVisitRate <= data.rate;
+};
+const attemptedRateCapError = {
+    message: "Attempted visit rate cannot be greater than the session rate",
+    path: ["attemptedVisitRate"],
+};
+
 export const createOfferSchema = z.object({
     requestId: z.uuid("Invalid request ID"),
     rate: z.number({ invalid_type_error: "Rate must be a number" })
@@ -34,8 +51,9 @@ export const createOfferSchema = z.object({
         .min(10, "Description must be at least 10 characters")
         .max(1000, "Description must not exceed 1000 characters"),
     visitTypeId: z.string().uuid().optional().nullable(),
+    attemptedVisitRate: attemptedVisitRateField,
     ...visitPlanOverride,
-});
+}).refine(attemptedRateCapRefine, attemptedRateCapError);
 
 export const reviseOfferSchema = z.object({
     rate: z.number({ invalid_type_error: "Rate must be a number" })
@@ -49,8 +67,9 @@ export const reviseOfferSchema = z.object({
             }),
     description: z.string().min(10).max(1000),
     visitTypeId: z.string().uuid().optional().nullable(),
+    attemptedVisitRate: attemptedVisitRateField,
     ...visitPlanOverride,
-});
+}).refine(attemptedRateCapRefine, attemptedRateCapError);
 
 export const requestChangeSchema = z.object({
     note: z.string()

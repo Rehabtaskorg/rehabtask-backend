@@ -125,6 +125,7 @@ model TherapistProfile {
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
+  attemptedVisitRate       Decimal?               @map("attempted_visit_rate") @db.Decimal(10, 2)
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -368,6 +369,11 @@ model Session {
   missedReason String?       @map("missed_reason") @db.VarChar(500)
   missedBy     MissedByRole? @map("missed_by")
   missedAt     DateTime?     @map("missed_at") @db.Timestamptz(3)
+
+  attemptedRateCharged Decimal?      @map("attempted_rate_charged") @db.Decimal(10, 2)
+  attemptedReason      String?       @map("attempted_reason") @db.VarChar(500)
+  attemptedAt          DateTime?     @map("attempted_at") @db.Timestamptz(3)
+  attemptedBy          MissedByRole? @map("attempted_by")
 
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)

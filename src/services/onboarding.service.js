@@ -147,6 +147,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
                 licenseNumber: data.licenseNumber,
                 licenseState: data.licenseState,
                 ...(data.ratePerVisit !== undefined && { ratePerVisit: data.ratePerVisit }),
+                ...(data.attemptedVisitRate !== undefined && { attemptedVisitRate: data.attemptedVisitRate }),
                 onboardingStep: Math.max(therapist.onboardingStep, 3),
             },
         });

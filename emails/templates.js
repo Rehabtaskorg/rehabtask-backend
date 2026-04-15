@@ -882,3 +882,21 @@ export const customerRefundReturnedToCard = ({ customer, refundAmount }) => ({
         ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
     `),
 });
+
+// Attempted Visit — therapist payout notification
+export const attemptedVisitTherapistPayout = ({ therapist, customer, session, booking, grossAmount, refundAmount }) => ({
+    subject: `Attempted visit payout: ${formatCurrency(grossAmount)} released`,
+    html: layout(`
+        ${heading('Attempted Visit Payout')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`You recorded an attempted visit for your session with ${customer.fullName}. Your attempted visit fee has been released from escrow.`)}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(grossAmount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Released (before commission)</p>
+        ${hr()}
+        ${text(`The remaining ${formatCurrency(refundAmount)} from this session has been refunded to the customer.`)}
+        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
+        ${hr()}
+        ${muted('Commission is applied at payout time. Net amount will reflect on your earnings page.')}
+    `),
+});

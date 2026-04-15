@@ -6,6 +6,7 @@ import {
     requestRevisionController, submitRevisionController,
     respondToRevisionController, resubmitSessionController,
     markMissedByTherapistController, markMissedByCustomerController,
+    markAttemptedByTherapistController,
 } from "../controllers/session.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -30,5 +31,9 @@ router.post("/:sessionId/revision-resubmit", authenticate, authorize(["therapist
 //   Customer:  report a therapist no-show (hard-blocked until scheduledDate has passed)
 router.post("/:sessionId/mark-missed-by-therapist", authenticate, authorize(["therapist"]), markMissedByTherapistController);
 router.post("/:sessionId/mark-missed-by-customer", authenticate, authorize(["customer"]), markMissedByCustomerController);
+
+// Attempted visit (therapist arrived, patient not home). Therapist-only by design
+// per the business rules — customer disputes go through the Resolution Center.
+router.post("/:sessionId/mark-attempted", authenticate, authorize(["therapist"]), markAttemptedByTherapistController);
 
 export default router;

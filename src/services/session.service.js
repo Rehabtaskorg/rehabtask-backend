@@ -8,7 +8,14 @@ import {
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
 import { logAction } from "./audit.service.js";
-import { releaseSessionPayout, createPerSessionRefund } from "./payment.service.js";
+import {
+    releaseSessionPayout,
+    releasePartialSessionPayout,
+    createPerSessionRefund,
+} from "./payment.service.js";
+import {
+    sendAttemptedVisitTherapistPayout,
+} from "./email.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
@@ -779,6 +786,267 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
     });
 
     return { session: updatedSession, customerRefund };
+};
+
+/**
+ * Mark a session as an attempted visit — therapist arrived but patient wasn't home.
+ *
+ * Money flow (draws from escrow, no new card charge):
+ *   - Therapist receives the booking's snapshot attempted-visit rate (minus commission)
+ *   - Customer is refunded the remainder (booking.rate - attemptedVisitRate)
+ *   - Session closes in terminal 'attempted' status
+ *
+ * Guards:
+ *   - Therapist-only (customer cannot mark — they'd go through Resolution Center instead)
+ *   - Session must be 'scheduled'
+ *   - scheduledDate must have passed (timing block)
+ *   - booking.attemptedVisitRate must be set AND > 0
+ *   - Reason required (min 10 chars)
+ *   - Payment must be escrowed or partially_released
+ *
+ * @param {string} sessionId
+ * @param {string} userId - authenticated therapist user
+ * @param {string} reason - min 10 chars
+ * @returns {Promise<{session, customerRefund, sessionPayout, bookingFinalized}>}
+ */
+export const markSessionAttempted = async (sessionId, userId, reason) => {
+    if (!reason || reason.trim().length < 10) {
+        throw new BadRequestError("A reason is required (at least 10 characters)");
+    }
+
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { email: true } } } },
+                    therapist: { include: { user: { select: { email: true } } } },
+                    payment: true,
+                    sessions: { select: { id: true, status: true } },
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new BadRequestError("Session not found");
+    }
+
+    // Authorization — therapist-only
+    if (session.booking.therapist.userId !== userId) {
+        throw new BadRequestError("Unauthorized");
+    }
+
+    if (session.status !== "scheduled") {
+        throw new BadRequestError(
+            `Cannot mark session as attempted from '${session.status}' status. Session must be scheduled.`
+        );
+    }
+
+    if (session.scheduledDate && new Date(session.scheduledDate) > new Date()) {
+        throw new BadRequestError(
+            "You can only mark an attempted visit after the scheduled date has passed."
+        );
+    }
+
+    const booking = session.booking;
+
+    const attemptedRate = booking.attemptedVisitRate != null
+        ? parseFloat(booking.attemptedVisitRate)
+        : null;
+
+    if (attemptedRate == null || attemptedRate <= 0) {
+        throw new BadRequestError(
+            "Attempted visit rate is not configured for this booking. Use Mark Missed instead."
+        );
+    }
+
+    const sessionRate = parseFloat(booking.rate);
+    if (attemptedRate > sessionRate) {
+        throw new BadRequestError(
+            "Attempted visit rate cannot exceed the session rate. Contact support."
+        );
+    }
+
+    const payment = booking.payment;
+    if (!payment) {
+        throw new BadRequestError("No payment record found for this booking");
+    }
+    if (!["escrowed", "partially_released"].includes(payment.status)) {
+        throw new BadRequestError(
+            `Cannot process an attempted visit — payment is in '${payment.status}' status.`
+        );
+    }
+
+    const refundAmount = parseFloat((sessionRate - attemptedRate).toFixed(2));
+
+    let updatedSession;
+    try {
+        const result = await prisma.session.updateMany({
+            where: { id: sessionId, status: "scheduled" },
+            data: {
+                status: "attempted",
+                attemptedBy: "therapist",
+                attemptedReason: reason.trim(),
+                attemptedAt: new Date(),
+                attemptedRateCharged: attemptedRate,
+            },
+        });
+        if (result.count === 0) {
+            throw new BadRequestError(
+                "This session is no longer in 'scheduled' status. Refresh and try again."
+            );
+        }
+        updatedSession = await prisma.session.findUnique({ where: { id: sessionId } });
+    } catch (err) {
+        if (err instanceof BadRequestError) throw err;
+        throw new BadRequestError(`Failed to update session: ${err.message}`);
+    }
+
+    let sessionPayout;
+    try {
+        sessionPayout = await releasePartialSessionPayout({
+            session: { id: session.id, sessionNumber: session.sessionNumber },
+            payment: { ...payment },
+            booking: {
+                id: booking.id,
+                therapist: booking.therapist,
+            },
+            amount: attemptedRate,
+        });
+    } catch (err) {
+        logger.error("[Session] Attempted-visit payout failed — reverting session status", {
+            sessionId,
+            error: err.message,
+        });
+        // Best-effort revert so the therapist can retry
+        await prisma.session.update({
+            where: { id: sessionId },
+            data: {
+                status: "scheduled",
+                attemptedBy: null,
+                attemptedReason: null,
+                attemptedAt: null,
+                attemptedRateCharged: null,
+            },
+        }).catch((revertErr) => {
+            logger.error("[Session] CRITICAL: Failed to revert session after payout failure", {
+                sessionId,
+                originalError: err.message,
+                revertError: revertErr.message,
+            });
+        });
+        throw new BadRequestError(`Failed to release attempted-visit payout: ${err.message}`);
+    }
+
+    let customerRefund = null;
+    if (refundAmount > 0) {
+        try {
+            const result = await createPerSessionRefund({
+                session: { id: session.id, bookingId: session.bookingId },
+                payment: { id: payment.id, stripePaymentIntentId: payment.stripePaymentIntentId },
+                customer: booking.customer,
+                booking: {
+                    id: booking.id,
+                    rate: booking.rate,
+                    therapist: booking.therapist,
+                },
+                reason: "attempted_visit_remainder",
+                amount: refundAmount,
+            });
+            customerRefund = result.customerRefund;
+        } catch (refundErr) {
+            logger.error("[Session] CRITICAL: Attempted-visit remainder refund failed — payout already sent", {
+                sessionId,
+                bookingId: booking.id,
+                attemptedRate,
+                refundAmount,
+                error: refundErr.message,
+                sessionPayoutId: sessionPayout?.id,
+            });
+        }
+    }
+
+    const refreshedSessions = await prisma.session.findMany({
+        where: { bookingId: booking.id },
+        select: { id: true, status: true },
+    });
+    const anyOpenSession = refreshedSessions.some((s) =>
+        !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)
+    );
+
+    let bookingFinalized = false;
+    if (!anyOpenSession && ["confirmed", "in_progress", "accepted"].includes(booking.status)) {
+        await prisma.booking.update({
+            where: { id: booking.id },
+            data: { status: "finalized" },
+        });
+        bookingFinalized = true;
+    }
+
+    logAction({
+        actorId: userId,
+        action: "session.attempted_by_therapist",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: booking.id,
+            reason: reason.trim(),
+            attemptedRate,
+            refundAmount,
+            sessionPayoutId: sessionPayout?.id,
+            customerRefundId: customerRefund?.id,
+            bookingFinalized,
+        },
+    });
+
+    logger.info("[SessionService] Session marked as attempted visit", {
+        sessionId,
+        bookingId: booking.id,
+        attemptedRate,
+        refundAmount,
+        bookingFinalized,
+    });
+
+    // System message — fire-and-forget
+    const therapistUserId = booking.therapist.userId;
+    const customerUserId = booking.customer.userId;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content:
+                    `Attempted visit recorded for session ${session.sessionNumber ?? ""}. ` +
+                    `$${attemptedRate.toFixed(2)} paid to therapist for time and travel; ` +
+                    `$${refundAmount.toFixed(2)} refunded to you.`,
+                systemType: "session_attempted",
+                bookingId: booking.id,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_attempted) failed", { error: err.message });
+        });
+
+    // Therapist payout email — fire-and-forget
+    sendAttemptedVisitTherapistPayout({
+        therapist: booking.therapist,
+        customer: booking.customer,
+        session: updatedSession,
+        booking,
+        grossAmount: attemptedRate,
+        refundAmount,
+    }).catch((err) => {
+        logger.error("[SessionService] Attempted visit therapist payout email failed", { error: err.message });
+    });
+
+    return {
+        session: updatedSession,
+        customerRefund,
+        sessionPayout,
+        bookingFinalized,
+    };
 };
 
 /**

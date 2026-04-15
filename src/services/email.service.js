@@ -50,6 +50,7 @@ import {
     customerRefundReminder,
     customerRefundTransferred,
     customerRefundReturnedToCard,
+    attemptedVisitTherapistPayout,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -337,6 +338,12 @@ export const sendCustomerRefundReminder = async ({ customer, refundAmount, daysR
 
 export const sendCustomerRefundTransferred = async ({ customer, refundAmount }) => {
     return dispatch(customer.user.email, customerRefundTransferred, { customer, refundAmount });
+};
+
+export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, session, booking, grossAmount, refundAmount }) => {
+    return dispatch(therapist.user.email, attemptedVisitTherapistPayout, {
+        therapist, customer, session, booking, grossAmount, refundAmount,
+    });
 };
 
 export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {

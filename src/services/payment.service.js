@@ -717,6 +717,178 @@ const releaseSessionPayout = async ({ session, payment, booking, isLast }) => {
 };
 
 /**
+ * Release a partial payout for a single session — used by the Attempted Visit flow.
+ *
+ * Unlike releaseSessionPayout which pays the full per-session rate, this pays an
+ * arbitrary amount (the therapist's attempted-visit rate) and applies the same
+ * commission ratio as the original escrow. The remainder of the session's escrow
+ * is refunded to the customer via createPerSessionRefund in the calling flow.
+ *
+ * Invariants:
+ *   - SessionPayout.sessionId is @unique — each session can have at most one payout
+ *     row (attempted OR confirmed, never both).
+ *   - Stripe idempotency key is session-scoped + suffix-discriminated so a session
+ *     that somehow went through both paths (shouldn't happen — status guard) would
+ *     not reuse a cached response.
+ *   - payment.status transitions: escrowed -> partially_released. Never flips to
+ *     released here (the caller knows whether this was the last deliverable session
+ *     and handles the booking.finalized transition separately).
+ *
+ * @param {object} opts
+ * @param {object} opts.session - Session row (must be 'scheduled', about to flip to 'attempted')
+ * @param {object} opts.payment - Payment row { id, status, amount, platformFee, therapistPayout, releasedAmount }
+ * @param {object} opts.booking - Booking row with therapist relation
+ * @param {number} opts.amount - Gross amount to release (pre-commission) e.g. attemptedVisitRate
+ * @returns {Promise<object|null>} The SessionPayout record, or null if amount <= 0
+ */
+const releasePartialSessionPayout = async ({ session, payment, booking, amount }) => {
+    // Idempotency guard: session can only have one payout row ever.
+    const existingPayout = await prisma.sessionPayout.findUnique({
+        where: { sessionId: session.id },
+    });
+    if (existingPayout) {
+        logger.info("[PaymentService] Partial session payout already exists, skipping", {
+            sessionId: session.id,
+            payoutId: existingPayout.id,
+        });
+        return existingPayout;
+    }
+
+    const therapist = booking.therapist;
+    if (!therapist.stripeAccountId) {
+        throw new Error("Therapist has not connected Stripe account");
+    }
+
+    if (!["escrowed", "partially_released"].includes(payment.status)) {
+        throw new Error(`Payment not in a releasable state (current: ${payment.status})`);
+    }
+
+    // Precision-safe rounding
+    const grossAmount = Math.round(Number(amount) * 100) / 100;
+
+    if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
+        logger.info("[PaymentService] Partial payout amount is zero or invalid — skipping Stripe transfer", {
+            sessionId: session.id,
+            grossAmount,
+        });
+        return null;
+    }
+
+    // Apply the same commission ratio used when the escrow was originally funded.
+    // This keeps commission accounting uniform across confirmed and attempted sessions.
+    const totalAmount = parseFloat(payment.amount);
+    const totalFee = parseFloat(payment.platformFee);
+    const feeRatio = totalAmount > 0 ? (totalFee / totalAmount) : 0;
+    const partialFee = Math.floor(grossAmount * feeRatio * 100) / 100;
+    const partialTherapistPayout = parseFloat((grossAmount - partialFee).toFixed(2));
+
+    if (partialTherapistPayout <= 0) {
+        logger.warn("[PaymentService] Partial therapist payout <= 0 after commission, skipping transfer", {
+            sessionId: session.id,
+            grossAmount,
+            partialFee,
+        });
+        return null;
+    }
+
+    const alreadyReleased = parseFloat(payment.releasedAmount ?? 0);
+    const totalTherapistPayout = parseFloat(payment.therapistPayout);
+
+    // Guard against over-release caused by any prior partials + this one
+    if (alreadyReleased + partialTherapistPayout > totalTherapistPayout + 0.01) {
+        throw new Error(
+            `Partial payout would exceed total therapist payout ` +
+            `(alreadyReleased=${alreadyReleased}, partial=${partialTherapistPayout}, total=${totalTherapistPayout})`
+        );
+    }
+
+    // Stripe transfer — isPerSession metadata flag keeps the webhook recovery
+    // handler from race-flipping the payment to released (see webhook.controller.js).
+    let transfer;
+    try {
+        transfer = await stripe.transfers.create({
+            amount: Math.round(partialTherapistPayout * 100),
+            currency: "usd",
+            destination: therapist.stripeAccountId,
+            metadata: {
+                paymentId: payment.id,
+                sessionId: session.id,
+                bookingId: booking.id,
+                sessionNumber: String(session.sessionNumber ?? ""),
+                isPerSession: "true",
+                isAttempted: "true",
+                grossAmount: String(grossAmount),
+            },
+            description: `Attempted-visit payout for session ${session.sessionNumber ?? ""} (booking ${booking.id})`,
+        }, {
+            idempotencyKey: `session-attempted-payout-${session.id}`,
+        });
+    } catch (stripeError) {
+        logger.error("[PaymentService] Partial session transfer failed", {
+            sessionId: session.id,
+            error: stripeError.message,
+        });
+        throw new Error(`Failed to transfer attempted-visit payout: ${stripeError.message}`);
+    }
+
+    const newReleasedAmount = parseFloat((alreadyReleased + partialTherapistPayout).toFixed(2));
+    // An attempted visit is a partial per-session release. We DO NOT flip the
+    // payment to "released" here — the calling service (markSessionAttempted)
+    // decides whether the whole booking is done and handles that transition.
+    const nextStatus = "partially_released";
+
+    const sessionPayout = await prisma.$transaction(async (tx) => {
+        const payout = await tx.sessionPayout.create({
+            data: {
+                sessionId: session.id,
+                paymentId: payment.id,
+                stripeTransferId: transfer.id,
+                amount: grossAmount,
+                platformFee: partialFee,
+                therapistPayout: partialTherapistPayout,
+            },
+        });
+
+        await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+                releasedAmount: newReleasedAmount,
+                status: nextStatus,
+            },
+        });
+
+        return payout;
+    });
+
+    logSystemEvent({
+        action: "payment.released_to_therapist",
+        entityType: "session_payout",
+        entityId: sessionPayout.id,
+        changes: {
+            sessionId: session.id,
+            bookingId: booking.id,
+            grossAmount,
+            therapistPayout: partialTherapistPayout,
+            platformFee: partialFee,
+            stripeTransferId: transfer.id,
+            sessionNumber: session.sessionNumber,
+            isAttempted: true,
+        },
+    });
+
+    logger.info("[PaymentService] Partial session payout released (attempted visit)", {
+        sessionId: session.id,
+        bookingId: booking.id,
+        grossAmount,
+        therapistPayout: partialTherapistPayout,
+        transferId: transfer.id,
+        newReleasedAmount,
+    });
+
+    return sessionPayout;
+};
+
+/**
  * Finalize an incomplete booking — pay out all confirmed-but-unpaid sessions
  * and refund the customer for undelivered sessions.
  *
@@ -751,12 +923,16 @@ const finalizeBooking = async (bookingId, therapistId) => {
     }
 
     const confirmedSessions = booking.sessions.filter(s => s.status === "confirmed_by_customer");
-    // Exclude "missed" sessions — they were already refunded per-session via markSessionMissed.
-    // Also exclude "cancelled" sessions — never refundable through finalize.
+    // Exclude sessions already fully resolved per-session:
+    //   - missed:   refunded in full to customer via markSessionMissed
+    //   - attempted: partial payout to therapist + remainder refunded to customer
+    //                via markSessionAttempted (both money flows already completed)
+    //   - cancelled: never refundable through finalize
     const undeliveredSessions = booking.sessions.filter(s =>
         s.status !== "confirmed_by_customer" &&
         s.status !== "cancelled" &&
-        s.status !== "missed"
+        s.status !== "missed" &&
+        s.status !== "attempted"
     );
 
     if (confirmedSessions.length === 0) {
@@ -1999,13 +2175,16 @@ const processExpiredPendingRefunds = async () => {
  * @param {object} opts.payment - { id, stripePaymentIntentId }
  * @param {object} opts.customer - CustomerProfile with { id, stripeAccountId, stripeOnboardingComplete, user: { email } }
  * @param {object} opts.booking - { id, rate }
- * @param {string} opts.reason - e.g. "missed_visit_by_therapist", "missed_visit_by_customer"
+ * @param {string} opts.reason - e.g. "missed_visit_by_therapist", "missed_visit_by_customer", "attempted_visit_remainder"
+ * @param {number} [opts.amount] - Optional override. Defaults to full booking.rate (missed-visit behavior).
+ *                                 For attempted visits, pass `booking.rate - attemptedVisitRate`.
  * @returns {Promise<{customerRefund, transfer}>}
  */
-const createPerSessionRefund = async ({ session, payment, customer, booking, reason }) => {
-    const refundAmount = parseFloat(booking.rate);
+const createPerSessionRefund = async ({ session, payment, customer, booking, reason, amount }) => {
+    const rawAmount = amount != null ? Number(amount) : parseFloat(booking.rate);
+    const refundAmount = Math.round(rawAmount * 100) / 100;
 
-    if (refundAmount <= 0) {
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
         throw new Error("Invalid refund amount");
     }
 
@@ -2121,6 +2300,7 @@ export {
     handlePaymentSuccess,
     releasePayment,
     releaseSessionPayout,
+    releasePartialSessionPayout,
     finalizeBooking,
     processRefund,
     getCustomerPaymentHistory,
