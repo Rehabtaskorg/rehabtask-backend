@@ -8,7 +8,7 @@ import {
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
 import { logAction } from "./audit.service.js";
-import { releaseSessionPayout } from "./payment.service.js";
+import { releaseSessionPayout, createPerSessionRefund } from "./payment.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 
 /**
@@ -647,6 +647,139 @@ export const cancelSession = async (sessionId, userId, reason) => {
 
     return updatedSession;
 }
+
+/**
+ * Mark a session as missed (no-show).
+ *
+ * Two actors can trigger this:
+ *   - Therapist: self-reports they couldn't attend
+ *   - Customer: reports therapist no-show (hard-blocked until scheduledDate has passed)
+ *
+ * Effect:
+ *   - Session status -> "missed"
+ *   - Per-session refund created (via createPerSessionRefund)
+ *     - Immediate transfer if customer has verified Connect account
+ *     - Otherwise pending_connect record (customer sees "Set Up Payout" CTA)
+ *   - Customer receives refund notification email
+ *   - Booking stays active — other sessions are unaffected
+ *
+ * Guards:
+ *   - Session must be in "scheduled" status (cannot mark pending/completed/confirmed/missed/cancelled)
+ *   - Only assigned therapist or booking customer can call this
+ *   - Customer cannot mark a future session as missed (hard block on scheduledDate > NOW)
+ *   - Reason is required (min 10 chars)
+ *
+ * @param {string} sessionId
+ * @param {string} userId - authenticated user
+ * @param {"therapist"|"customer"} actorRole
+ * @param {string} reason
+ * @returns {Promise<{session, customerRefund}>}
+ */
+export const markSessionMissed = async (sessionId, userId, actorRole, reason) => {
+    if (!reason || reason.trim().length < 10) {
+        throw new BadRequestError("A reason is required (at least 10 characters)");
+    }
+
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { email: true } } } },
+                    therapist: true,
+                    payment: true,
+                },
+            },
+        },
+    });
+
+    if (!session) {
+        throw new BadRequestError("Session not found");
+    }
+
+    // Authorization: must be the assigned therapist or the booking customer
+    const isTherapist = actorRole === "therapist" && session.booking.therapist.userId === userId;
+    const isCustomer = actorRole === "customer" && session.booking.customer.userId === userId;
+
+    if (!isTherapist && !isCustomer) {
+        throw new BadRequestError("Unauthorized");
+    }
+
+    // Status guard — only scheduled sessions can be marked missed
+    if (session.status !== "scheduled") {
+        throw new BadRequestError(
+            `Cannot mark session as missed from '${session.status}' status. Session must be scheduled.`
+        );
+    }
+
+    // Timing hard block for customer — prevents reporting a future session as missed
+    if (isCustomer && session.scheduledDate && new Date(session.scheduledDate) > new Date()) {
+        throw new BadRequestError(
+            "You can only report a missed visit after the scheduled date has passed."
+        );
+    }
+
+    // Payment must exist and be in a state where a refund makes sense
+    const payment = session.booking.payment;
+    if (!payment) {
+        throw new BadRequestError("No payment record found for this booking");
+    }
+    if (!["escrowed", "partially_released"].includes(payment.status)) {
+        throw new BadRequestError(
+            `Cannot refund a missed session — payment is in '${payment.status}' status.`
+        );
+    }
+
+    const missedBy = isCustomer ? "customer" : "therapist";
+    const refundReason = isCustomer ? "missed_visit_by_customer" : "missed_visit_by_therapist";
+
+    // Update session status first — this prevents double-processing if the refund call is slow
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: {
+            status: "missed",
+            missedBy,
+            missedReason: reason.trim(),
+            missedAt: new Date(),
+        },
+    });
+
+    // Create the refund (transfer or pending)
+    const { customerRefund } = await createPerSessionRefund({
+        session: { id: session.id, bookingId: session.bookingId },
+        payment: { id: payment.id, stripePaymentIntentId: payment.stripePaymentIntentId },
+        customer: session.booking.customer,
+        booking: {
+            id: session.booking.id,
+            rate: session.booking.rate,
+            therapist: session.booking.therapist,
+        },
+        reason: refundReason,
+    });
+
+    logAction({
+        actorId: userId,
+        action: isCustomer ? "session.missed_by_customer" : "session.missed_by_therapist",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            reason: reason.trim(),
+            refundAmount: parseFloat(session.booking.rate),
+            refundStatus: customerRefund.status,
+            customerRefundId: customerRefund.id,
+        },
+    });
+
+    logger.info("[SessionService] Session marked as missed", {
+        sessionId,
+        missedBy,
+        refundAmount: parseFloat(session.booking.rate),
+        refundStatus: customerRefund.status,
+    });
+
+    return { session: updatedSession, customerRefund };
+};
 
 /**
  * Get session by ID

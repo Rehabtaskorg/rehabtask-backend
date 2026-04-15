@@ -365,10 +365,15 @@ model Session {
   revisionCount           Int       @default(0) @map("revision_count")
   revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
 
-  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  booking   Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  payout    SessionPayout?
+  missedReason String?       @map("missed_reason") @db.VarChar(500)
+  missedBy     MissedByRole? @map("missed_by")
+  missedAt     DateTime?     @map("missed_at") @db.Timestamptz(3)
+
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  booking         Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payout          SessionPayout?
+  customerRefunds CustomerRefund[]
 
   @@index([bookingId])
   @@index([status, completedAt])
@@ -432,6 +437,7 @@ model CustomerRefund {
   customerId            String               @map("customer_id") @db.Uuid
   paymentId             String               @map("payment_id") @db.Uuid
   bookingId             String               @map("booking_id") @db.Uuid
+  sessionId             String?              @map("session_id") @db.Uuid
   amount                Decimal              @db.Decimal(10, 2)
   status                CustomerRefundStatus
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
@@ -447,11 +453,13 @@ model CustomerRefund {
   customer              CustomerProfile      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   payment               Payment              @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   booking               Booking              @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  session               Session?             @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status])
   @@index([status, expiresAt])
   @@index([paymentId])
   @@index([bookingId])
+  @@index([sessionId])
   @@map("customer_refunds")
 }
 
@@ -770,6 +778,12 @@ enum SessionStatus {
   in_revision
   confirmed_by_customer
   cancelled
+  missed
+}
+
+enum MissedByRole {
+  therapist
+  customer
 }
 
 enum PaymentStatus {

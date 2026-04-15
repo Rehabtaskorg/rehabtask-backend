@@ -751,7 +751,13 @@ const finalizeBooking = async (bookingId, therapistId) => {
     }
 
     const confirmedSessions = booking.sessions.filter(s => s.status === "confirmed_by_customer");
-    const undeliveredSessions = booking.sessions.filter(s => s.status !== "confirmed_by_customer" && s.status !== "cancelled");
+    // Exclude "missed" sessions — they were already refunded per-session via markSessionMissed.
+    // Also exclude "cancelled" sessions — never refundable through finalize.
+    const undeliveredSessions = booking.sessions.filter(s =>
+        s.status !== "confirmed_by_customer" &&
+        s.status !== "cancelled" &&
+        s.status !== "missed"
+    );
 
     if (confirmedSessions.length === 0) {
         throw new Error("No confirmed sessions to finalize. Use cancellation instead.");
@@ -1941,6 +1947,137 @@ const processExpiredPendingRefunds = async () => {
     return { processed, failed, total: expired.length };
 };
 
+/**
+ * Create a per-session refund. Used by:
+ *   - Missed visit flow (therapist/customer marks a session as missed)
+ *   - Any future per-session refund scenarios
+ *
+ * Behavior:
+ *   - If customer has a verified Connect account: immediate Stripe transfer
+ *   - Otherwise: creates a `pending_connect` CustomerRefund record. Customer
+ *     will see it on their Payments page and can set up Connect to claim it.
+ *     If unclaimed after 30 days, the cron fallback issues a card refund.
+ *
+ * Idempotent guard: caller must ensure there's no existing refund for this session.
+ * (The session status check in markSessionMissed already prevents double-marking.)
+ *
+ * @param {object} opts
+ * @param {object} opts.session - { id, bookingId }
+ * @param {object} opts.payment - { id, stripePaymentIntentId }
+ * @param {object} opts.customer - CustomerProfile with { id, stripeAccountId, stripeOnboardingComplete, user: { email } }
+ * @param {object} opts.booking - { id, rate }
+ * @param {string} opts.reason - e.g. "missed_visit_by_therapist", "missed_visit_by_customer"
+ * @returns {Promise<{customerRefund, transfer}>}
+ */
+const createPerSessionRefund = async ({ session, payment, customer, booking, reason }) => {
+    const refundAmount = parseFloat(booking.rate);
+
+    if (refundAmount <= 0) {
+        throw new Error("Invalid refund amount");
+    }
+
+    let customerRefund = null;
+    let transfer = null;
+
+    // If customer has a verified Connect account, transfer immediately
+    if (customer.stripeAccountId && customer.stripeOnboardingComplete) {
+        try {
+            transfer = await stripe.transfers.create({
+                amount: Math.round(refundAmount * 100),
+                currency: "usd",
+                destination: customer.stripeAccountId,
+                metadata: {
+                    type: "customer_refund",
+                    reason,
+                    bookingId: booking.id,
+                    paymentId: payment.id,
+                    sessionId: session.id,
+                },
+            }, {
+                idempotencyKey: `per-session-refund-${session.id}`,
+            });
+
+            customerRefund = await prisma.customerRefund.create({
+                data: {
+                    customerId: customer.id,
+                    paymentId: payment.id,
+                    bookingId: booking.id,
+                    sessionId: session.id,
+                    amount: refundAmount,
+                    status: "transferred",
+                    stripeTransferId: transfer.id,
+                    transferredAt: new Date(),
+                    reason,
+                    expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+                },
+            });
+
+            logger.info("[PaymentService] Per-session refund transferred to customer Connect account", {
+                sessionId: session.id,
+                refundAmount,
+                transferId: transfer.id,
+            });
+        } catch (stripeError) {
+            logger.error("[PaymentService] Per-session refund transfer failed — creating pending record instead", {
+                sessionId: session.id,
+                refundAmount,
+                error: stripeError.message,
+            });
+            // Fall through to pending_connect path below
+        }
+    }
+
+    if (!customerRefund) {
+        customerRefund = await prisma.customerRefund.create({
+            data: {
+                customerId: customer.id,
+                paymentId: payment.id,
+                bookingId: booking.id,
+                sessionId: session.id,
+                amount: refundAmount,
+                status: "pending_connect",
+                reason,
+                expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+            },
+        });
+
+        logger.info("[PaymentService] Per-session refund pending (awaiting customer Connect setup)", {
+            sessionId: session.id,
+            refundAmount,
+            expiresAt: customerRefund.expiresAt,
+        });
+    }
+
+    // Update payment.refundedAmount cumulatively (not replaced)
+    await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+            refundedAmount: {
+                increment: refundAmount,
+            },
+            refundedAt: new Date(),
+        },
+    });
+
+    // Notify customer
+    if (customerRefund.status === "transferred") {
+        sendCustomerRefundTransferred({
+            customer,
+            refundAmount,
+        }).catch(() => {});
+    } else {
+        sendCustomerRefundAvailable({
+            customer,
+            therapist: booking.therapist || { fullName: "Your therapist" },
+            refundAmount,
+            bookingId: booking.id,
+            daysUntilExpiry: REFUND_EXPIRY_DAYS,
+        }).catch(() => {});
+    }
+
+    return { customerRefund, transfer };
+};
+
 export {
     createPaymentIntent,
     handlePaymentSuccess,
@@ -1966,5 +2103,6 @@ export {
     transferPendingRefund,
     processPendingRefundsForCustomer,
     processExpiredPendingRefunds,
+    createPerSessionRefund,
     REFUND_EXPIRY_DAYS,
 }
