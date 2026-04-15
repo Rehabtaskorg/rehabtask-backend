@@ -2048,13 +2048,18 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
         });
     }
 
-    // Update payment.refundedAmount cumulatively (not replaced)
+    // Update payment.refundedAmount cumulatively (not replaced).
+    // Prisma `increment` on a NULL column yields NULL (NULL + n = NULL in SQL),
+    // so we manually compute the new total to handle the first-refund case.
+    const currentPayment = await prisma.payment.findUnique({
+        where: { id: payment.id },
+        select: { refundedAmount: true },
+    });
+    const currentRefunded = currentPayment?.refundedAmount ? parseFloat(currentPayment.refundedAmount) : 0;
     await prisma.payment.update({
         where: { id: payment.id },
         data: {
-            refundedAmount: {
-                increment: refundAmount,
-            },
+            refundedAmount: currentRefunded + refundAmount,
             refundedAt: new Date(),
         },
     });
