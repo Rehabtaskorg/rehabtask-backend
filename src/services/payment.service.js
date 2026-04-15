@@ -1151,14 +1151,28 @@ const getTherapistPayoutHistory = async (therapistId) => {
     const releasedPayments = payments.filter((p) => ["released", "partially_released"].includes(p.status));
     const escrowedPayments = payments.filter((p) => p.status === "escrowed");
 
+    // Helper: adjust a payment's max payout for missed/cancelled sessions.
+    // Each missed/cancelled session was per-session refunded to the customer —
+    // the therapist can never earn that portion, so it should not be counted
+    // as pending.
+    const getAdjustedPayout = (p) => {
+        const sessions = p.booking?.sessions || [];
+        const total = sessions.length;
+        if (total <= 1) return parseFloat(p.therapistPayout);
+        const missedOrCancelled = sessions.filter((s) => s.status === "missed" || s.status === "cancelled").length;
+        if (missedOrCancelled === 0) return parseFloat(p.therapistPayout);
+        const deliverable = Math.max(0, total - missedOrCancelled);
+        return parseFloat(((parseFloat(p.therapistPayout) / total) * deliverable).toFixed(2));
+    };
+
     const totalEarnings = releasedPayments
         .reduce((sum, p) => sum + parseFloat(p.releasedAmount ?? p.therapistPayout), 0);
 
     const pendingEarnings = escrowedPayments
-        .reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0)
+        .reduce((sum, p) => sum + getAdjustedPayout(p), 0)
         + payments
             .filter((p) => p.status === "partially_released")
-            .reduce((sum, p) => sum + (parseFloat(p.therapistPayout) - parseFloat(p.releasedAmount ?? 0)), 0);
+            .reduce((sum, p) => sum + Math.max(0, getAdjustedPayout(p) - parseFloat(p.releasedAmount ?? 0)), 0);
 
     const pendingSessionCount = escrowedPayments.length;
 
