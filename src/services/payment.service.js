@@ -941,7 +941,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
         therapist: booking.therapist,
         payment: updatedPayment,
         booking,
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Notify customer about the refund
     if (refundAmount > 0) {
@@ -949,7 +949,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
             sendCustomerRefundTransferred({
                 customer: booking.customer,
                 refundAmount,
-            }).catch(() => {});
+            }).catch(() => { });
         } else {
             sendCustomerRefundAvailable({
                 customer: booking.customer,
@@ -957,7 +957,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
                 refundAmount,
                 bookingId: booking.id,
                 daysUntilExpiry: REFUND_EXPIRY_DAYS,
-            }).catch(() => {});
+            }).catch(() => { });
         }
     }
 
@@ -1693,31 +1693,43 @@ const getCustomerConnectStatus = async (customerId, userId) => {
 
 /**
  * Get customer refund summary (for the Payments & Refunds dashboard).
+ *
+ * Source of truth:
+ *   - totalPaid:    sum(payment.amount)
+ *   - inEscrow:     sum(payment.amount - payment.refundedAmount) for escrowed/partially_released
+ *                   (subtract refunds because that money is no longer in escrow)
+ *   - totalRefunded: sum(customerRefund.amount where status=transferred OR refunded_to_card)
+ *                    + legacy card refunds on payments that pre-date CustomerRefund (no rows linked)
+ *   - pendingAmount: sum(customerRefund.amount where status=pending_connect)
+ *
  */
 const getCustomerRefundSummary = async (customerId) => {
     const payments = await prisma.payment.findMany({
         where: { customerId },
         select: {
+            id: true,
             amount: true,
             status: true,
             refundedAmount: true,
+            customerRefunds: { select: { id: true } },
         },
     });
 
     const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    // In-escrow = remaining funds not yet released to therapist or refunded
     const inEscrow = payments
         .filter(p => ["escrowed", "partially_released"].includes(p.status))
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        .reduce((sum, p) => {
+            const amount = parseFloat(p.amount);
+            const refunded = p.refundedAmount ? parseFloat(p.refundedAmount) : 0;
+            return sum + Math.max(0, amount - refunded);
+        }, 0);
 
     const refunds = await prisma.customerRefund.findMany({
         where: { customerId },
         select: { amount: true, status: true, expiresAt: true },
     });
-
-    // Also include legacy card refunds from Payment.refundedAmount
-    const legacyRefunded = payments
-        .filter(p => p.refundedAmount)
-        .reduce((sum, p) => sum + parseFloat(p.refundedAmount), 0);
 
     const transferredRefunds = refunds
         .filter(r => r.status === "transferred")
@@ -1727,7 +1739,14 @@ const getCustomerRefundSummary = async (customerId) => {
         .filter(r => r.status === "refunded_to_card")
         .reduce((sum, r) => sum + parseFloat(r.amount), 0);
 
-    const totalRefunded = transferredRefunds + cardRefunds + legacyRefunded;
+    // Legacy card refunds: payments with refundedAmount but no linked CustomerRefund
+    // (these are pre-Phase-1 refunds done via direct stripe.refunds.create).
+    // For new flows, refundedAmount mirrors CustomerRefund.amount — counting both would double.
+    const legacyCardRefunded = payments
+        .filter(p => p.refundedAmount && p.customerRefunds.length === 0)
+        .reduce((sum, p) => sum + parseFloat(p.refundedAmount), 0);
+
+    const totalRefunded = transferredRefunds + cardRefunds + legacyCardRefunded;
 
     const pendingRefunds = refunds.filter(r => r.status === "pending_connect");
     const pendingAmount = pendingRefunds.reduce((sum, r) => sum + parseFloat(r.amount), 0);
@@ -1834,7 +1853,7 @@ const transferPendingRefund = async (refundId) => {
     sendCustomerRefundTransferred({
         customer: refund.customer,
         refundAmount: parseFloat(refund.amount),
-    }).catch(() => {});
+    }).catch(() => { });
 
     return updated;
 };
@@ -1932,7 +1951,7 @@ const processExpiredPendingRefunds = async () => {
             sendCustomerRefundReturnedToCard({
                 customer: refund.customer,
                 refundAmount: parseFloat(refund.amount),
-            }).catch(() => {});
+            }).catch(() => { });
 
             processed++;
         } catch (err) {
@@ -2069,7 +2088,7 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
         sendCustomerRefundTransferred({
             customer,
             refundAmount,
-        }).catch(() => {});
+        }).catch(() => { });
     } else {
         sendCustomerRefundAvailable({
             customer,
@@ -2077,7 +2096,7 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
             refundAmount,
             bookingId: booking.id,
             daysUntilExpiry: REFUND_EXPIRY_DAYS,
-        }).catch(() => {});
+        }).catch(() => { });
     }
 
     return { customerRefund, transfer };
