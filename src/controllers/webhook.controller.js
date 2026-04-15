@@ -337,6 +337,14 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                 return;
             }
 
+            // Customer refund transfers (finalize, missed visit, pending-refund claim)
+            // are customer-destined, not therapist-destined. They should never flip
+            // the payment to "released" — only therapist payouts do that.
+            if (transfer.metadata?.type === "customer_refund") {
+                console.log(`Payment ${payment.id} transfer is customer refund, skipping webhook recovery (handled by refund flow)`);
+                return;
+            }
+
             try {
                 // Verify transfer is valid, not reversed, and not failed
                 const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
