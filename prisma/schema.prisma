@@ -288,6 +288,8 @@ model Offer {
   withdrawnAt       DateTime?   @map("withdrawn_at") @db.Timestamptz(3)
   changeRequestNote String?     @map("change_request_note")
 
+  attemptedVisitRate Decimal? @map("attempted_visit_rate") @db.Decimal(10, 2)
+
   visitTypeId   String?          @map("visit_type_id") @db.Uuid
   visitType     String?          @map("visit_type") @db.VarChar(100)
   visitsPerWeek Int?             @map("visits_per_week")
@@ -315,6 +317,7 @@ model Booking {
   therapistId              String           @map("therapist_id") @db.Uuid
   scheduledDate            DateTime         @map("scheduled_date") @db.Timestamptz(3)
   rate                     Decimal          @db.Decimal(10, 2)
+  attemptedVisitRate       Decimal?         @map("attempted_visit_rate") @db.Decimal(10, 2)
   sessionType              String           @map("session_type") @db.VarChar(20)
   status                   BookingStatus
   visitType                String?          @map("visit_type") @db.VarChar(100)
@@ -785,6 +788,7 @@ enum SessionStatus {
   confirmed_by_customer
   cancelled
   missed
+  attempted
 }
 
 enum MissedByRole {
