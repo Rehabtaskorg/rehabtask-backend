@@ -816,7 +816,7 @@ export const existingAccountNotification = ({ email, resetLink }) => ({
 // ── Customer Refund Emails ──
 
 // Refund Available — sent when a booking is finalized and a refund is created
-export const customerRefundAvailable = ({ customer, therapist, refundAmount, bookingId, daysUntilExpiry }) => ({
+export const customerRefundAvailable = ({ customer, therapist, refundAmount, bookingId }) => ({
     subject: `You have a refund of ${formatCurrency(refundAmount)} available`,
     html: layout(`
         ${heading('You Have a Refund Available')}
@@ -828,13 +828,11 @@ export const customerRefundAvailable = ({ customer, therapist, refundAmount, boo
         ${hr()}
         ${text('To receive this refund directly to your bank account, set up your payout account. It only takes a few minutes.')}
         ${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}
-        ${hr()}
-        ${muted(`If you don't set up a payout account within ${daysUntilExpiry} days, the refund will be automatically returned to your original payment method.`)}
     `),
 });
 
 // Refund Reminder — sent at day 7 and day 14
-export const customerRefundReminder = ({ customer, refundAmount, daysRemaining }) => ({
+export const customerRefundReminder = ({ customer, refundAmount }) => ({
     subject: `Reminder: Your ${formatCurrency(refundAmount)} refund is waiting`,
     html: layout(`
         ${heading('Your Refund is Still Waiting')}
@@ -842,11 +840,8 @@ export const customerRefundReminder = ({ customer, refundAmount, daysRemaining }
         ${text(`You have ${formatCurrency(refundAmount)} in pending refunds. Set up your payout account to receive the funds directly to your bank account.`)}
         ${hr()}
         <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
-        <p style="color:#d97706;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">${daysRemaining} days remaining</p>
         ${hr()}
         ${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}
-        ${hr()}
-        ${muted(`After ${daysRemaining} days, the refund will be automatically returned to your original payment method.`)}
     `),
 });
 
