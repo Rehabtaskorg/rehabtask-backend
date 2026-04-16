@@ -288,6 +288,7 @@ export const searchTherapists = async ({
             primaryLicenseType: t.primaryLicenseType,
             professionalSummary: t.professionalSummary,
             ratePerVisit: t.ratePerVisit,
+            attemptedVisitRate: t.attemptedVisitRate,
             workAreas: t.workAreas.map((wa) => ({
                 city: wa.city,
                 state: wa.state,
