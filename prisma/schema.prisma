@@ -455,7 +455,7 @@ model CustomerRefund {
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
   fallbackRefundAt      DateTime?            @map("fallback_refund_at") @db.Timestamptz(3)
   transferredAt         DateTime?            @map("transferred_at") @db.Timestamptz(3)
-  expiresAt             DateTime             @map("expires_at") @db.Timestamptz(3)
+  expiresAt             DateTime?            @map("expires_at") @db.Timestamptz(3)
   createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
