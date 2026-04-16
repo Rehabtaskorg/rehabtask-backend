@@ -18,7 +18,7 @@ import { resolveVisitPlan } from "../utils/visitPlan.js";
 export const createOffer = async (therapistId, data) => {
     const {
         requestId, rate, sessionType, proposedDate, description, visitTypeId,
-        // Visit plan override (all optional). See src/utils/visitPlan.js.
+        attemptedVisitRate,
         visitType, visitsPerWeek, numberOfWeeks,
     } = data;
 
@@ -47,6 +47,23 @@ export const createOffer = async (therapistId, data) => {
     }
 
 
+    let resolvedAttemptedVisitRate;
+    if (attemptedVisitRate === undefined) {
+        const therapistProfile = await prisma.therapistProfile.findUnique({
+            where: { id: therapistId },
+            select: { attemptedVisitRate: true },
+        });
+        resolvedAttemptedVisitRate = therapistProfile?.attemptedVisitRate != null
+            ? parseFloat(therapistProfile.attemptedVisitRate)
+            : null;
+    } else {
+        resolvedAttemptedVisitRate = attemptedVisitRate;
+    }
+
+    if (resolvedAttemptedVisitRate != null && resolvedAttemptedVisitRate > rate) {
+        resolvedAttemptedVisitRate = rate;
+    }
+
     const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
 
     const offer = await prisma.offer.create({
@@ -59,12 +76,8 @@ export const createOffer = async (therapistId, data) => {
             description,
             status: "pending",
             expiresAt,
-            // visitTypeId is the therapist's chosen visit type — either matching
-            // the request's (no override) or proposing a different one (override).
-            // The semantic distinction is resolved via resolveVisitPlan() at read time.
+            attemptedVisitRate: resolvedAttemptedVisitRate,
             ...(visitTypeId && { visitTypeId }),
-            // Legacy string override — kept accepted during the Phase 2 transition
-            // window. New clients should send visitTypeId instead.
             ...(visitType != null && { visitType }),
             ...(visitsPerWeek != null && { visitsPerWeek }),
             ...(numberOfWeeks != null && { numberOfWeeks }),
@@ -234,11 +247,6 @@ export const acceptOffer = async (offerId, customerId) => {
         throw new Error("Offer has expired");
     }
 
-    // Resolve the effective visit plan BEFORE the transaction so we snapshot it
-    // onto the booking row (copy-on-accept). From this moment forward the booking
-    // is the authoritative source for payment amount and session materialization.
-    // If the therapist left all override fields NULL, this falls back to the
-    // request's values — preserving exact legacy behavior for non-override offers.
     const effectivePlan = resolveVisitPlan({ offer, request: offer.request });
 
     // All DB mutations in a single transaction to prevent partial state corruption
@@ -275,6 +283,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     therapistId: offer.therapistId,
                     scheduledDate: offer.proposedDate,
                     rate: offer.rate,
+                    attemptedVisitRate: offer.attemptedVisitRate,
                     sessionType: offer.sessionType,
                     status: "accepted",
                     patientId: offer.request.patientId || null,
@@ -386,8 +395,7 @@ export const acceptOffer = async (offerId, customerId) => {
 export const reviseOffer = async (therapistId, offerId, data) => {
     const {
         rate, sessionType, proposedDate, description, visitTypeId,
-        // Visit plan override — on revise, `null` explicitly clears a previous override,
-        // `undefined` leaves it unchanged. See createOffer for semantics.
+        attemptedVisitRate,
         visitType, visitsPerWeek, numberOfWeeks,
     } = data;
 
@@ -410,6 +418,20 @@ export const reviseOffer = async (therapistId, offerId, data) => {
     // Reset expiry from now
     const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
 
+    let nextAttemptedVisitRate;
+    if (attemptedVisitRate === undefined) {
+        const existingAttempted = existing.attemptedVisitRate != null
+            ? parseFloat(existing.attemptedVisitRate)
+            : null;
+        nextAttemptedVisitRate = (existingAttempted != null && existingAttempted > rate)
+            ? rate
+            : undefined;
+    } else if (attemptedVisitRate === null) {
+        nextAttemptedVisitRate = null;
+    } else {
+        nextAttemptedVisitRate = attemptedVisitRate > rate ? rate : attemptedVisitRate;
+    }
+
     const updated = await prisma.offer.update({
         where: { id: offerId },
         data: {
@@ -420,8 +442,8 @@ export const reviseOffer = async (therapistId, offerId, data) => {
             status: "pending",
             expiresAt,
             changeRequestNote: null,
+            ...(nextAttemptedVisitRate !== undefined && { attemptedVisitRate: nextAttemptedVisitRate }),
             ...(visitTypeId !== undefined && { visitTypeId }),
-            // `!== undefined` allows explicit null to clear the override.
             ...(visitType !== undefined && { visitType }),
             ...(visitsPerWeek !== undefined && { visitsPerWeek }),
             ...(numberOfWeeks !== undefined && { numberOfWeeks }),

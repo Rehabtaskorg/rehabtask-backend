@@ -46,6 +46,11 @@ import {
     subscriptionDowngraded,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
+    customerRefundAvailable,
+    customerRefundReminder,
+    customerRefundTransferred,
+    customerRefundReturnedToCard,
+    attemptedVisitTherapistPayout,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -319,4 +324,28 @@ export const sendSubscriptionDowngraded = async ({ customer }) => {
  */
 export const sendExistingAccountNotification = async ({ email, resetLink }) => {
     return dispatch(email, existingAccountNotification, { email, resetLink });
+};
+
+// ── Customer Refund Emails ──
+
+export const sendCustomerRefundAvailable = async ({ customer, therapist, refundAmount, bookingId, daysUntilExpiry }) => {
+    return dispatch(customer.user.email, customerRefundAvailable, { customer, therapist, refundAmount, bookingId, daysUntilExpiry });
+};
+
+export const sendCustomerRefundReminder = async ({ customer, refundAmount, daysRemaining }) => {
+    return dispatch(customer.user.email, customerRefundReminder, { customer, refundAmount, daysRemaining });
+};
+
+export const sendCustomerRefundTransferred = async ({ customer, refundAmount }) => {
+    return dispatch(customer.user.email, customerRefundTransferred, { customer, refundAmount });
+};
+
+export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, session, booking, grossAmount, refundAmount }) => {
+    return dispatch(therapist.user.email, attemptedVisitTherapistPayout, {
+        therapist, customer, session, booking, grossAmount, refundAmount,
+    });
+};
+
+export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {
+    return dispatch(customer.user.email, customerRefundReturnedToCard, { customer, refundAmount });
 };

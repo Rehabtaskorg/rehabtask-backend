@@ -3,6 +3,8 @@ import {
     getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession,
     requestSessionRevision, submitSessionRevision,
     respondToRevision, resubmitSession,
+    markSessionMissed,
+    markSessionAttempted,
 } from "../services/session.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -166,6 +168,52 @@ const resubmitSessionController = async (req, res, next) => {
     }
 };
 
+/**
+ * Therapist: self-report they couldn't attend a scheduled session.
+ * Creates a per-session refund for the customer.
+ */
+const markMissedByTherapistController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const result = await markSessionMissed(sessionId, req.user.id, "therapist", reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Customer: report a therapist no-show on a past scheduled session.
+ * Creates a per-session refund.
+ */
+const markMissedByCustomerController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const result = await markSessionMissed(sessionId, req.user.id, "customer", reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Therapist: record an attempted visit (arrived but patient not home).
+ * Splits escrowed funds between therapist (attemptedVisitRate) and customer refund
+ * (booking.rate - attemptedVisitRate). Session closes in 'attempted' state.
+ */
+const markAttemptedByTherapistController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const result = await markSessionAttempted(sessionId, req.user.id, reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     completeTherapistController,
     confirmByCustomerController,
@@ -178,4 +226,7 @@ export {
     submitRevisionController,
     respondToRevisionController,
     resubmitSessionController,
+    markMissedByTherapistController,
+    markMissedByCustomerController,
+    markAttemptedByTherapistController,
 };

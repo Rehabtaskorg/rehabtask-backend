@@ -25,7 +25,21 @@ export const getBookingById = async (bookingId, userId) => {
             payment: { include: { sessionPayouts: true } },
             sessions: {
                 orderBy: { sessionNumber: "asc" },
-                include: { payout: true },
+                include: {
+                    payout: true,
+                    customerRefunds: {
+                        select: {
+                            id: true,
+                            amount: true,
+                            status: true,
+                            transferredAt: true,
+                            fallbackRefundAt: true,
+                            expiresAt: true,
+                            createdAt: true,
+                        },
+                        orderBy: { createdAt: "desc" },
+                    },
+                },
             },
             patient: {
                 select: { id: true, fullName: true, email: true, phone: true }

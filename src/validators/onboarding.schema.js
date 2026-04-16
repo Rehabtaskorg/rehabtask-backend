@@ -57,7 +57,23 @@ export const credentialsSchema = z.object({
         .nullable()
         .optional()
         .transform(val => val === 0 ? null : val),
-})
+    attemptedVisitRate: z.coerce
+        .number()
+        .min(0, "Attempted visit rate must be 0 or greater")
+        .max(10000, "Attempted visit rate must be $10,000 or less")
+        .nullable()
+        .optional(),
+}).refine(
+    (data) => {
+        // Cap: attempted rate cannot exceed session rate when both are set.
+        if (data.attemptedVisitRate == null || data.ratePerVisit == null) return true;
+        return data.attemptedVisitRate <= data.ratePerVisit;
+    },
+    {
+        message: "Attempted visit rate cannot be greater than your session rate",
+        path: ["attemptedVisitRate"],
+    }
+)
 
 // Availability Schema
 const timeBlockSchema = z.object({

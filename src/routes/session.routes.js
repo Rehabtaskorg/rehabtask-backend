@@ -5,6 +5,8 @@ import {
     getSessionController, getTherapistSessionsController, scheduleSessionController,
     requestRevisionController, submitRevisionController,
     respondToRevisionController, resubmitSessionController,
+    markMissedByTherapistController, markMissedByCustomerController,
+    markAttemptedByTherapistController,
 } from "../controllers/session.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -23,5 +25,15 @@ router.post("/:sessionId/submit-revision", authenticate, authorize(["therapist"]
 // New two-step revision flow
 router.post("/:sessionId/revision-respond", authenticate, authorize(["therapist"]), respondToRevisionController);
 router.post("/:sessionId/revision-resubmit", authenticate, authorize(["therapist"]), resubmitSessionController);
+
+// Missed visit (no-show). Two distinct endpoints for clear authorization + audit differentiation.
+//   Therapist: self-report they couldn't attend
+//   Customer:  report a therapist no-show (hard-blocked until scheduledDate has passed)
+router.post("/:sessionId/mark-missed-by-therapist", authenticate, authorize(["therapist"]), markMissedByTherapistController);
+router.post("/:sessionId/mark-missed-by-customer", authenticate, authorize(["customer"]), markMissedByCustomerController);
+
+// Attempted visit (therapist arrived, patient not home). Therapist-only by design
+// per the business rules — customer disputes go through the Resolution Center.
+router.post("/:sessionId/mark-attempted", authenticate, authorize(["therapist"]), markAttemptedByTherapistController);
 
 export default router;

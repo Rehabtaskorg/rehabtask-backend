@@ -440,6 +440,7 @@ export const getCurrentUser = async (userId) => {
                     onboardingStep: true,
                     onboardingComplete: true,
                     ratePerVisit: true,
+                    attemptedVisitRate: true,
                     primaryLicenseType: true,
                 }
             },

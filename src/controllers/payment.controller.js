@@ -10,6 +10,11 @@ import {
     createSetupIntent,
     removePaymentMethod,
     setDefaultPaymentMethod,
+    createOrGetCustomerConnectAccount,
+    createCustomerAccountSession,
+    getCustomerConnectStatus,
+    getCustomerRefundSummary,
+    getCustomerRefundHistory,
 } from "../services/payment.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -191,6 +196,61 @@ const setDefaultPaymentMethodController = async (req, res, next) => {
     }
 };
 
+// ─── Customer Connect & Refund Controllers ───
+
+const createCustomerConnectAccountController = async (req, res, next) => {
+    try {
+        const customerId = req.user.customerProfile.id;
+        const userId = req.user.id;
+        const result = await createOrGetCustomerConnectAccount(customerId, userId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createCustomerAccountSessionController = async (req, res, next) => {
+    try {
+        const customerId = req.user.customerProfile.id;
+        const userId = req.user.id;
+        const result = await createCustomerAccountSession(customerId, userId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getCustomerConnectStatusController = async (req, res, next) => {
+    try {
+        const customerId = req.user.customerProfile.id;
+        const userId = req.user.id;
+        const result = await getCustomerConnectStatus(customerId, userId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getCustomerRefundSummaryController = async (req, res, next) => {
+    try {
+        const customerId = req.user.customerProfile.id;
+        const result = await getCustomerRefundSummary(customerId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getCustomerRefundHistoryController = async (req, res, next) => {
+    try {
+        const customerId = req.user.customerProfile.id;
+        const result = await getCustomerRefundHistory(customerId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     createPaymentIntentController,
     getPaymentHistoryController,
@@ -203,4 +263,9 @@ export {
     createSetupIntentController,
     removePaymentMethodController,
     setDefaultPaymentMethodController,
+    createCustomerConnectAccountController,
+    createCustomerAccountSessionController,
+    getCustomerConnectStatusController,
+    getCustomerRefundSummaryController,
+    getCustomerRefundHistoryController,
 };
