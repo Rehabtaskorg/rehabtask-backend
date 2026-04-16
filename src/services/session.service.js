@@ -764,6 +764,23 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
         reason: refundReason,
     });
 
+    const refreshedSessions = await prisma.session.findMany({
+        where: { bookingId: session.bookingId },
+        select: { id: true, status: true },
+    });
+    const anyOpenSession = refreshedSessions.some((s) =>
+        !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)
+    );
+
+    let bookingFinalized = false;
+    if (!anyOpenSession && ["confirmed", "in_progress", "accepted"].includes(session.booking.status)) {
+        await prisma.booking.update({
+            where: { id: session.bookingId },
+            data: { status: "finalized" },
+        });
+        bookingFinalized = true;
+    }
+
     logAction({
         actorId: userId,
         action: isCustomer ? "session.missed_by_customer" : "session.missed_by_therapist",
@@ -775,6 +792,7 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
             refundAmount: parseFloat(session.booking.rate),
             refundStatus: customerRefund.status,
             customerRefundId: customerRefund.id,
+            bookingFinalized,
         },
     });
 
@@ -783,9 +801,10 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
         missedBy,
         refundAmount: parseFloat(session.booking.rate),
         refundStatus: customerRefund.status,
+        bookingFinalized,
     });
 
-    return { session: updatedSession, customerRefund };
+    return { session: updatedSession, customerRefund, bookingFinalized };
 };
 
 /**
