@@ -328,12 +328,12 @@ export const sendExistingAccountNotification = async ({ email, resetLink }) => {
 
 // ── Customer Refund Emails ──
 
-export const sendCustomerRefundAvailable = async ({ customer, therapist, refundAmount, bookingId, daysUntilExpiry }) => {
-    return dispatch(customer.user.email, customerRefundAvailable, { customer, therapist, refundAmount, bookingId, daysUntilExpiry });
+export const sendCustomerRefundAvailable = async ({ customer, therapist, refundAmount, bookingId }) => {
+    return dispatch(customer.user.email, customerRefundAvailable, { customer, therapist, refundAmount, bookingId });
 };
 
-export const sendCustomerRefundReminder = async ({ customer, refundAmount, daysRemaining }) => {
-    return dispatch(customer.user.email, customerRefundReminder, { customer, refundAmount, daysRemaining });
+export const sendCustomerRefundReminder = async ({ customer, refundAmount }) => {
+    return dispatch(customer.user.email, customerRefundReminder, { customer, refundAmount });
 };
 
 export const sendCustomerRefundTransferred = async ({ customer, refundAmount }) => {

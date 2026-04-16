@@ -1025,7 +1025,6 @@ const finalizeBooking = async (bookingId, therapistId) => {
                         stripeTransferId: stripeTransfer.id,
                         transferredAt: new Date(),
                         reason: "series_finalized",
-                        expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
                     },
                 });
 
@@ -1055,7 +1054,6 @@ const finalizeBooking = async (bookingId, therapistId) => {
                     amount: refundAmount,
                     status: "pending_connect",
                     reason: "series_finalized",
-                    expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
                 },
             });
 
@@ -1132,7 +1130,6 @@ const finalizeBooking = async (bookingId, therapistId) => {
                 therapist: booking.therapist,
                 refundAmount,
                 bookingId: booking.id,
-                daysUntilExpiry: REFUND_EXPIRY_DAYS,
             }).catch(() => { });
         }
     }
@@ -1749,7 +1746,7 @@ const setDefaultPaymentMethod = async (userId, paymentMethodId) => {
 
 // ─── Customer Connect Account (for receiving refunds) ───
 
-const REFUND_EXPIRY_DAYS = 30;
+
 
 /**
  * Create or retrieve a Stripe Connect account for a customer.
@@ -2080,81 +2077,7 @@ const processPendingRefundsForCustomer = async (customerId) => {
 };
 
 /**
- * Fallback: issue card refund for expired pending_connect refunds.
- * Called by the daily cron job.
  */
-const processExpiredPendingRefunds = async () => {
-    const expired = await prisma.customerRefund.findMany({
-        where: {
-            status: "pending_connect",
-            expiresAt: { lt: new Date() },
-        },
-        include: {
-            payment: { select: { stripePaymentIntentId: true } },
-            customer: { include: { user: { select: { email: true } } } },
-        },
-    });
-
-    if (expired.length === 0) return { processed: 0 };
-
-    let processed = 0;
-    let failed = 0;
-
-    for (const refund of expired) {
-        try {
-            if (!refund.payment.stripePaymentIntentId) {
-                logger.error("[PaymentService] Cannot issue fallback refund — no PaymentIntent", {
-                    refundId: refund.id,
-                });
-                failed++;
-                continue;
-            }
-
-            const stripeRefund = await stripe.refunds.create({
-                payment_intent: refund.payment.stripePaymentIntentId,
-                amount: Math.round(parseFloat(refund.amount) * 100),
-                metadata: {
-                    type: "customer_refund_fallback",
-                    customerRefundId: refund.id,
-                    bookingId: refund.bookingId,
-                    reason: "connect_setup_expired",
-                },
-            }, {
-                idempotencyKey: `fallback-refund-${refund.id}`,
-            });
-
-            await prisma.customerRefund.update({
-                where: { id: refund.id },
-                data: {
-                    status: "refunded_to_card",
-                    stripeRefundId: stripeRefund.id,
-                    fallbackRefundAt: new Date(),
-                },
-            });
-
-            logger.info("[PaymentService] Fallback card refund processed", {
-                refundId: refund.id,
-                amount: parseFloat(refund.amount),
-                stripeRefundId: stripeRefund.id,
-            });
-
-            sendCustomerRefundReturnedToCard({
-                customer: refund.customer,
-                refundAmount: parseFloat(refund.amount),
-            }).catch(() => { });
-
-            processed++;
-        } catch (err) {
-            logger.error("[PaymentService] Fallback refund failed", {
-                refundId: refund.id,
-                error: err.message,
-            });
-            failed++;
-        }
-    }
-
-    return { processed, failed, total: expired.length };
-};
 
 /**
  * Create a per-session refund. Used by:
@@ -2220,7 +2143,6 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
                     stripeTransferId: transfer.id,
                     transferredAt: new Date(),
                     reason,
-                    expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
                 },
             });
 
@@ -2249,7 +2171,6 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
                 amount: refundAmount,
                 status: "pending_connect",
                 reason,
-                expiresAt: new Date(Date.now() + REFUND_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
             },
         });
 
@@ -2288,7 +2209,6 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
             therapist: booking.therapist || { fullName: "Your therapist" },
             refundAmount,
             bookingId: booking.id,
-            daysUntilExpiry: REFUND_EXPIRY_DAYS,
         }).catch(() => { });
     }
 
@@ -2320,7 +2240,5 @@ export {
     getCustomerRefundHistory,
     transferPendingRefund,
     processPendingRefundsForCustomer,
-    processExpiredPendingRefunds,
     createPerSessionRefund,
-    REFUND_EXPIRY_DAYS,
 }
