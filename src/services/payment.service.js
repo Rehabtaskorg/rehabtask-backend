@@ -1322,7 +1322,12 @@ const getTherapistPayoutHistory = async (therapistId) => {
     ]);
 
     const releasedPayments = payments.filter((p) => ["released", "partially_released"].includes(p.status));
-    const escrowedPayments = payments.filter((p) => p.status === "escrowed");
+    // Exclude escrowed payments whose booking is finalized or cancelled — those
+    // will never pay out (all sessions missed/cancelled, customer refunded).
+    const escrowedPayments = payments.filter((p) =>
+        p.status === "escrowed" &&
+        !["finalized", "cancelled"].includes(p.booking?.status)
+    );
 
     // Helper: adjust a payment's max payout for missed/cancelled sessions.
     // Each missed/cancelled session was per-session refunded to the customer —
@@ -1347,7 +1352,11 @@ const getTherapistPayoutHistory = async (therapistId) => {
             .filter((p) => p.status === "partially_released")
             .reduce((sum, p) => sum + Math.max(0, getAdjustedPayout(p) - parseFloat(p.releasedAmount ?? 0)), 0);
 
-    const pendingSessionCount = escrowedPayments.length;
+    const pendingSessionCount = escrowedPayments.reduce((count, p) => {
+        const sessions = p.booking?.sessions || [];
+        const pending = sessions.filter((s) => !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status));
+        return count + pending.length;
+    }, 0);
 
     // Earnings grouped by month (last 6 months) — aggregated in JS to avoid raw SQL
     const sixMonthsAgo = new Date();
@@ -1367,17 +1376,16 @@ const getTherapistPayoutHistory = async (therapistId) => {
     const earningsByMonth = Object.values(earningsByMonthMap).sort((a, b) => a.month.localeCompare(b.month));
 
     // Commission info for this therapist's tier
-    const tierRate = await prisma.commissionConfig.findFirst({
-        where: { tier: therapist?.planTier ?? "basic", effectiveFrom: { lte: new Date() } },
-        orderBy: { effectiveFrom: "desc" },
-    });
-    const globalRate = tierRate ? null : await prisma.commissionConfig.findFirst({
+    // Use the global commission rate — same source as getCommissionRate() which
+    // is used during actual payment computation. Tier-specific rates exist in the
+    // DB but are not applied until subscription billing is implemented.
+    const globalRate = await prisma.commissionConfig.findFirst({
         where: { tier: null, effectiveFrom: { lte: new Date() } },
         orderBy: { effectiveFrom: "desc" },
     });
     const commissionInfo = {
         planTier: therapist?.planTier ?? "basic",
-        commissionRate: tierRate ? parseFloat(tierRate.rate) : globalRate ? parseFloat(globalRate.rate) : 0.1,
+        commissionRate: globalRate ? parseFloat(globalRate.rate) : 0.1,
     };
 
     // Period stats: this month vs last month
