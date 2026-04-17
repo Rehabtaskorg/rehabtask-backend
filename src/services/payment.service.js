@@ -1904,6 +1904,7 @@ const getCustomerRefundSummary = async (customerId) => {
         select: {
             id: true,
             amount: true,
+            platformFee: true,
             status: true,
             releasedAmount: true,
             refundedAmount: true,
@@ -1921,9 +1922,12 @@ const getCustomerRefundSummary = async (customerId) => {
         )
         .reduce((sum, p) => {
             const amount = parseFloat(p.amount);
-            const released = p.releasedAmount ? parseFloat(p.releasedAmount) : 0;
+            const fee = parseFloat(p.platformFee ?? 0);
+            const feeRatio = amount > 0 ? fee / amount : 0;
+            const releasedNet = p.releasedAmount ? parseFloat(p.releasedAmount) : 0;
+            const grossReleased = feeRatio < 1 ? releasedNet / (1 - feeRatio) : releasedNet;
             const refunded = p.refundedAmount ? parseFloat(p.refundedAmount) : 0;
-            return sum + Math.max(0, amount - released - refunded);
+            return sum + Math.max(0, parseFloat((amount - grossReleased - refunded).toFixed(2)));
         }, 0);
 
     const refunds = await prisma.customerRefund.findMany({
