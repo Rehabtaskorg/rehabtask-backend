@@ -11,3 +11,4 @@ notes.jsx
 test.sql
 /generated/prisma
 vscode/
+docs/*
