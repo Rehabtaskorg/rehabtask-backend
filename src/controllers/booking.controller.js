@@ -6,6 +6,7 @@ import {
     respondToReschedule
 } from "../services/booking.service.js";
 import { finalizeBooking } from "../services/payment.service.js";
+import { findOrCreateDirectConversation } from "../services/message.service.js";
 
 /**
  * Get a booking by ID
@@ -83,6 +84,26 @@ const finalizeBookingController = async (req, res, next) => {
     }
 };
 
+const getBookingConversationController = async (req, res, next) => {
+    try {
+        const { bookingId } = req.params;
+        const userId = req.user.id;
+        const booking = await getBookingById(bookingId, userId);
+
+        const therapistUserId = booking.therapist?.userId || booking.therapist?.user?.id;
+        const customerUserId = booking.customer?.userId || booking.customer?.user?.id;
+
+        if (!therapistUserId || !customerUserId) {
+            return res.status(400).json({ success: false, message: "Cannot resolve conversation participants" });
+        }
+
+        const conversation = await findOrCreateDirectConversation(therapistUserId, customerUserId);
+        res.status(200).json({ success: true, data: { conversationId: conversation.id } });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     getBookingByIdController,
     getCustomerBookingsController,
@@ -90,4 +111,5 @@ export {
     rescheduleBookingController,
     respondToRescheduleController,
     finalizeBookingController,
+    getBookingConversationController,
 };
