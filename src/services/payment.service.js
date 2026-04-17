@@ -1905,20 +1905,25 @@ const getCustomerRefundSummary = async (customerId) => {
             id: true,
             amount: true,
             status: true,
+            releasedAmount: true,
             refundedAmount: true,
             customerRefunds: { select: { id: true } },
+            booking: { select: { status: true } },
         },
     });
 
     const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
 
-    // In-escrow = remaining funds not yet released to therapist or refunded
     const inEscrow = payments
-        .filter(p => ["escrowed", "partially_released"].includes(p.status))
+        .filter(p =>
+            ["escrowed", "partially_released"].includes(p.status) &&
+            !["finalized", "cancelled"].includes(p.booking?.status)
+        )
         .reduce((sum, p) => {
             const amount = parseFloat(p.amount);
+            const released = p.releasedAmount ? parseFloat(p.releasedAmount) : 0;
             const refunded = p.refundedAmount ? parseFloat(p.refundedAmount) : 0;
-            return sum + Math.max(0, amount - refunded);
+            return sum + Math.max(0, amount - released - refunded);
         }, 0);
 
     const refunds = await prisma.customerRefund.findMany({
