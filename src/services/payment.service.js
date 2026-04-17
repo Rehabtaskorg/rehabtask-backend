@@ -1352,11 +1352,11 @@ const getTherapistPayoutHistory = async (therapistId) => {
             .filter((p) => p.status === "partially_released")
             .reduce((sum, p) => sum + Math.max(0, getAdjustedPayout(p) - parseFloat(p.releasedAmount ?? 0)), 0);
 
-    const pendingSessionCount = escrowedPayments.reduce((count, p) => {
-        const sessions = p.booking?.sessions || [];
-        const pending = sessions.filter((s) => !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status));
-        return count + pending.length;
-    }, 0);
+    const pendingSessionCount = [...escrowedPayments, ...payments.filter((p) => p.status === "partially_released")]
+        .reduce((count, p) => {
+            const sessions = p.booking?.sessions || [];
+            return count + sessions.filter((s) => !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)).length;
+        }, 0);
 
     // Earnings grouped by month (last 6 months) — aggregated in JS to avoid raw SQL
     const sixMonthsAgo = new Date();
