@@ -2,6 +2,7 @@ import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
+import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -230,25 +231,30 @@ export const saveAvailability = async (userId, data) => {
         });
     }
 
-    // Create work areas from geocoded address data
     if (data.workAreas && data.workAreas.length > 0) {
+        const geocodedAreas = await Promise.all(
+            data.workAreas.map(async (wa) => {
+                const geo = await geocodeZipCode(wa.zipCode);
+                assertCoherenceOrLog(`onboarding.workArea.${wa.zipCode}`, wa.latitude, wa.longitude, geo.latitude, geo.longitude, 10);
+                return {
+                    therapistId: therapist.id,
+                    zipCode: wa.zipCode,
+                    city: geo.city,
+                    state: geo.state,
+                    latitude: geo.latitude,
+                    longitude: geo.longitude,
+                    radiusMiles: Math.min(Math.max(wa.radiusMiles || 25, 1), 100),
+                };
+            })
+        );
+
         // Delete any existing work areas from previous onboarding attempts
         // to ensure idempotency (re-submitting step 3 replaces, not duplicates)
         await prisma.workArea.deleteMany({
             where: { therapistId: therapist.id }
         });
 
-        await prisma.workArea.createMany({
-            data: data.workAreas.map(wa => ({
-                therapistId: therapist.id,
-                zipCode: wa.zipCode,
-                city: wa.city,
-                state: wa.state,
-                latitude: wa.latitude,
-                longitude: wa.longitude,
-                radiusMiles: Math.min(Math.max(wa.radiusMiles || 25, 1), 100),
-            })),
-        });
+        await prisma.workArea.createMany({ data: geocodedAreas });
     }
 
     // Update therapist profile

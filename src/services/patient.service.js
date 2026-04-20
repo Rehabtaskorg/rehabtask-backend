@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { NotFoundError } from "../utils/errors.js";
+import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
 
 /**
  * Validate that the customer is an agency type
@@ -47,6 +48,10 @@ export const createPatient = async (customerProfile, data) => {
         latitude, longitude,
     } = data;
 
+    const addressString = [addressLine1, city, state, zipCode].filter(Boolean).join(", ");
+    const geocoded = await geocodeAddress(addressString);
+    assertCoherenceOrLog("patient.create", latitude, longitude, geocoded.latitude, geocoded.longitude, 5);
+
     const patient = await prisma.patient.create({
         data: {
             agencyId: customerProfile.id,
@@ -55,11 +60,11 @@ export const createPatient = async (customerProfile, data) => {
             phone: phone || null,
             addressLine1: addressLine1 || null,
             addressLine2: addressLine2 || null,
-            city: city || null,
-            state: state || null,
-            zipCode: zipCode || null,
-            latitude: latitude ?? null,
-            longitude: longitude ?? null,
+            city: geocoded.city || city || null,
+            state: geocoded.state || state || null,
+            zipCode: geocoded.zipCode || zipCode || null,
+            latitude: geocoded.latitude,
+            longitude: geocoded.longitude,
             isActive: true,
         },
     });
@@ -127,6 +132,20 @@ export const updatePatient = async (customerProfile, patientId, data) => {
         throw new NotFoundError("Patient not found");
     }
 
+    const addressChanged = data.addressLine1 !== undefined || data.city !== undefined ||
+        data.state !== undefined || data.zipCode !== undefined;
+
+    let geocoded = null;
+    if (addressChanged) {
+        const addressLine1 = data.addressLine1 ?? patient.addressLine1;
+        const city = data.city ?? patient.city;
+        const state = data.state ?? patient.state;
+        const zipCode = data.zipCode ?? patient.zipCode;
+        const addressString = [addressLine1, city, state, zipCode].filter(Boolean).join(", ");
+        geocoded = await geocodeAddress(addressString);
+        assertCoherenceOrLog("patient.update", data.latitude, data.longitude, geocoded.latitude, geocoded.longitude, 5);
+    }
+
     const updated = await prisma.patient.update({
         where: { id: patientId },
         data: {
@@ -135,11 +154,13 @@ export const updatePatient = async (customerProfile, patientId, data) => {
             ...(data.phone !== undefined && { phone: data.phone || null }),
             ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),
             ...(data.addressLine2 !== undefined && { addressLine2: data.addressLine2 || null }),
-            ...(data.city !== undefined && { city: data.city || null }),
-            ...(data.state !== undefined && { state: data.state || null }),
-            ...(data.zipCode !== undefined && { zipCode: data.zipCode || null }),
-            ...(data.latitude !== undefined && { latitude: data.latitude ?? null }),
-            ...(data.longitude !== undefined && { longitude: data.longitude ?? null }),
+            ...(geocoded ? {
+                city: geocoded.city || data.city || null,
+                state: geocoded.state || data.state || null,
+                zipCode: geocoded.zipCode || data.zipCode || null,
+                latitude: geocoded.latitude,
+                longitude: geocoded.longitude,
+            } : {}),
         }
     });
 

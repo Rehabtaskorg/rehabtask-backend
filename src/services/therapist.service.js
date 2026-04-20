@@ -1,6 +1,7 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
+import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 
 export const getTherapistProfile = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -64,15 +65,19 @@ export const updateTherapistProfile = async (userId, data) => {
 }
 
 export const updateWorkAreas = async (therapistId, workAreas) => {
-    const result = await prisma.$transaction(async (tx) => {
-        // Delete all existing work areas
-        await tx.workArea.deleteMany({
-            where: { therapistId }
-        });
+    const geocoded = await Promise.all(
+        workAreas.map(async (area) => {
+            const geo = await geocodeZipCode(area.zipCode);
+            assertCoherenceOrLog(`workArea.${area.zipCode}`, area.latitude, area.longitude, geo.latitude, geo.longitude, 10);
+            return { ...area, ...geo };
+        })
+    );
 
-        // Create new work areas
+    const result = await prisma.$transaction(async (tx) => {
+        await tx.workArea.deleteMany({ where: { therapistId } });
+
         const created = await Promise.all(
-            workAreas.map((area) =>
+            geocoded.map((area) =>
                 tx.workArea.create({
                     data: {
                         therapistId,

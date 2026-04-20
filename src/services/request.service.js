@@ -4,6 +4,7 @@ import { ensureOption } from "./requestOption.service.js";
 import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
+import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
@@ -25,15 +26,18 @@ export const createRequest = async (customerId, data, customerProfile) => {
         }
     }
 
+    const geocoded = await geocodeAddress(location);
+    assertCoherenceOrLog("request.create", latitude, longitude, geocoded.latitude, geocoded.longitude, 5);
+
     const request = await prisma.therapyRequest.create({
         data: {
             customerId,
             serviceType,
             description,
             preferredDate: new Date(preferredDate),
-            location,
-            latitude,
-            longitude,
+            location: geocoded.formattedAddress,
+            latitude: geocoded.latitude,
+            longitude: geocoded.longitude,
             status: "created",
             ...(patientId && { patientId }),
             ...(rate != null && { rate }),
@@ -274,9 +278,13 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
     if (data.serviceType !== undefined) updateData.serviceType = data.serviceType;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.preferredDate !== undefined) updateData.preferredDate = new Date(data.preferredDate);
-    if (data.location !== undefined) updateData.location = data.location;
-    if (data.latitude !== undefined) updateData.latitude = data.latitude;
-    if (data.longitude !== undefined) updateData.longitude = data.longitude;
+    if (data.location !== undefined) {
+        const geocoded = await geocodeAddress(data.location);
+        assertCoherenceOrLog("request.update", data.latitude, data.longitude, geocoded.latitude, geocoded.longitude, 5);
+        updateData.location = geocoded.formattedAddress;
+        updateData.latitude = geocoded.latitude;
+        updateData.longitude = geocoded.longitude;
+    }
     if (data.rate !== undefined) updateData.rate = data.rate;
     // Visit type: prefer FK, keep legacy string as backup during transition window.
     // If the client sends visitTypeId, we also clear the string so there's no drift
