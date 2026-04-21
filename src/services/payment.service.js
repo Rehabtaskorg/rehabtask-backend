@@ -305,12 +305,20 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     });
     const totalSessions = computeTotalSessions(plan);
 
+    const stripeIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["charges"] });
+    const tds = stripeIntent.charges?.data?.[0]?.payment_method_details?.card?.three_d_secure;
+    if (tds?.result === "not_supported" || tds?.result == null) {
+        logger.warn("[PaymentService] No 3DS liability shift", { paymentIntentId, bookingId: payment.bookingId, result: tds?.result ?? "none" });
+    }
+
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({
             where: { id: payment.id },
             data: {
                 status: "escrowed",
                 escrowedAt: new Date(),
+                threeDSecureResult: tds?.result ?? null,
+                threeDSecureVersion: tds?.version ?? null,
             },
         });
 
