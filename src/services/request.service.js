@@ -174,7 +174,17 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
     }
 
     // Build where clause with server-side filters
-    const where = { status: { in: ["created", "offers_received"] } };
+    const where = {
+        status: { in: ["created", "offers_received"] },
+        NOT: {
+            offers: {
+                some: {
+                    therapistId,
+                    status: "rejected",
+                },
+            },
+        },
+    };
 
     if (serviceType) {
         where.serviceType = { contains: serviceType, mode: "insensitive" };
