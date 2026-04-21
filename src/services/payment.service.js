@@ -135,8 +135,18 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
             case "processing":
                 return { status: "processing", payment: existingPayment };
 
-            case "requires_action":
+            case "requires_action": {
+                // If a different payment method is being used, cancel and reissue
+                const intentPmId = paymentIntent.payment_method?.id ?? paymentIntent.payment_method;
+                if (paymentMethodId && intentPmId && intentPmId !== paymentMethodId) {
+                    await stripe.paymentIntents.cancel(paymentIntent.id).catch((err) => {
+                        logger.warn("[PaymentService] Failed to cancel stale requires_action intent", { intentId: paymentIntent.id, error: err.message });
+                    });
+                    stalePaymentToReuse = existingPayment;
+                    break;
+                }
                 return { status: "requires_action", clientSecret: paymentIntent.client_secret, payment: existingPayment };
+            }
 
             case "canceled":
             case "requires_payment_method":
