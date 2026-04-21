@@ -407,6 +407,8 @@ model Payment {
   refundedAt            DateTime?        @map("refunded_at") @db.Timestamptz(3)
   stripeRefundId        String?          @unique @map("stripe_refund_id") @db.VarChar(255)
   refundedAmount        Decimal?         @map("refunded_amount") @db.Decimal(10, 2)
+  threeDSecureResult    String?          @map("three_d_secure_result") @db.VarChar(30)
+  threeDSecureVersion   String?          @map("three_d_secure_version") @db.VarChar(10)
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   booking               Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)

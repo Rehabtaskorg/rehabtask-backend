@@ -135,8 +135,18 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
             case "processing":
                 return { status: "processing", payment: existingPayment };
 
-            case "requires_action":
+            case "requires_action": {
+                // If a different payment method is being used, cancel and reissue
+                const intentPmId = paymentIntent.payment_method?.id ?? paymentIntent.payment_method;
+                if (paymentMethodId && intentPmId && intentPmId !== paymentMethodId) {
+                    await stripe.paymentIntents.cancel(paymentIntent.id).catch((err) => {
+                        logger.warn("[PaymentService] Failed to cancel stale requires_action intent", { intentId: paymentIntent.id, error: err.message });
+                    });
+                    stalePaymentToReuse = existingPayment;
+                    break;
+                }
                 return { status: "requires_action", clientSecret: paymentIntent.client_secret, payment: existingPayment };
+            }
 
             case "canceled":
             case "requires_payment_method":
@@ -305,12 +315,20 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     });
     const totalSessions = computeTotalSessions(plan);
 
+    const stripeIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["charges"] });
+    const tds = stripeIntent.charges?.data?.[0]?.payment_method_details?.card?.three_d_secure;
+    if (tds?.result === "not_supported" || tds?.result == null) {
+        logger.warn("[PaymentService] No 3DS liability shift", { paymentIntentId, bookingId: payment.bookingId, result: tds?.result ?? "none" });
+    }
+
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({
             where: { id: payment.id },
             data: {
                 status: "escrowed",
                 escrowedAt: new Date(),
+                threeDSecureResult: tds?.result ?? null,
+                threeDSecureVersion: tds?.version ?? null,
             },
         });
 
