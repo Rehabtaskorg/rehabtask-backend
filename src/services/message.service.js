@@ -941,7 +941,7 @@ export const getUnreadCount = async (userId) => {
  * The "currentContext" badge (booking > offer > direct) is derived from the most recent
  * non-system message that has a bookingId or offerId. If neither exists, it's "direct".
  */
-export const getUserConversations = async (userId) => {
+export const getUserConversations = async (userId, callerRole = "customer") => {
     const userSelect = {
         id: true,
         role: true,
@@ -967,6 +967,8 @@ export const getUserConversations = async (userId) => {
     // 2. Fetch the latest message per conversation (single query, partitioned by conversationId)
     //    Also fetch the latest context-bearing message (bookingId or offerId set) for the badge.
     //    And unread counts per conversation.
+    const isCustomer = callerRole === "customer";
+
     const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
         // Latest message per conversation
         prisma.$queryRaw`
@@ -987,12 +989,11 @@ export const getUserConversations = async (userId) => {
                 conversationId: { in: conversationIds },
                 recipientId: userId,
                 readAt: null,
-                systemType: null, // system messages don't count as unread
+                systemType: null,
             },
             _count: { id: true },
         }),
         // Latest context-bearing message per conversation (for badge: booking > offer > direct)
-        // Includes system messages (offer_sent, booking_created) since they carry offerId/bookingId
         prisma.$queryRaw`
             SELECT DISTINCT ON (conversation_id)
                 conversation_id AS "conversationId",
@@ -1004,16 +1005,18 @@ export const getUserConversations = async (userId) => {
               AND (offer_id IS NOT NULL OR booking_id IS NOT NULL)
             ORDER BY conversation_id, created_at DESC
         `,
-        // Patient info: get the most recent patientId per conversation
-        prisma.$queryRaw`
-            SELECT DISTINCT ON (conversation_id)
-                conversation_id AS "conversationId",
-                patient_id AS "patientId"
-            FROM messages
-            WHERE conversation_id = ANY(${conversationIds}::uuid[])
-              AND patient_id IS NOT NULL
-            ORDER BY conversation_id, created_at DESC
-        `,
+        // Patient info only for customers — therapists must not see patient PHI
+        isCustomer
+            ? prisma.$queryRaw`
+                SELECT DISTINCT ON (conversation_id)
+                    conversation_id AS "conversationId",
+                    patient_id AS "patientId"
+                FROM messages
+                WHERE conversation_id = ANY(${conversationIds}::uuid[])
+                  AND patient_id IS NOT NULL
+                ORDER BY conversation_id, created_at DESC
+              `
+            : Promise.resolve([]),
     ]);
 
     // Build lookup maps
@@ -1061,7 +1064,7 @@ export const getUserConversations = async (userId) => {
         const lastMsg = lastMsgMap.get(conv.id);
         const unreadCount = unreadMap.get(conv.id) ?? 0;
         const ctx = contextMap.get(conv.id);
-        const patientId = patientMap.get(conv.id);
+        const patientId = isCustomer ? patientMap.get(conv.id) : null;
         const patient = patientId ? patientDataMap.get(patientId) ?? null : null;
 
         // Determine badge context: booking > offer > direct

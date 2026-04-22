@@ -130,7 +130,7 @@ export const getUnreadCountController = async (req, res, next) => {
  */
 export const getConversationsController = async (req, res, next) => {
     try {
-        const conversations = await getUserConversations(req.user.id);
+        const conversations = await getUserConversations(req.user.id, req.user.role);
 
         res.status(200).json({
             success: true,
