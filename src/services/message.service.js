@@ -972,7 +972,10 @@ export const getUserConversations = async (userId) => {
         prisma.$queryRaw`
             SELECT DISTINCT ON (conversation_id)
                 id, sender_id AS "senderId", content, created_at AS "createdAt",
-                read_at AS "readAt", conversation_id AS "conversationId", system_type AS "systemType"
+                read_at AS "readAt", conversation_id AS "conversationId", system_type AS "systemType",
+                EXISTS (
+                    SELECT 1 FROM message_attachments WHERE message_id = messages.id
+                ) AS "hasAttachments"
             FROM messages
             WHERE conversation_id = ANY(${conversationIds}::uuid[])
             ORDER BY conversation_id, created_at DESC
@@ -1085,6 +1088,7 @@ export const getUserConversations = async (userId) => {
                 ? {
                     id: lastMsg.id,
                     content: lastMsg.systemType ? `[${lastMsg.systemType.replace(/_/g, " ")}]` : lastMsg.content,
+                    hasAttachments: lastMsg.hasAttachments === true,
                     senderId: lastMsg.senderId,
                     createdAt: lastMsg.createdAt,
                     readAt: lastMsg.readAt,
