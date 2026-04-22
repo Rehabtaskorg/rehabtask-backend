@@ -95,7 +95,6 @@ export const assignDispute = async (disputeId, assignedAdminId, byAdminId, calle
         where: { id: disputeId },
         data: {
             assignedAdminId,
-            status: dispute.status === "open" ? "under_review" : dispute.status,
         },
         include: DISPUTE_INCLUDE,
     });
