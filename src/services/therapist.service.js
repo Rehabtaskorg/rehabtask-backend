@@ -159,27 +159,44 @@ export const searchTherapists = async ({
     let therapists;
     let total;
 
-    // Build dynamic where clause
+    // Build dynamic where clause. Compose multiple disjunctions via AND so the
+    // hero/keyword search ("q") and the sidebar specialization filter can coexist.
+    const andConditions = [];
+
     const where = {
         approvalStatus: "approved",
         onboardingComplete: true,
     };
 
-    // Full-text name search (case-insensitive contains)
+    // Keyword search: match therapist name OR their specialization, since the
+    // single hero input accepts both a person's name and a specialization term.
     if (search && search.trim().length >= 2) {
-        where.fullName = { contains: search.trim(), mode: "insensitive" };
+        const q = search.trim();
+        andConditions.push({
+            OR: [
+                { fullName: { contains: q, mode: "insensitive" } },
+                { specialization: { contains: q, mode: "insensitive" } },
+            ],
+        });
     }
 
-    // Multi-value specialization filter (comma-separated)
+    // Multi-value specialization filter (comma-separated). Independent of the
+    // keyword search above; both must be satisfied when both are supplied.
     if (specialization) {
         const specs = specialization.split(",").map((s) => s.trim()).filter(Boolean);
         if (specs.length === 1) {
             where.specialization = { contains: specs[0], mode: "insensitive" };
         } else if (specs.length > 1) {
-            where.OR = specs.map((s) => ({
-                specialization: { contains: s, mode: "insensitive" },
-            }));
+            andConditions.push({
+                OR: specs.map((s) => ({
+                    specialization: { contains: s, mode: "insensitive" },
+                })),
+            });
         }
+    }
+
+    if (andConditions.length > 0) {
+        where.AND = andConditions;
     }
 
     // Multi-value license type filter (comma-separated)
@@ -297,6 +314,8 @@ export const searchTherapists = async ({
             workAreas: t.workAreas.map((wa) => ({
                 city: wa.city,
                 state: wa.state,
+                latitude: wa.latitude,
+                longitude: wa.longitude,
             })),
             averageRating,
             reviewCount,
