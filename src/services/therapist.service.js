@@ -297,6 +297,8 @@ export const searchTherapists = async ({
             workAreas: t.workAreas.map((wa) => ({
                 city: wa.city,
                 state: wa.state,
+                latitude: wa.latitude,
+                longitude: wa.longitude,
             })),
             averageRating,
             reviewCount,
