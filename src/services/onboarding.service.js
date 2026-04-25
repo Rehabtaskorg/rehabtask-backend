@@ -28,7 +28,6 @@ export const getOnboardingStatus = async (userId) => {
         profile: !!(
             therapist.yearsOfExperience !== null &&
             therapist.primaryLicenseType &&
-            therapist.specialization &&
             therapist.professionalSummary
         ),
         credentials: !!(
@@ -336,7 +335,6 @@ export const completeOnboarding = async (userId) => {
     const isProfileComplete = !!(
         therapist.yearsOfExperience !== null &&
         therapist.primaryLicenseType &&
-        therapist.specialization &&
         therapist.professionalSummary
     );
 

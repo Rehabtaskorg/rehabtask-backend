@@ -17,9 +17,9 @@ export const updateProfileSchema = z.object({
         .optional(),
     specialization: z
         .string()
-        .min(1, "Specialization is required")
         .max(500, "Specialization must be 500 characters or less")
-        .optional(),
+        .optional()
+        .nullable(),
     profilePhotoUrl: z.string().url("Invalid URL format").nullable().optional(),
     ratePerVisit: z.coerce
         .number()
