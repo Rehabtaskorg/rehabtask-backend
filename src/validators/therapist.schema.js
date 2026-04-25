@@ -95,7 +95,6 @@ export const updateAvailabilitySchema = z.object({
 });
 
 export const searchTherapistsSchema = z.object({
-    search: z.string().trim().max(100).optional(),
     latitude: z
         .string()
         .transform((val) => parseFloat(val))

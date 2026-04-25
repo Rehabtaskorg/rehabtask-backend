@@ -144,7 +144,6 @@ export const updateAvailability = async (userId, scheduleData) => {
 };
 
 export const searchTherapists = async ({
-    search,
     latitude,
     longitude,
     radiusMiles = 50,
@@ -158,26 +157,10 @@ export const searchTherapists = async ({
     let therapists;
     let total;
 
-    // Build dynamic where clause. Compose multiple disjunctions via AND so the
-    // hero/keyword search ("q") and the sidebar specialization filter can coexist.
-    const andConditions = [];
-
     const where = {
         approvalStatus: "approved",
         onboardingComplete: true,
     };
-
-    // Keyword search: match against therapist name.
-    if (search && search.trim().length >= 2) {
-        const q = search.trim();
-        andConditions.push({
-            fullName: { contains: q, mode: "insensitive" },
-        });
-    }
-
-    if (andConditions.length > 0) {
-        where.AND = andConditions;
-    }
 
     // Multi-value license type filter (comma-separated)
     if (primaryLicenseType) {
