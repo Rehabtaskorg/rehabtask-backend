@@ -14,8 +14,9 @@ export const professionalProfileSchema = z.object({
 
     specialization: z
         .string()
-        .min(1, "Specialization is required")
-        .max(500, "Specialization too long"),
+        .max(500, "Specialization too long")
+        .optional()
+        .nullable(),
 
     professionalSummary: z
         .string()
