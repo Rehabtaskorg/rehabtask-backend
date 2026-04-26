@@ -6,6 +6,17 @@ import {
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 
+// Prisma Decimal fields serialize as strings in JSON. Normalize money fields to
+// numbers at the service boundary so consumers never need to parseFloat() themselves.
+function serializeBooking(b) {
+    if (!b) return b;
+    return {
+        ...b,
+        rate: b.rate != null ? parseFloat(b.rate) : null,
+        attemptedVisitRate: b.attemptedVisitRate != null ? parseFloat(b.attemptedVisitRate) : null,
+    };
+}
+
 /**
  * Get booking by ID
  */
@@ -58,7 +69,7 @@ export const getBookingById = async (bookingId, userId) => {
         throw new Error("Unauthorized");
     }
 
-    return booking;
+    return serializeBooking(booking);
 }
 
 /**
@@ -88,7 +99,7 @@ export const getCustomerBookings = async (customerId) => {
         orderBy: { scheduledDate: "desc" },
     });
 
-    return bookings;
+    return bookings.map(serializeBooking);
 }
 
 /**
@@ -118,7 +129,7 @@ export const getTherapistBookings = async (therapistId) => {
         orderBy: { scheduledDate: "desc" },
     });
 
-    return bookings;
+    return bookings.map(serializeBooking);
 }
 
 /**

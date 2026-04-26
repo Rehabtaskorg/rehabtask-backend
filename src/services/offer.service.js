@@ -419,17 +419,26 @@ export const reviseOffer = async (therapistId, offerId, data) => {
     const expiresAt = addHours(new Date(), parseInt(process.env.OFFER_EXPIRY_HOURS || "48", 10));
 
     let nextAttemptedVisitRate;
+    let attemptedRateWasCapped = false;
     if (attemptedVisitRate === undefined) {
         const existingAttempted = existing.attemptedVisitRate != null
             ? parseFloat(existing.attemptedVisitRate)
             : null;
-        nextAttemptedVisitRate = (existingAttempted != null && existingAttempted > rate)
-            ? rate
-            : undefined;
+        if (existingAttempted != null && existingAttempted > rate) {
+            nextAttemptedVisitRate = rate;
+            attemptedRateWasCapped = true;
+        } else {
+            nextAttemptedVisitRate = undefined;
+        }
     } else if (attemptedVisitRate === null) {
         nextAttemptedVisitRate = null;
     } else {
-        nextAttemptedVisitRate = attemptedVisitRate > rate ? rate : attemptedVisitRate;
+        if (attemptedVisitRate > rate) {
+            nextAttemptedVisitRate = rate;
+            attemptedRateWasCapped = true;
+        } else {
+            nextAttemptedVisitRate = attemptedVisitRate;
+        }
     }
 
     const updated = await prisma.offer.update({
@@ -502,7 +511,15 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         });
     });
 
-    return updated;
+    const warnings = [];
+    if (attemptedRateWasCapped) {
+        const cappedTo = updated.attemptedVisitRate != null
+            ? parseFloat(updated.attemptedVisitRate).toFixed(2)
+            : parseFloat(rate).toFixed(2);
+        warnings.push(`Attempted visit rate was reduced to $${cappedTo} to match your new session rate.`);
+    }
+
+    return { offer: updated, warnings };
 }
 
 /**

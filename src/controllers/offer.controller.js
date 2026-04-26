@@ -71,8 +71,8 @@ export const reviseOfferController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const { offerId } = req.params;
-        const offer = await reviseOffer(therapistId, offerId, req.body);
-        res.status(200).json({ success: true, data: offer })
+        const { offer, warnings } = await reviseOffer(therapistId, offerId, req.body);
+        res.status(200).json({ success: true, data: offer, warnings })
     } catch (error) {
         next(error);
     }
