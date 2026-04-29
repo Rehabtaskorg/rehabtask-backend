@@ -13,6 +13,7 @@ export const uploadAttachmentsController = async (req, res, next) => {
         const { conversationId } = req.params;
         const content = req.body?.content || "";
         const replyToId = req.body?.replyToId || null;
+        const bookingId = req.body?.bookingId || null;
         const files = req.files;
 
         const result = await uploadMessageAttachments(
@@ -20,7 +21,8 @@ export const uploadAttachmentsController = async (req, res, next) => {
             conversationId,
             files,
             content,
-            replyToId
+            replyToId,
+            bookingId
         );
 
         res.status(201).json({

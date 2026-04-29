@@ -48,7 +48,7 @@ const verifyParticipant = async (userId, conversationId) => {
  * @param {string} content - Optional text content
  * @returns {Object} { message, attachments }
  */
-export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null) => {
+export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null, bookingId = null) => {
     if (!files || files.length === 0) {
         throw new BadRequestError("At least one file is required");
     }
@@ -81,6 +81,7 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
             conversationId,
             content: content.trim() || "",
             ...(replyToId && { replyToId }),
+            ...(bookingId && { bookingId }),
         },
         include: {
             sender: {
