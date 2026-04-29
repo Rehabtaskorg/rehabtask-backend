@@ -58,7 +58,7 @@ export const getAttachmentUrlController = async (req, res, next) => {
 export const getConversationAttachmentsController = async (req, res, next) => {
     try {
         const { conversationId } = req.params;
-        const { limit, cursor } = req.query;
+        const { limit, cursor, bookingId } = req.query;
 
         const result = await getConversationAttachments(
             req.user.id,
@@ -66,6 +66,7 @@ export const getConversationAttachmentsController = async (req, res, next) => {
             {
                 limit: limit ? parseInt(limit) : 20,
                 cursor: cursor || undefined,
+                bookingId: bookingId || undefined,
             }
         );
 
