@@ -14,6 +14,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=deps --chown=appuser:appgroup /app/node_modules ./node_modules
 COPY --chown=appuser:appgroup prisma ./prisma/
 COPY --chown=appuser:appgroup src ./src/
+COPY --chown=appuser:appgroup emails ./emails/
+COPY --chown=appuser:appgroup prisma.config.js ./
 COPY --chown=appuser:appgroup entrypoint.sh ./
 
 RUN chmod +x entrypoint.sh
