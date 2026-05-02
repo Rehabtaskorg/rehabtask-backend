@@ -217,7 +217,7 @@ jobs:
           for i in {1..10}; do
             STATUS=$(gcloud run revisions describe $REVISION \
               --region=${{ env.REGION }} \
-              --format="value(status.conditions[?type='Ready'].status)")
+              --format="value(status.conditions[0].status)")
             if [[ "$STATUS" == "True" ]]; then
               echo "Revision is healthy."
               if [[ "${{ env.IS_PROD }}" == "true" ]]; then
