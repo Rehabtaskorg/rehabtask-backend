@@ -216,7 +216,7 @@ jobs:
             --format="value(name)" \
             --limit=1)
           echo "New revision: $REVISION"
-          for i in {1..5}; do
+          for i in {1..10}; do
             STATUS=$(gcloud run revisions describe $REVISION \
               --region=${{ env.REGION }} \
               --format="value(status.conditions[?type='Ready'].status)")
@@ -232,7 +232,7 @@ jobs:
               exit 0
             fi
             echo "Attempt $i: Revision not ready. Waiting 15s..."
-            sleep 15
+            sleep 20
           done
           echo "Revision failed health check."
           if [[ "${{ env.IS_PROD }}" == "true" ]] && [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
