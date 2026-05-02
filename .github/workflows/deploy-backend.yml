@@ -87,7 +87,7 @@ jobs:
             echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
             echo "IS_PROD=false" >> $GITHUB_ENV
             echo "IS_STAGING=true" >> $GITHUB_ENV
-            echo "NODE_ENV=staging" >> $GITHUB_ENV
+            echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FRONTEND_URL=https://staging.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-staging.rehabtask.com" >> $GITHUB_ENV
             echo "COOKIE_SECURE=true" >> $GITHUB_ENV
