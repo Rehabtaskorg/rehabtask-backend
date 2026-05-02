@@ -69,8 +69,8 @@ jobs:
             echo "FRONTEND_URL=https://rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api.rehabtask.com" >> $GITHUB_ENV
             echo "COOKIE_SECURE=true" >> $GITHUB_ENV
-            echo "SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL_PROD }}" >> $GITHUB_ENV
-            echo "SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_PROD }}" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_PROD }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_PROD }}" >> $GITHUB_ENV
             echo "DB_SECRET=DATABASE_URL_PROD" >> $GITHUB_ENV
             echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_PROD" >> $GITHUB_ENV
             echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_PROD" >> $GITHUB_ENV
@@ -91,8 +91,8 @@ jobs:
             echo "FRONTEND_URL=https://staging.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-staging.rehabtask.com" >> $GITHUB_ENV
             echo "COOKIE_SECURE=true" >> $GITHUB_ENV
-            echo "SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL_STAGING }}" >> $GITHUB_ENV
-            echo "SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_STAGING }}" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_STAGING }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_STAGING }}" >> $GITHUB_ENV
             echo "DB_SECRET=DATABASE_URL_STAGING" >> $GITHUB_ENV
             echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_STAGING" >> $GITHUB_ENV
             echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_STAGING" >> $GITHUB_ENV
@@ -113,8 +113,8 @@ jobs:
             echo "FRONTEND_URL=https://dev.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-dev.rehabtask.com" >> $GITHUB_ENV
             echo "COOKIE_SECURE=false" >> $GITHUB_ENV
-            echo "SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL_DEV }}" >> $GITHUB_ENV
-            echo "SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_DEV }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
             echo "DB_SECRET=DATABASE_URL_DEV" >> $GITHUB_ENV
             echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_DEV" >> $GITHUB_ENV
             echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_DEV" >> $GITHUB_ENV
