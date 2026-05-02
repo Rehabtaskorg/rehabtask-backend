@@ -210,11 +210,9 @@ jobs:
       - name: Health check (staging and production)
         if: env.IS_PROD == 'true' || env.IS_STAGING == 'true'
         run: |
-          REVISION=$(gcloud run revisions list \
-            --service=${{ env.SERVICE_NAME }} \
+          REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
-            --format="value(name)" \
-            --limit=1)
+            --format="value(status.latestCreatedRevisionName)")
           echo "New revision: $REVISION"
           for i in {1..10}; do
             STATUS=$(gcloud run revisions describe $REVISION \
