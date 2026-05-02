@@ -13,6 +13,7 @@ export const uploadAttachmentsController = async (req, res, next) => {
         const { conversationId } = req.params;
         const content = req.body?.content || "";
         const replyToId = req.body?.replyToId || null;
+        const bookingId = req.body?.bookingId || null;
         const files = req.files;
 
         const result = await uploadMessageAttachments(
@@ -20,7 +21,8 @@ export const uploadAttachmentsController = async (req, res, next) => {
             conversationId,
             files,
             content,
-            replyToId
+            replyToId,
+            bookingId
         );
 
         res.status(201).json({
@@ -58,7 +60,7 @@ export const getAttachmentUrlController = async (req, res, next) => {
 export const getConversationAttachmentsController = async (req, res, next) => {
     try {
         const { conversationId } = req.params;
-        const { limit, cursor } = req.query;
+        const { limit, cursor, bookingId } = req.query;
 
         const result = await getConversationAttachments(
             req.user.id,
@@ -66,6 +68,7 @@ export const getConversationAttachmentsController = async (req, res, next) => {
             {
                 limit: limit ? parseInt(limit) : 20,
                 cursor: cursor || undefined,
+                bookingId: bookingId || undefined,
             }
         );
 

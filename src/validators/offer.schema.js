@@ -17,13 +17,15 @@ const visitPlanOverride = {
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
 };
 
-// Attempted visit rate on an offer: optional, nullable, may be $0.
+// Attempted visit rate on an offer: optional, nullable. Zero is treated as null
+// (not configured) — a $0 attempted rate is indistinguishable from "no charge".
 const attemptedVisitRateField = z.number({ invalid_type_error: "Attempted visit rate must be a number" })
     .min(0, "Attempted visit rate must be 0 or greater")
     .max(10000, "Attempted visit rate must be $10,000 or less")
     .multipleOf(0.01, "Attempted visit rate must have at most 2 decimal places")
     .nullable()
-    .optional();
+    .optional()
+    .transform(val => (val === 0 ? null : val));
 
 const attemptedRateCapRefine = (data) => {
     if (data.attemptedVisitRate == null) return true;

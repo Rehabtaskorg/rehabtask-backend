@@ -48,7 +48,7 @@ const verifyParticipant = async (userId, conversationId) => {
  * @param {string} content - Optional text content
  * @returns {Object} { message, attachments }
  */
-export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null) => {
+export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null, bookingId = null) => {
     if (!files || files.length === 0) {
         throw new BadRequestError("At least one file is required");
     }
@@ -81,6 +81,7 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
             conversationId,
             content: content.trim() || "",
             ...(replyToId && { replyToId }),
+            ...(bookingId && { bookingId }),
         },
         include: {
             sender: {
@@ -197,20 +198,31 @@ export const getAttachmentSignedUrl = async (userId, attachmentId) => {
 /**
  * Get all attachments for a conversation (paginated).
  * Used by the sidebar and the "View All" modal.
+ *
+ * When bookingId is provided, only attachments whose parent message is linked
+ * to that booking are returned — preventing cross-booking file leakage when
+ * the same therapist/customer pair has multiple bookings.
  */
-export const getConversationAttachments = async (userId, conversationId, { limit = 20, cursor } = {}) => {
+export const getConversationAttachments = async (userId, conversationId, { limit = 20, cursor, bookingId } = {}) => {
     await verifyParticipant(userId, conversationId);
+
+    let cursorDate = undefined;
+    if (cursor) {
+        const cursorRow = await prisma.messageAttachment.findUnique({
+            where: { id: cursor },
+            select: { createdAt: true },
+        });
+        cursorDate = cursorRow?.createdAt;
+    }
 
     const attachments = await prisma.messageAttachment.findMany({
         where: {
             conversationId,
-            ...(cursor && {
-                createdAt: {
-                    lt: (await prisma.messageAttachment.findUnique({
-                        where: { id: cursor },
-                        select: { createdAt: true },
-                    }))?.createdAt,
-                },
+            ...(bookingId && {
+                message: { bookingId },
+            }),
+            ...(cursorDate && {
+                createdAt: { lt: cursorDate },
             }),
         },
         orderBy: { createdAt: "desc" },

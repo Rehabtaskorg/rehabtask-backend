@@ -1,0 +1,246 @@
+name: Deploy Backend to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - development
+  pull_request:
+    branches:
+      - main
+      - staging
+      - development
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  ARTIFACT_REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: rehabtask-repo
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        if: github.ref_name == 'main' || github.ref_name == 'staging'
+        run: npm run lint
+
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: lint
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_BACKEND }}
+
+      - name: Set environment-specific variables
+        run: |
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "SERVICE_NAME=rehabtask-backend" >> $GITHUB_ENV
+            echo "RUNTIME_SA=rehabtask-backend-prod@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
+            echo "IS_PROD=true" >> $GITHUB_ENV
+            echo "IS_STAGING=false" >> $GITHUB_ENV
+            echo "NODE_ENV=production" >> $GITHUB_ENV
+            echo "FRONTEND_URL=https://rehabtask.com" >> $GITHUB_ENV
+            echo "API_URL=https://api.rehabtask.com" >> $GITHUB_ENV
+            echo "COOKIE_SECURE=true" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_PROD }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_PROD }}" >> $GITHUB_ENV
+            echo "DB_SECRET=DATABASE_URL_PROD" >> $GITHUB_ENV
+            echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_PROD" >> $GITHUB_ENV
+            echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_PROD" >> $GITHUB_ENV
+            echo "STRIPE_SECRET=STRIPE_SECRET_KEY_PROD" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET_PROD" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_CONNECT_SECRET=STRIPE_WEBHOOK_SECRET_CONNECT_PROD" >> $GITHUB_ENV
+            echo "RESEND_SECRET=RESEND_API_KEY_PROD" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_MONTHLY=${{ secrets.STRIPE_PRICE_STANDARD_MONTHLY_PROD }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_PROD }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_PROD }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_PROD }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref_name }}" == "staging" ]]; then
+            echo "SERVICE_NAME=rehabtask-backend-staging" >> $GITHUB_ENV
+            echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
+            echo "IS_PROD=false" >> $GITHUB_ENV
+            echo "IS_STAGING=true" >> $GITHUB_ENV
+            echo "NODE_ENV=staging" >> $GITHUB_ENV
+            echo "FRONTEND_URL=https://staging.rehabtask.com" >> $GITHUB_ENV
+            echo "API_URL=https://api-staging.rehabtask.com" >> $GITHUB_ENV
+            echo "COOKIE_SECURE=true" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_STAGING }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_STAGING }}" >> $GITHUB_ENV
+            echo "DB_SECRET=DATABASE_URL_STAGING" >> $GITHUB_ENV
+            echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_STAGING" >> $GITHUB_ENV
+            echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_STAGING" >> $GITHUB_ENV
+            echo "STRIPE_SECRET=STRIPE_SECRET_KEY_STAGING" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET_STAGING" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_CONNECT_SECRET=STRIPE_WEBHOOK_SECRET_CONNECT_STAGING" >> $GITHUB_ENV
+            echo "RESEND_SECRET=RESEND_API_KEY_STAGING" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_MONTHLY=${{ secrets.STRIPE_PRICE_STANDARD_MONTHLY_STAGING }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_STAGING }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_STAGING }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_STAGING }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref_name }}" == "development" ]]; then
+            echo "SERVICE_NAME=rehabtask-backend-dev" >> $GITHUB_ENV
+            echo "RUNTIME_SA=rehabtask-backend-dev@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
+            echo "IS_PROD=false" >> $GITHUB_ENV
+            echo "IS_STAGING=false" >> $GITHUB_ENV
+            echo "NODE_ENV=development" >> $GITHUB_ENV
+            echo "FRONTEND_URL=https://dev.rehabtask.com" >> $GITHUB_ENV
+            echo "API_URL=https://api-dev.rehabtask.com" >> $GITHUB_ENV
+            echo "COOKIE_SECURE=false" >> $GITHUB_ENV
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_DEV }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
+            echo "DB_SECRET=DATABASE_URL_DEV" >> $GITHUB_ENV
+            echo "DIRECT_DB_SECRET=DIRECT_DATABASE_URL_DEV" >> $GITHUB_ENV
+            echo "SUPABASE_ROLE_SECRET=SUPABASE_SERVICE_ROLE_KEY_DEV" >> $GITHUB_ENV
+            echo "STRIPE_SECRET=STRIPE_SECRET_KEY_DEV" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET_DEV" >> $GITHUB_ENV
+            echo "STRIPE_WEBHOOK_CONNECT_SECRET=STRIPE_WEBHOOK_SECRET_CONNECT_DEV" >> $GITHUB_ENV
+            echo "RESEND_SECRET=RESEND_API_KEY_DEV" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_MONTHLY=${{ secrets.STRIPE_PRICE_STANDARD_MONTHLY_DEV }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_DEV }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_DEV }}" >> $GITHUB_ENV
+            echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_DEV }}" >> $GITHUB_ENV
+          fi
+
+      - name: Sanitize branch name for image tag
+        run: |
+          BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "BRANCH_TAG=$BRANCH" >> $GITHUB_ENV
+
+      - name: Capture current serving revision (production only)
+        if: github.ref_name == 'main'
+        run: |
+          PREVIOUS_REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.traffic[0].revisionName)" 2>/dev/null || echo "")
+          echo "PREVIOUS_REVISION=$PREVIOUS_REVISION" >> $GITHUB_ENV
+          echo "Previous revision: $PREVIOUS_REVISION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-backend-${{ hashFiles('**/package-lock.json', 'Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-backend-
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Build and Push Docker image
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ env.BRANCH_TAG }}-${{ github.sha }}"
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --platform linux/amd64 \
+            --push \
+            -t $IMAGE \
+            .
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Deploy to Cloud Run
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ env.BRANCH_TAG }}-${{ github.sha }}"
+          if [[ "${{ env.IS_PROD }}" == "true" ]]; then
+            gcloud run deploy ${{ env.SERVICE_NAME }} \
+              --image $IMAGE \
+              --platform managed \
+              --region ${{ env.REGION }} \
+              --port 8080 \
+              --min-instances 1 \
+              --max-instances 10 \
+              --memory 1Gi \
+              --cpu 2 \
+              --service-account ${{ env.RUNTIME_SA }} \
+              --allow-unauthenticated \
+              --no-traffic \
+              --timeout=300 \
+              --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
+              --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_SECRET_KEY=RECAPTCHA_SECRET_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,QA_ADMIN_PASSWORD=QA_ADMIN_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,BETTERSTACK_LOG_TOKEN=BETTERSTACK_LOG_TOKEN:latest" \
+              --quiet
+          else
+            gcloud run deploy ${{ env.SERVICE_NAME }} \
+              --image $IMAGE \
+              --platform managed \
+              --region ${{ env.REGION }} \
+              --port 8080 \
+              --min-instances 0 \
+              --max-instances 5 \
+              --memory 512Mi \
+              --cpu 1 \
+              --service-account ${{ env.RUNTIME_SA }} \
+              --allow-unauthenticated \
+              --timeout=300 \
+              --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
+              --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_SECRET_KEY=RECAPTCHA_SECRET_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,QA_ADMIN_PASSWORD=QA_ADMIN_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,BETTERSTACK_LOG_TOKEN=BETTERSTACK_LOG_TOKEN:latest" \
+              --quiet
+          fi
+
+      - name: Health check (staging and production)
+        if: env.IS_PROD == 'true' || env.IS_STAGING == 'true'
+        run: |
+          REVISION=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(name)" \
+            --limit=1)
+          echo "New revision: $REVISION"
+          for i in {1..5}; do
+            STATUS=$(gcloud run revisions describe $REVISION \
+              --region=${{ env.REGION }} \
+              --format="value(status.conditions[?type='Ready'].status)")
+            if [[ "$STATUS" == "True" ]]; then
+              echo "Revision is healthy."
+              if [[ "${{ env.IS_PROD }}" == "true" ]]; then
+                echo "Switching production traffic..."
+                gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+                  --region=${{ env.REGION }} \
+                  --to-latest
+                echo "Traffic switched to $REVISION"
+              fi
+              exit 0
+            fi
+            echo "Attempt $i: Revision not ready. Waiting 15s..."
+            sleep 15
+          done
+          echo "Revision failed health check."
+          if [[ "${{ env.IS_PROD }}" == "true" ]] && [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
+            echo "Rolling back to ${{ env.PREVIOUS_REVISION }}..."
+            gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --to-revisions=${{ env.PREVIOUS_REVISION }}=100
+            echo "Rolled back to ${{ env.PREVIOUS_REVISION }}"
+          else
+            echo "Deploy unhealthy — workflow failed. Manual intervention required."
+          fi
+          exit 1

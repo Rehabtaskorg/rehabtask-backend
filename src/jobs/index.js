@@ -4,10 +4,12 @@ import { runAutoConfirm } from "./autoConfirm.js";
 import { runPaymentReminders } from "./paymentReminders.js";
 import { runSubscriptionCron } from "./subscriptionCron.js";
 import { runExpiredRefunds } from "./expiredRefunds.js";
+import { runRetryPendingRefunds } from "./retryPendingRefunds.js";
 import { logger } from "../config/logger.js";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
+const TEN_MIN_MS = 10 * 60 * 1000;
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 /**
@@ -74,6 +76,15 @@ export const startScheduledJobs = () => {
         }
     }, SIX_HOURS_MS);
 
+    // Retry failed attempted-visit refunds - every 10 minutes
+    setInterval(async () => {
+        try {
+            await runRetryPendingRefunds();
+        } catch (error) {
+            logger.error('[Jobs] Retry pending refunds failed', { error: error.message });
+        }
+    }, TEN_MIN_MS);
+
     // Run all once at startup (after a short delay to let DB connect)
     setTimeout(async () => {
         try { await runSessionReminders(); } catch (e) { logger.error('[Jobs] Startup sessionReminders failed', { error: e.message }); }
@@ -82,7 +93,8 @@ export const startScheduledJobs = () => {
         try { await runPaymentReminders(); } catch (e) { logger.error('[Jobs] Startup paymentReminders failed', { error: e.message }); }
         try { await runSubscriptionCron(); } catch (e) { logger.error('[Jobs] Startup subscriptionCron failed', { error: e.message }); }
         try { await runExpiredRefunds(); } catch (e) { logger.error('[Jobs] Startup expiredRefunds failed', { error: e.message }); }
+        try { await runRetryPendingRefunds(); } catch (e) { logger.error('[Jobs] Startup retryPendingRefunds failed', { error: e.message }); }
     }, 10_000);
 
-    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h)');
+    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h), retryPendingRefunds (10m)');
 }

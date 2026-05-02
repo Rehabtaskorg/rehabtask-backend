@@ -63,7 +63,8 @@ export const credentialsSchema = z.object({
         .min(0, "Attempted visit rate must be 0 or greater")
         .max(10000, "Attempted visit rate must be $10,000 or less")
         .nullable()
-        .optional(),
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
 }).refine(
     (data) => {
         // Cap: attempted rate cannot exceed session rate when both are set.

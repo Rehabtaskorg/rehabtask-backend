@@ -983,6 +983,26 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
                 error: refundErr.message,
                 sessionPayoutId: sessionPayout?.id,
             });
+            // Persist for retry job — payout already released, only the customer
+            // refund failed. The job will retry until resolved or permanently failed.
+            await prisma.pendingRefundRetry.create({
+                data: {
+                    sessionId,
+                    bookingId: booking.id,
+                    paymentId: payment.id,
+                    customerId: booking.customer.id,
+                    stripePaymentIntentId: payment.stripePaymentIntentId,
+                    amount: refundAmount,
+                    reason: "attempted_visit_remainder",
+                    errorLog: refundErr.message,
+                },
+            }).catch((persistErr) => {
+                logger.error("[Session] CRITICAL: Failed to persist pending refund retry", {
+                    sessionId,
+                    error: persistErr.message,
+                    originalError: refundErr.message,
+                });
+            });
         }
     }
 
