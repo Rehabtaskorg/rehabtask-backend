@@ -120,12 +120,13 @@ function handlePrismaError(err, res) {
     const statusCode = 400;
 
     switch (err.code) {
-        case "P2002":
+        case "P2002": {
             // Unique constraint violation
             const field = err.meta?.target?.[0] || "field";
             message = `A record with this ${field} already exists`;
             code = "DUPLICATE_ENTRY";
             break;
+        }
 
         case "P2025":
             // Record not found
