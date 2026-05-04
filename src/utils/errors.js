@@ -58,14 +58,8 @@ export class ConflictError extends APIError {
     }
 }
 
-/**
- * Rate limit errors (429)
- */
-export class RateLimitError extends APIError {
-    constructor(message = "Too many requests", code = "RATE_LIMIT_EXCEEDED") {
-        super(message, 429, code);
-    }
-}
+// 429 responses are emitted directly by the rate limiter middleware in
+// src/middleware/rateLimiter.js and do not go through this error class hierarchy.
 
 /**
  * Bad request errors (400)
