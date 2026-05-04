@@ -613,7 +613,7 @@ export const resendVerificationEmail = async ({ email }) => {
         if (error.status === 429 || error.code === "over_email_send_rate_limit") {
             const waitMatch = error.message?.match(/after (\d+) seconds/);
             const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 60;
-            throw new BadRequestError(`Please wait ${waitSeconds} seconds before requesting another verification email.`);
+            throw new BadRequestError(`Please wait ${waitSeconds} seconds before requesting another verification email.`, "EMAIL_RATE_LIMITED");
         }
         // Other errors: don't reveal if email exists (prevents enumeration)
         logger.warn("[Auth] Resend verification error", { email: normalizedEmail, error: error.message });
