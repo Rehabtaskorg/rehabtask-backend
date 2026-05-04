@@ -1,5 +1,7 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
+const isProd = process.env.NODE_ENV === "production";
+
 /**
  * Create rate limiter with custom options
  * Uses in-memory storage (no Redis required)
@@ -33,7 +35,7 @@ const createRateLimiter = (options = {}) => {
  */
 export const registrationRateLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 15, // 15 registrations per hour,
+    max: isProd ? 15 : 1000,
     message: "Too many registration attempts, please try again later",
 });
 
@@ -42,7 +44,7 @@ export const registrationRateLimiter = createRateLimiter({
  */
 export const passwordResetLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 15, // 3 password reset requests per hour,
+    max: isProd ? 15 : 1000,
     message: "Too many password reset attempts, please try again later",
 });
 
@@ -51,7 +53,7 @@ export const passwordResetLimiter = createRateLimiter({
  */
 export const emailVerificationRateLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 5, // 5 verification attempts per hour,
+    max: isProd ? 5 : 1000,
     message: "Too many verification attempts, please try again later",
 });
 
@@ -62,7 +64,7 @@ export const emailVerificationRateLimiter = createRateLimiter({
  */
 export const apiRateLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 600, // 600 requests per 15 minutes
+    max: isProd ? 600 : 10000,
     message: "Too many requests, please try again later",
     keyGenerator: (req) => {
         return req.user?.id || ipKeyGenerator(req);
@@ -75,7 +77,7 @@ export const apiRateLimiter = createRateLimiter({
  */
 export const sensitiveOperationRateLimiter = createRateLimiter({
     windowMs: 60 * 60 * 1000, // 1hr
-    max: 20, // 10 requests per hour,
+    max: isProd ? 20 : 1000,
     message: "Rate limit exceeded for this operation.",
 });
 
@@ -85,7 +87,7 @@ export const sensitiveOperationRateLimiter = createRateLimiter({
  */
 export const messagingRateLimiter = createRateLimiter({
     windowMs: 60 * 1000,
-    max: 20,
+    max: isProd ? 20 : 1000,
     message: "Too many messages sent. Please wait a moment.",
     skip: (req) => {
         if (req.path === "/health") return true;
@@ -105,7 +107,7 @@ export const messagingRateLimiter = createRateLimiter({
  */
 export const conversationsRateLimiter = createRateLimiter({
     windowMs: 60 * 1000,
-    max: 30,
+    max: isProd ? 30 : 1000,
     message: "Too many requests. Please wait a moment.",
     keyGenerator: (req) => {
         return req.user?.id || ipKeyGenerator(req);
