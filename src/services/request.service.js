@@ -10,6 +10,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
     const {
         serviceType, description, preferredDate, location, latitude, longitude,
         patientId, rate, visitType, visitTypeId, emr, visitsPerWeek, numberOfWeeks,
+        requestType = "PUBLIC", targetTherapistId,
     } = data;
 
     // IF patientId is provided, validate the patient belongs to this agency
@@ -26,6 +27,16 @@ export const createRequest = async (customerId, data, customerProfile) => {
         }
     }
 
+    // For direct requests, verify the target therapist exists and is approved
+    if (requestType === "DIRECT") {
+        const therapist = await prisma.therapistProfile.findUnique({
+            where: { id: targetTherapistId },
+            select: { id: true, approvalStatus: true },
+        });
+        if (!therapist) throw new Error("Target therapist not found");
+        if (therapist.approvalStatus !== "approved") throw new Error("Target therapist is not available");
+    }
+
     const geocoded = await geocodeAddress(location);
     assertCoherenceOrLog("request.create", latitude, longitude, geocoded.latitude, geocoded.longitude, 5);
 
@@ -39,6 +50,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             latitude: geocoded.latitude,
             longitude: geocoded.longitude,
             status: "created",
+            requestType,
             ...(patientId && { patientId }),
             ...(rate != null && { rate }),
             ...(visitTypeId && { visitTypeId }),
@@ -46,6 +58,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             ...(emr && { emr }),
             ...(visitsPerWeek != null && { visitsPerWeek }),
             ...(numberOfWeeks != null && { numberOfWeeks }),
+            ...(requestType === "DIRECT" && targetTherapistId && { targetTherapistId }),
         },
     });
 
@@ -55,15 +68,20 @@ export const createRequest = async (customerId, data, customerProfile) => {
         action: "request.created",
         entityType: "request",
         entityId: request.id,
-        changes: { serviceType, location, preferredDate, patientId: patientId || null },
+        changes: {
+            serviceType, location, preferredDate,
+            patientId: patientId || null,
+            requestType,
+            targetTherapistId: targetTherapistId || null,
+        },
     });
 
     // Auto-persist EMR and legacy string visit_type values to the lookup table.
     if (!visitTypeId && visitType) await ensureOption("visit_type", visitType);
     if (emr) await ensureOption("emr", emr);
 
-    // Notify matching therapists (fire-and-forget)
-    if (request.latitude && request.longitude) {
+    // Notify matching therapists — ONLY for public requests
+    if (requestType === "PUBLIC" && request.latitude && request.longitude) {
         const workAreas = await prisma.workArea.findMany({
             include: { therapist: { include: { user: { select: { email: true } } } } },
         });
@@ -154,9 +172,12 @@ export const getRequestById = async (requestId, userId) => {
     if (!request) throw new Error("Request not found");
 
     const isCustomer = request.customer.userId === userId;
-    const isTherapist = user?.therapistProfile !== null;
+    const isTargetTherapist = user?.therapistProfile?.id === request.targetTherapistId;
+    const isPublicAndTherapist = request.requestType === "PUBLIC" && !!user?.therapistProfile;
+    const canView = isCustomer || isTargetTherapist || isPublicAndTherapist;
 
-    if (!isCustomer && !isTherapist) throw new Error("Unauthorized");
+    // Use a generic error to avoid leaking the existence of private requests
+    if (!canView) throw new Error("Request not found");
 
     return request;
 }
@@ -176,6 +197,11 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
     // Build where clause with server-side filters
     const where = {
         status: { in: ["created", "offers_received"] },
+        // Visibility: public requests OR direct requests targeting this therapist
+        OR: [
+            { requestType: "PUBLIC" },
+            { requestType: "DIRECT", targetTherapistId: therapistId },
+        ],
         NOT: {
             offers: {
                 some: {
@@ -518,6 +544,10 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
         where: {
             customerId: customerProfile.id,
             status: { in: ["created", "offers_received"] },
+            OR: [
+                { requestType: "PUBLIC" },
+                { requestType: "DIRECT", targetTherapistId: therapistId },
+            ],
         },
         include: {
             patient: { select: { id: true, fullName: true } },

@@ -137,6 +137,7 @@ model TherapistProfile {
   user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   workAreas                WorkArea[]
   reviews                  Review[]
+  directRequests           TherapyRequest[]       @relation("DirectRequests")
 
   @@index([userId])
   @@index([approvalStatus, createdAt])
@@ -258,13 +259,16 @@ model TherapyRequest {
   status        RequestStatus
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  visitsPerWeek Int?            @map("visits_per_week")
-  numberOfWeeks Int?            @map("number_of_weeks")
-  offers        Offer[]
-  messages      Message[]
-  customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  patient       Patient?        @relation("PatientRequests", fields: [patientId], references: [id])
-  visitTypeRef  VisitType?      @relation(fields: [visitTypeId], references: [id])
+  visitsPerWeek     Int?              @map("visits_per_week")
+  numberOfWeeks     Int?              @map("number_of_weeks")
+  requestType       RequestType       @default(PUBLIC) @map("request_type")
+  targetTherapistId String?           @map("target_therapist_id") @db.Uuid
+  offers            Offer[]
+  messages          Message[]
+  customer          CustomerProfile   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  patient           Patient?          @relation("PatientRequests", fields: [patientId], references: [id])
+  visitTypeRef      VisitType?        @relation(fields: [visitTypeId], references: [id])
+  targetTherapist   TherapistProfile? @relation("DirectRequests", fields: [targetTherapistId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status, createdAt])
   @@index([patientId, status, createdAt])
@@ -272,6 +276,8 @@ model TherapyRequest {
   @@index([latitude, longitude])
   @@index([serviceType, status])
   @@index([visitTypeId])
+  @@index([targetTherapistId, status])
+  @@index([customerId, requestType, status])
   @@map("therapy_requests")
 }
 
@@ -760,6 +766,11 @@ enum RequestStatus {
   offers_accepted
   completed
   cancelled
+}
+
+enum RequestType {
+  PUBLIC
+  DIRECT
 }
 
 enum OfferStatus {
