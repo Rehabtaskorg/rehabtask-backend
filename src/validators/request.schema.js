@@ -14,9 +14,14 @@ export const createRequestSchema = z.object({
     emr: z.string().trim().min(1, "EMR system is required").max(100),
     visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
+    requestType: z.enum(["PUBLIC", "DIRECT"]).optional().default("PUBLIC"),
+    targetTherapistId: z.string().uuid().optional().nullable(),
 }).refine(
     (data) => Boolean(data.visitTypeId) || Boolean(data.visitType),
     { message: "Visit type is required", path: ["visitTypeId"] }
+).refine(
+    (data) => data.requestType !== "DIRECT" || Boolean(data.targetTherapistId),
+    { message: "targetTherapistId is required for direct requests", path: ["targetTherapistId"] }
 );
 
 export const updateRequestSchema = z.object({

@@ -83,7 +83,7 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
         direct: async () => {
             const userSelect = {
                 id: true, role: true,
-                therapistProfile: { select: { fullName: true, profilePhotoUrl: true, specialization: true, yearsOfExperience: true } },
+                therapistProfile: { select: { id: true, fullName: true, profilePhotoUrl: true, specialization: true, yearsOfExperience: true } },
                 customerProfile: { select: { fullName: true, agencyName: true } },
             };
 
@@ -945,7 +945,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
     const userSelect = {
         id: true,
         role: true,
-        therapistProfile: { select: { fullName: true, profilePhotoUrl: true, specialization: true, yearsOfExperience: true } },
+        therapistProfile: { select: { id: true, fullName: true, profilePhotoUrl: true, specialization: true, yearsOfExperience: true } },
         customerProfile: { select: { fullName: true, agencyName: true } },
     };
 

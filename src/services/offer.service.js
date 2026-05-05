@@ -32,6 +32,11 @@ export const createOffer = async (therapistId, data) => {
         throw new Error("Request is no longer accepting offers");
     }
 
+    // Direct requests are private — only the designated therapist may submit an offer
+    if (request.requestType === "DIRECT" && request.targetTherapistId !== therapistId) {
+        throw new Error("This request is private and not available to you");
+    }
+
     // Check if therapist already made an offer
     const existingOffer = await prisma.offer.findFirst({
         where: {
