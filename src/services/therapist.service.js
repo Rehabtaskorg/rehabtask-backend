@@ -76,24 +76,20 @@ export const updateWorkAreas = async (therapistId, workAreas) => {
     const result = await prisma.$transaction(async (tx) => {
         await tx.workArea.deleteMany({ where: { therapistId } });
 
-        const created = await Promise.all(
-            geocoded.map((area) =>
-                tx.workArea.create({
-                    data: {
-                        therapistId,
-                        zipCode: area.zipCode,
-                        city: area.city,
-                        state: area.state,
-                        latitude: area.latitude,
-                        longitude: area.longitude,
-                        radiusMiles: area.radiusMiles ?? 25,
-                    },
-                })
-            )
-        );
+        await tx.workArea.createMany({
+            data: geocoded.map((area) => ({
+                therapistId,
+                zipCode: area.zipCode,
+                city: area.city,
+                state: area.state,
+                latitude: area.latitude,
+                longitude: area.longitude,
+                radiusMiles: area.radiusMiles ?? 25,
+            })),
+        });
 
-        return created;
-    });
+        return tx.workArea.findMany({ where: { therapistId } });
+    }, { timeout: 15000 });
 
     return result;
 }

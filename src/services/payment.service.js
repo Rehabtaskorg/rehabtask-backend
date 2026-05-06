@@ -1237,19 +1237,18 @@ const processRefund = async (bookingId, userId, reason) => {
             data: { status: "cancelled" },
         });
 
-        // Cancel all sessions for this booking
+        // Cancel all sessions in one batch — updateMany is a single DB round trip
+        // regardless of session count, avoiding transaction timeouts on large bookings.
         if (booking.sessions?.length > 0) {
-            for (const s of booking.sessions) {
-                await tx.session.update({
-                    where: { id: s.id },
-                    data: {
-                        status: "cancelled",
-                        cancellationReason: reason,
-                    },
-                });
-            }
+            await tx.session.updateMany({
+                where: { bookingId },
+                data: {
+                    status: "cancelled",
+                    cancellationReason: reason,
+                },
+            });
         }
-    });
+    }, { timeout: 15000 });
 
     // Event: payment.refunded
     logAction({
@@ -2085,19 +2084,24 @@ const processPendingRefundsForCustomer = async (customerId) => {
 
     if (pendingRefunds.length === 0) return [];
 
-    const results = [];
-    for (const refund of pendingRefunds) {
-        try {
-            const transferred = await transferPendingRefund(refund.id);
-            results.push({ refundId: refund.id, status: "transferred", transferId: transferred.stripeTransferId });
-        } catch (err) {
-            logger.error("[PaymentService] Failed to transfer pending refund", {
-                refundId: refund.id,
-                error: err.message,
-            });
-            results.push({ refundId: refund.id, status: "failed", error: err.message });
+    // Transfer all pending refunds in parallel — each is independent (separate
+    // Stripe transfer + DB update). Promise.allSettled ensures one failure does
+    // not block the others.
+    const settled = await Promise.allSettled(
+        pendingRefunds.map((refund) => transferPendingRefund(refund.id))
+    );
+
+    const results = settled.map((result, i) => {
+        const refund = pendingRefunds[i];
+        if (result.status === "fulfilled") {
+            return { refundId: refund.id, status: "transferred", transferId: result.value.stripeTransferId };
         }
-    }
+        logger.error("[PaymentService] Failed to transfer pending refund", {
+            refundId: refund.id,
+            error: result.reason?.message,
+        });
+        return { refundId: refund.id, status: "failed", error: result.reason?.message };
+    });
 
     return results;
 };

@@ -81,7 +81,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         }
 
         return updated;
-    });
+    }, { timeout: 10000 });
 
     // Event: session.completed_by_therapist
     logAction({
@@ -192,7 +192,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         }
 
         return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
-    });
+    }, { timeout: 10000 });
 
     // Event: session.confirmed_by_customer
     logAction({
@@ -641,7 +641,7 @@ export const cancelSession = async (sessionId, userId, reason) => {
         });
 
         return updated;
-    });
+    }, { timeout: 10000 });
 
     // Event: session.cancelled
     logAction({

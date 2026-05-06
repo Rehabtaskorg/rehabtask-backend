@@ -333,7 +333,7 @@ export const acceptOffer = async (offerId, customerId) => {
         }
 
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
-    });
+    }, { timeout: 15000 });
 
     // Event: offer.approved_by_customer
     logAction({
