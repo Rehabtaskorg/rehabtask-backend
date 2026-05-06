@@ -60,7 +60,7 @@ export const runAutoConfirm = async () => {
                         return true;
                     }
                     return false;
-                });
+                }, { timeout: 10000 });
 
                 // Per-session payout — release for this session immediately
                 const payment = session.booking.payment;

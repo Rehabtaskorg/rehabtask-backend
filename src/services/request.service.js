@@ -361,7 +361,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
             where: { id: requestId },
             data: updateData,
         });
-    });
+    }, { timeout: 10000 });
 
     // Build changes object for audit log (only changed fields)
     const changes = {};
@@ -493,7 +493,7 @@ export const cancelRequest = async (requestId, customerId) => {
             where: { id: requestId },
             data: { status: "cancelled" },
         });
-    });
+    }, { timeout: 10000 });
 
     // Audit event: request.cancelled_by_customer
     logAction({

@@ -379,24 +379,22 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         throw stripeError;
     }
 
-    await prisma.$transaction([
-        prisma.payment.update({
+    await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
             where: { id: paymentId },
             data: { status: "refunded", refundedAt: new Date() },
-        }),
-        prisma.booking.update({
+        });
+        await tx.booking.update({
             where: { id: payment.bookingId },
             data: { status: "cancelled" },
-        }),
-        ...(payment.booking.sessions?.length > 0
-            ? payment.booking.sessions.map(s =>
-                prisma.session.update({
-                    where: { id: s.id },
-                    data: { status: "cancelled", cancellationReason: reason },
-                })
-            )
-            : []),
-    ]);
+        });
+        if (payment.booking.sessions?.length > 0) {
+            await tx.session.updateMany({
+                where: { bookingId: payment.bookingId },
+                data: { status: "cancelled", cancellationReason: reason },
+            });
+        }
+    }, { timeout: 15000 });
 
     sendAdminPaymentRefunded({
         customer: payment.customer,
