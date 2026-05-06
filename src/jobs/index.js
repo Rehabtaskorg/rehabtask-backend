@@ -67,7 +67,7 @@ export const startScheduledJobs = () => {
         }
     }, ONE_HOUR_MS);
 
-    // Expired refund fallback (pending_connect → card refund after 30 days) - every 6 hours
+    // Expired refund reminders (pending_connect — sends reminder emails every 7 days) - every 6 hours
     setInterval(async () => {
         try {
             await runExpiredRefunds();
