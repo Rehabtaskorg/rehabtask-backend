@@ -337,31 +337,22 @@ const handlePaymentSuccess = async (paymentIntentId) => {
             data: { status: "confirmed" },
         });
 
+
         // Idempotency: skip session creation if sessions already exist (webhook retry)
         if (payment.booking.sessions?.length === 0) {
-            // Session 1: scheduled with the offer's proposed date
-            await tx.session.create({
-                data: {
-                    bookingId: payment.bookingId,
-                    sessionNumber: 1,
-                    scheduledDate: payment.booking.scheduledDate,
-                    status: "scheduled",
-                },
-            });
+            // Build all session rows up front and insert in a single round trip.
+            // Sequential tx.session.create() in a loop caused transaction timeouts
+            // for large session counts (e.g. 60 sessions × ~90ms = >5s timeout).
+            const sessionRows = Array.from({ length: totalSessions }, (_, i) => ({
+                bookingId: payment.bookingId,
+                sessionNumber: i + 1,
+                scheduledDate: i === 0 ? payment.booking.scheduledDate : null,
+                status: i === 0 ? "scheduled" : "pending_schedule",
+            }));
 
-            // Sessions 2-N: pending_schedule (therapist sets dates as treatment progresses)
-            for (let i = 2; i <= totalSessions; i++) {
-                await tx.session.create({
-                    data: {
-                        bookingId: payment.bookingId,
-                        sessionNumber: i,
-                        scheduledDate: null,
-                        status: "pending_schedule",
-                    },
-                });
-            }
+            await tx.session.createMany({ data: sessionRows });
         }
-    });
+    }, { timeout: 15000 });
 
     // Event: payment.escrow_funded (system/webhook triggered)
     logSystemEvent({
