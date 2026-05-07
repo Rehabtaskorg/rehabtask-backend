@@ -52,6 +52,7 @@ import {
     customerRefundReturnedToCard,
     attemptedVisitTherapistPayout,
     stripeRequirementsAlert,
+    customerStripeRequirementsAlert,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -288,6 +289,16 @@ export const sendStripeRequirementsAlert = async ({
 }) => {
     return dispatch(therapist.user.email, stripeRequirementsAlert, {
         therapist, pastDueCount, currentlyDueCount, currentDeadline,
+        hasUpcomingRequirements, futureDeadline,
+    });
+};
+
+export const sendCustomerStripeRequirementsAlert = async ({
+    customer, pastDueCount, currentlyDueCount, currentDeadline,
+    hasUpcomingRequirements, futureDeadline,
+}) => {
+    return dispatch(customer.user.email, customerStripeRequirementsAlert, {
+        customer, pastDueCount, currentlyDueCount, currentDeadline,
         hasUpcomingRequirements, futureDeadline,
     });
 };
