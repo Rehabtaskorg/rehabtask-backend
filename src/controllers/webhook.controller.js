@@ -2,7 +2,7 @@ import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { sendPaymentFailed, sendPayoutFailed } from "../services/email.service.js";
+import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 
@@ -440,15 +440,56 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
                 data: { stripeOnboardingComplete: true },
             });
         });
-        console.log(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
-    } else if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
+        logger.info(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
+        return;
+    }
+
+    if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
         await withAdminAccess(async (db) => {
             await db.therapistProfile.update({
                 where: { stripeAccountId: account.id },
                 data: { stripeOnboardingComplete: false },
             });
         });
-        console.log(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+        logger.info(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+    }
+
+    // Proactively email the therapist when Stripe imposes new requirements
+    // so they act before capabilities are restricted. Covers all three stages:
+    //   past_due    → account already restricted, urgent
+    //   currently_due → deadline approaching, warning
+    //   future_requirements → upcoming, informational
+    const req = account.requirements ?? {};
+    const futureReq = account.future_requirements ?? {};
+    const pastDueCount = req.past_due?.length ?? 0;
+    const currentlyDueCount = req.currently_due?.length ?? 0;
+    const futureDueCount =
+        (futureReq.currently_due?.length ?? 0) +
+        (futureReq.eventually_due?.length ?? 0);
+
+    const shouldAlert = pastDueCount > 0 || currentlyDueCount > 0 || futureDueCount > 0;
+
+    if (shouldAlert) {
+        const therapistWithUser = await prisma.therapistProfile.findUnique({
+            where: { id: therapist.id },
+            include: { user: { select: { email: true } } },
+        });
+
+        if (therapistWithUser?.user?.email) {
+            sendStripeRequirementsAlert({
+                therapist: therapistWithUser,
+                pastDueCount,
+                currentlyDueCount,
+                currentDeadline: req.current_deadline ?? null,
+                hasUpcomingRequirements: futureDueCount > 0,
+                futureDeadline: futureReq.current_deadline ?? null,
+            }).catch((err) => {
+                logger.error('[Webhook] Failed to send Stripe requirements alert email', {
+                    therapistId: therapist.id,
+                    error: err.message,
+                });
+            });
+        }
     }
 }
 

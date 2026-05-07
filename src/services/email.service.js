@@ -51,6 +51,7 @@ import {
     customerRefundTransferred,
     customerRefundReturnedToCard,
     attemptedVisitTherapistPayout,
+    stripeRequirementsAlert,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -279,6 +280,16 @@ export const sendAccountDeactivated = async ({ user }) => {
 
 export const sendSubAdminWelcome = async ({ user }) => {
     return dispatch(user.email, subAdminWelcome, { user });
+};
+
+export const sendStripeRequirementsAlert = async ({
+    therapist, pastDueCount, currentlyDueCount, currentDeadline,
+    hasUpcomingRequirements, futureDeadline,
+}) => {
+    return dispatch(therapist.user.email, stripeRequirementsAlert, {
+        therapist, pastDueCount, currentlyDueCount, currentDeadline,
+        hasUpcomingRequirements, futureDeadline,
+    });
 };
 
 export const sendSubscriptionCancelledByAdmin = async ({ customer, subscription }) => {

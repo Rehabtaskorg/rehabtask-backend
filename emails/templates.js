@@ -878,6 +878,52 @@ export const customerRefundReturnedToCard = ({ customer, refundAmount }) => ({
     `),
 });
 
+// Stripe requirements alert — sent when account.updated webhook fires with new requirements
+export const stripeRequirementsAlert = ({ therapist, pastDueCount, currentlyDueCount, currentDeadline, hasUpcomingRequirements, futureDeadline }) => {
+    const isPastDue = pastDueCount > 0;
+    const isCurrentlyDue = currentlyDueCount > 0;
+
+    const subject = isPastDue
+        ? 'Action required — your RehabTask payout account has been restricted'
+        : isCurrentlyDue
+            ? `Action needed by ${currentDeadline ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'upcoming deadline'} to keep your payout account active`
+            : 'Upcoming information required for your RehabTask payout account';
+
+    const urgencyColor = isPastDue ? '#dc2626' : isCurrentlyDue ? '#d97706' : '#2563EB';
+    const urgencyBg = isPastDue ? '#fef2f2' : isCurrentlyDue ? '#fffbeb' : '#eff6ff';
+    const urgencyBorder = isPastDue ? '#fca5a5' : isCurrentlyDue ? '#fcd34d' : '#bfdbfe';
+
+    const deadlineStr = currentDeadline
+        ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const futureDeadlineStr = futureDeadline
+        ? new Date(futureDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const bodyContent = isPastDue
+        ? `Your payout account has been <strong>restricted by Stripe</strong> because required information was not provided by the deadline. Your ability to receive payments and payouts is currently paused.`
+        : isCurrentlyDue
+            ? `Stripe requires updated information for your payout account${deadlineStr ? ` by <strong>${deadlineStr}</strong>` : ' soon'}. If not completed, your payments and payouts will be paused.`
+            : `Stripe will require new information for your payout account${futureDeadlineStr ? ` by <strong>${futureDeadlineStr}</strong>` : ' in the future'}. Completing it now ensures no interruption to your earnings.`;
+
+    return {
+        subject,
+        html: layout(`
+            ${heading(isPastDue ? 'Payout Account Restricted' : isCurrentlyDue ? 'Action Required' : 'Upcoming Requirements')}
+            ${text(`Hi ${therapist.fullName},`)}
+            <div style="background-color:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;padding:16px 20px;margin:20px 0;">
+                <p style="color:${urgencyColor};font-size:14px;font-weight:600;margin:0 0 6px;">${isPastDue ? '⚠️ Account restricted' : isCurrentlyDue ? '⏰ Deadline approaching' : 'ℹ️ Upcoming requirement'}</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${bodyContent}</p>
+            </div>
+            ${text('To resolve this, log in to RehabTask and complete your payout account information. The process takes just a few minutes.')}
+            ${button(`${FRONTEND_URL}/therapist/onboarding/stripe`, isPastDue ? 'Restore My Account' : 'Complete Required Information')}
+            ${hr()}
+            ${muted('If you have questions about what information Stripe requires, the form will show you exactly what is needed. If you need help, contact our support team.')}
+        `),
+    };
+};
+
 // Attempted Visit — therapist payout notification
 export const attemptedVisitTherapistPayout = ({ therapist, customer, session, booking, grossAmount, refundAmount }) => ({
     subject: `Attempted visit payout: ${formatCurrency(grossAmount)} released`,
