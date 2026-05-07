@@ -1606,7 +1606,12 @@ const createAccountSession = async (therapistId, userId) => {
 };
 
 /**
- * Check Stripe Connect account status
+ * Check Stripe Connect account status.
+ *
+ * Returns a rich requirements summary so the frontend can surface the right
+ * warning at the right time — proactive (future), warning (currently_due),
+ * or critical (past_due / restricted) — rather than a single generic
+ * "under review" state for all non-active accounts.
  */
 const getConnectAccountStatus = async (therapistId) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -1623,6 +1628,14 @@ const getConnectAccountStatus = async (therapistId) => {
     }
 
     const account = await stripe.accounts.retrieve(therapist.stripeAccountId);
+    const req = account.requirements ?? {};
+    const futureReq = account.future_requirements ?? {};
+
+    const currentlyDueCount = req.currently_due?.length ?? 0;
+    const pastDueCount = req.past_due?.length ?? 0;
+    const futureDueCount =
+        (futureReq.currently_due?.length ?? 0) +
+        (futureReq.eventually_due?.length ?? 0);
 
     return {
         connected: true,
@@ -1630,6 +1643,16 @@ const getConnectAccountStatus = async (therapistId) => {
         detailsSubmitted: account.details_submitted,
         chargesEnabled: account.charges_enabled,
         payoutsEnabled: account.payouts_enabled,
+        // Why charges are disabled — "requirements.past_due", "under_review", etc.
+        disabledReason: req.disabled_reason ?? null,
+        // Stage 3 — past_due: account restricted, immediate action required
+        pastDueCount,
+        // Stage 2 — currently_due: action required before current_deadline
+        currentlyDueCount,
+        currentDeadline: req.current_deadline ?? null, // Unix timestamp
+        // Stage 1 — upcoming requirements not yet affecting capabilities
+        hasUpcomingRequirements: futureDueCount > 0,
+        futureDeadline: futureReq.current_deadline ?? null, // Unix timestamp
     };
 };
 
