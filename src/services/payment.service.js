@@ -1633,7 +1633,12 @@ const getConnectAccountStatus = async (therapistId) => {
 
     const currentlyDueCount = req.currently_due?.length ?? 0;
     const pastDueCount = req.past_due?.length ?? 0;
+    // eventually_due lives in requirements (not future_requirements) for volume-gated
+    // items — they have no deadline yet but will move to currently_due when thresholds
+    // are hit. future_requirements covers items not yet in the active requirements hash.
+    const eventuallyDueCount = req.eventually_due?.length ?? 0;
     const futureDueCount =
+        eventuallyDueCount +
         (futureReq.currently_due?.length ?? 0) +
         (futureReq.eventually_due?.length ?? 0);
 
@@ -1643,16 +1648,12 @@ const getConnectAccountStatus = async (therapistId) => {
         detailsSubmitted: account.details_submitted,
         chargesEnabled: account.charges_enabled,
         payoutsEnabled: account.payouts_enabled,
-        // Why charges are disabled — "requirements.past_due", "under_review", etc.
         disabledReason: req.disabled_reason ?? null,
-        // Stage 3 — past_due: account restricted, immediate action required
         pastDueCount,
-        // Stage 2 — currently_due: action required before current_deadline
         currentlyDueCount,
-        currentDeadline: req.current_deadline ?? null, // Unix timestamp
-        // Stage 1 — upcoming requirements not yet affecting capabilities
+        currentDeadline: req.current_deadline ?? null,
         hasUpcomingRequirements: futureDueCount > 0,
-        futureDeadline: futureReq.current_deadline ?? null, // Unix timestamp
+        futureDeadline: futureReq.current_deadline ?? null,
     };
 };
 
@@ -1920,7 +1921,9 @@ const getCustomerConnectStatus = async (customerId, userId) => {
 
     const currentlyDueCount = req.currently_due?.length ?? 0;
     const pastDueCount = req.past_due?.length ?? 0;
+    const eventuallyDueCount = req.eventually_due?.length ?? 0;
     const futureDueCount =
+        eventuallyDueCount +
         (futureReq.currently_due?.length ?? 0) +
         (futureReq.eventually_due?.length ?? 0);
 

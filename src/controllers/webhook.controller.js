@@ -464,6 +464,7 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
     const pastDueCount = req.past_due?.length ?? 0;
     const currentlyDueCount = req.currently_due?.length ?? 0;
     const futureDueCount =
+        (req.eventually_due?.length ?? 0) +
         (futureReq.currently_due?.length ?? 0) +
         (futureReq.eventually_due?.length ?? 0);
 
@@ -541,6 +542,7 @@ const handleCustomerAccountUpdated = async (account, customer) => {
     const pastDueCount = req.past_due?.length ?? 0;
     const currentlyDueCount = req.currently_due?.length ?? 0;
     const futureDueCount =
+        (req.eventually_due?.length ?? 0) +
         (futureReq.currently_due?.length ?? 0) +
         (futureReq.eventually_due?.length ?? 0);
 
