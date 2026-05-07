@@ -1908,12 +1908,33 @@ const getCustomerConnectStatus = async (customerId, userId) => {
     }
 
     const account = await stripe.accounts.retrieve(customer.stripeAccountId);
+    const req = account.requirements ?? {};
+    const futureReq = account.future_requirements ?? {};
+
+    // onboardingComplete is derived live from Stripe rather than the DB so that
+    // volume-gated eventually_due requirements (payouts_enabled still true) are
+    // correctly surfaced without waiting for a DB update.
+    const onboardingComplete =
+        account.details_submitted === true &&
+        account.payouts_enabled === true;
+
+    const currentlyDueCount = req.currently_due?.length ?? 0;
+    const pastDueCount = req.past_due?.length ?? 0;
+    const futureDueCount =
+        (futureReq.currently_due?.length ?? 0) +
+        (futureReq.eventually_due?.length ?? 0);
 
     return {
         connected: true,
         detailsSubmitted: account.details_submitted || false,
         payoutsEnabled: account.payouts_enabled || false,
-        onboardingComplete: customer.stripeOnboardingComplete,
+        onboardingComplete,
+        disabledReason: req.disabled_reason ?? null,
+        pastDueCount,
+        currentlyDueCount,
+        currentDeadline: req.current_deadline ?? null,
+        hasUpcomingRequirements: futureDueCount > 0,
+        futureDeadline: futureReq.current_deadline ?? null,
     };
 };
 

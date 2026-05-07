@@ -2,7 +2,7 @@ import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert } from "../services/email.service.js";
+import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendCustomerStripeRequirementsAlert } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 
@@ -509,7 +509,6 @@ const handleCustomerAccountUpdated = async (account, customer) => {
 
         logger.info(`Customer Connect onboarding completed: ${customer.fullName} (${customer.id})`);
 
-        // Auto-transfer any pending refunds now that payout is enabled
         try {
             const results = await paymentService.processPendingRefundsForCustomer(customer.id);
             if (results.length > 0) {
@@ -520,7 +519,11 @@ const handleCustomerAccountUpdated = async (account, customer) => {
                 error: err.message,
             });
         }
-    } else if (!isOnboardingComplete && customer.stripeOnboardingComplete) {
+
+        return;
+    }
+
+    if (!isOnboardingComplete && customer.stripeOnboardingComplete) {
         await withAdminAccess(async (db) => {
             await db.customerProfile.update({
                 where: { stripeAccountId: account.id },
@@ -528,6 +531,40 @@ const handleCustomerAccountUpdated = async (account, customer) => {
             });
         });
         logger.info(`Customer Connect onboarding status reverted: ${customer.fullName}`);
+    }
+
+    // Proactive email when Stripe imposes new requirements on the customer's
+    // payout account — covers all three stages including volume-gated eventually_due
+    // requirements that don't yet affect payouts_enabled.
+    const req = account.requirements ?? {};
+    const futureReq = account.future_requirements ?? {};
+    const pastDueCount = req.past_due?.length ?? 0;
+    const currentlyDueCount = req.currently_due?.length ?? 0;
+    const futureDueCount =
+        (futureReq.currently_due?.length ?? 0) +
+        (futureReq.eventually_due?.length ?? 0);
+
+    if (pastDueCount > 0 || currentlyDueCount > 0 || futureDueCount > 0) {
+        const customerWithUser = await prisma.customerProfile.findUnique({
+            where: { id: customer.id },
+            include: { user: { select: { email: true } } },
+        });
+
+        if (customerWithUser?.user?.email) {
+            sendCustomerStripeRequirementsAlert({
+                customer: customerWithUser,
+                pastDueCount,
+                currentlyDueCount,
+                currentDeadline: req.current_deadline ?? null,
+                hasUpcomingRequirements: futureDueCount > 0,
+                futureDeadline: futureReq.current_deadline ?? null,
+            }).catch((err) => {
+                logger.error('[Webhook] Failed to send customer Stripe requirements alert email', {
+                    customerId: customer.id,
+                    error: err.message,
+                });
+            });
+        }
     }
 }
 
