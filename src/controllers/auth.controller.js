@@ -324,46 +324,64 @@ export const processOAuthController = async (req, res, next) => {
             },
         });
 
-        // If user doesn't exists, create a minimal user record
+        // If user doesn't exist by Supabase UUID, check by email before creating.
+        // This handles the case where a Prisma record exists from a different auth
+        // environment (e.g. staging vs production Supabase projects) or from a
+        // prior email/password registration where the UUID differs.
+        // Google guarantees the email is verified so this link is safe.
         if (!user) {
-            // Check if this email was already registered as a patient
-            const existingPatient = await prisma.patient.findFirst({
-                where: {
-                    email: supabaseUser.email.toLowerCase().trim(),
-                    userId: null
-                },
-                include: {
-                    agency: {
-                        select: {
-                            id: true,
-                            fullName: true,
-                            agencyName: true
-                        }
-                    }
-                }
+            const normalizedEmail = supabaseUser.email.toLowerCase().trim();
+
+            const existingByEmail = await prisma.user.findUnique({
+                where: { email: normalizedEmail },
+                include: { customerProfile: true, therapistProfile: true },
             });
 
-            user = await withAdminAccess(async (db) => {
-                return db.user.create({
-                    data: {
-                        id: supabaseUser.id,
-                        email: supabaseUser.email.toLowerCase().trim(),
-                        passwordHash: "",
-                        role: "customer",
-                        emailVerified: true,
-                        isActive: true,
-                        ...(existingPatient && {
-                            patientProfile: {
-                                connect: { id: existingPatient.id }
-                            }
-                        })
-                    },
+            if (existingByEmail) {
+                // Account exists under a different UUID — link by updating the id
+                // to match the current Supabase auth user so future lookups hit by UUID.
+                user = await withAdminAccess(async (db) => {
+                    return db.user.update({
+                        where: { email: normalizedEmail },
+                        data: {
+                            id: supabaseUser.id,
+                            emailVerified: true,
+                        },
+                        include: { customerProfile: true, therapistProfile: true },
+                    });
+                });
+            } else {
+                // Genuinely new user — create the record.
+                const existingPatient = await prisma.patient.findFirst({
+                    where: { email: normalizedEmail, userId: null },
                     include: {
-                        customerProfile: true,
-                        therapistProfile: true,
+                        agency: { select: { id: true, fullName: true, agencyName: true } }
                     }
                 });
-            });
+
+                user = await withAdminAccess(async (db) => {
+                    return db.user.create({
+                        data: {
+                            id: supabaseUser.id,
+                            email: normalizedEmail,
+                            passwordHash: "",
+                            role: "customer",
+                            emailVerified: true,
+                            isActive: true,
+                            ...(existingPatient && {
+                                patientProfile: { connect: { id: existingPatient.id } }
+                            })
+                        },
+                        include: { customerProfile: true, therapistProfile: true },
+                    });
+                });
+            }
+
+            const needsOnboarding = user.role === "customer"
+                ? !user.customerProfile
+                : user.role === "therapist"
+                    ? !user.therapistProfile
+                    : false;
 
             // Set session cookies
             res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
@@ -379,8 +397,7 @@ export const processOAuthController = async (req, res, next) => {
                         email: user.email,
                         role: user.role,
                         emailVerified: user.emailVerified,
-                        needsOnboarding: true,
-                        hasLinkedRecords: Boolean(existingPatient)
+                        needsOnboarding,
                     }
                 }
             });
