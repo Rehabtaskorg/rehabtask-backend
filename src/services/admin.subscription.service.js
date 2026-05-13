@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";

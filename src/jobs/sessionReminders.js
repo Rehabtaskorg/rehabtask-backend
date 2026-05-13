@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
+import { BOOKING_STATUS, TIME_MS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { sendSessionReminder } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
@@ -19,7 +19,7 @@ export const runSessionReminders = async () => {
                 gte: windowStart,
                 lte: windowEnd,
             },
-            status: { in: ["confirmed", "pending", "accepted"] },
+            status: { in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED] },
         },
         include: {
             customer: {
