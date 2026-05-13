@@ -13,7 +13,7 @@ const MAX_ATTEMPTS = 5;
  */
 export const runRetryPendingRefunds = async () => {
     const pending = await prisma.pendingRefundRetry.findMany({
-        where: { status: BOOKING_STATUS.PENDING },
+        where: { status: REFUND_STATUS.PENDING },
         orderBy: { createdAt: "asc" },
     });
 
