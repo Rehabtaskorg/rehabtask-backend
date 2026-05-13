@@ -141,7 +141,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
 
-    const cancellable = [[BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
+    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
     if (!cancellable.includes(booking.status)) {
         throw new ConflictError(
             `Booking cannot be cancelled in status '${booking.status}'`
