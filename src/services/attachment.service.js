@@ -5,6 +5,7 @@ import { BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { findOrCreateDirectConversation, createMessage } from "./message.service.js";
 import { getIO } from "../socket/index.js";
 import { getUnreadCount } from "./message.service.js";
+import { TIME_MS } from "../utils/constants.js";
 
 const BUCKET = "message-attachments";
 const MAX_ATTACHMENTS_PER_HOUR = 20;
@@ -60,7 +61,7 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
         : conversation.user1Id;
 
     // 2. Rate limit: max attachments per hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentCount = await prisma.messageAttachment.count({
         where: {
             uploadedById: senderId,

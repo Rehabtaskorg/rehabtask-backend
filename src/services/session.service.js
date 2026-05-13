@@ -1,3 +1,4 @@
+import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -60,7 +61,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         );
     }
 
-    if (session.status !== "scheduled") {
+    if (session.status !== SESSION_STATUS.SCHEDULED) {
         throw new Error("Session must be in scheduled status");
     }
 
@@ -76,7 +77,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         if (session.booking.status === "confirmed") {
             await tx.booking.update({
                 where: { id: session.bookingId },
-                data: { status: "in_progress" },
+                data: { status: BOOKING_STATUS.IN_PROGRESS },
             });
         }
 
@@ -150,7 +151,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     }
 
     // Idempotent: if already confirmed by customer, return as-is.
-    if (session.status === "confirmed_by_customer") {
+    if (session.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER) {
         return session;
     }
 
@@ -171,7 +172,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         const updated = await tx.session.update({
             where: { id: sessionId },
             data: {
-                status: "confirmed_by_customer",
+                status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
                 confirmedByCustomerAt: new Date(),
             },
         });
@@ -181,13 +182,13 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         });
         const totalSessions = allSessions.length;
         const confirmedCount = allSessions.filter(s =>
-            s.id === sessionId || s.status === "confirmed_by_customer"
+            s.id === sessionId || s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER
         ).length;
 
         if (confirmedCount === totalSessions) {
             await tx.booking.update({
                 where: { id: session.bookingId },
-                data: { status: "completed" },
+                data: { status: BOOKING_STATUS.COMPLETED },
             });
         }
 
@@ -622,7 +623,7 @@ export const cancelSession = async (sessionId, userId, reason) => {
         throw new Error("Unauthorized");
     }
 
-    if (session.status === "confirmed_by_customer") {
+    if (session.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER) {
         throw new Error("Cannot cancel confirmed session");
     }
 
@@ -630,14 +631,14 @@ export const cancelSession = async (sessionId, userId, reason) => {
         const updated = await tx.session.update({
             where: { id: sessionId },
             data: {
-                status: "cancelled",
+                status: BOOKING_STATUS.CANCELLED,
                 cancellationReason: reason,
             },
         });
 
         await tx.booking.update({
             where: { id: session.bookingId },
-            data: { status: "cancelled" },
+            data: { status: BOOKING_STATUS.CANCELLED },
         });
 
         return updated;
@@ -649,7 +650,7 @@ export const cancelSession = async (sessionId, userId, reason) => {
         action: isCustomer ? "session.cancelled_by_customer" : "session.cancelled_by_therapist",
         entityType: "session",
         entityId: sessionId,
-        changes: { bookingId: session.bookingId, reason, cancelledBy: isCustomer ? "customer" : "therapist" },
+        changes: { bookingId: session.bookingId, reason, cancelledBy: isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST },
     });
 
     return updatedSession;
@@ -705,15 +706,15 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
     }
 
     // Authorization: must be the assigned therapist or the booking customer
-    const isTherapist = actorRole === "therapist" && session.booking.therapist.userId === userId;
-    const isCustomer = actorRole === "customer" && session.booking.customer.userId === userId;
+    const isTherapist = actorRole === USER_ROLES.THERAPIST && session.booking.therapist.userId === userId;
+    const isCustomer = actorRole === USER_ROLES.CUSTOMER && session.booking.customer.userId === userId;
 
     if (!isTherapist && !isCustomer) {
         throw new BadRequestError("Unauthorized");
     }
 
     // Status guard — only scheduled sessions can be marked missed
-    if (session.status !== "scheduled") {
+    if (session.status !== SESSION_STATUS.SCHEDULED) {
         throw new BadRequestError(
             `Cannot mark session as missed from '${session.status}' status. Session must be scheduled.`
         );
@@ -737,14 +738,14 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
         );
     }
 
-    const missedBy = isCustomer ? "customer" : "therapist";
+    const missedBy = isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST;
     const refundReason = isCustomer ? "missed_visit_by_customer" : "missed_visit_by_therapist";
 
     // Update session status first — this prevents double-processing if the refund call is slow
     const updatedSession = await prisma.session.update({
         where: { id: sessionId },
         data: {
-            status: "missed",
+            status: SESSION_STATUS.MISSED,
             missedBy,
             missedReason: reason.trim(),
             missedAt: new Date(),
@@ -769,14 +770,14 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
         select: { id: true, status: true },
     });
     const anyOpenSession = refreshedSessions.some((s) =>
-        !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)
+        ![SESSION_STATUS.CONFIRMED_BY_CUSTOMER, SESSION_STATUS.CANCELLED, SESSION_STATUS.MISSED, SESSION_STATUS.ATTEMPTED].includes(s.status)
     );
 
     let bookingFinalized = false;
-    if (!anyOpenSession && ["confirmed", "in_progress", "accepted"].includes(session.booking.status)) {
+    if (!anyOpenSession && [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.ACCEPTED].includes(session.booking.status)) {
         await prisma.booking.update({
             where: { id: session.bookingId },
-            data: { status: "finalized" },
+            data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
     }
@@ -856,7 +857,7 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
         throw new BadRequestError("Unauthorized");
     }
 
-    if (session.status !== "scheduled") {
+    if (session.status !== SESSION_STATUS.SCHEDULED) {
         throw new BadRequestError(
             `Cannot mark session as attempted from '${session.status}' status. Session must be scheduled.`
         );
@@ -902,10 +903,10 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
     let updatedSession;
     try {
         const result = await prisma.session.updateMany({
-            where: { id: sessionId, status: "scheduled" },
+            where: { id: sessionId, status: SESSION_STATUS.SCHEDULED },
             data: {
-                status: "attempted",
-                attemptedBy: "therapist",
+                status: SESSION_STATUS.ATTEMPTED,
+                attemptedBy: USER_ROLES.THERAPIST,
                 attemptedReason: reason.trim(),
                 attemptedAt: new Date(),
                 attemptedRateCharged: attemptedRate,
@@ -942,7 +943,7 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
         await prisma.session.update({
             where: { id: sessionId },
             data: {
-                status: "scheduled",
+                status: SESSION_STATUS.SCHEDULED,
                 attemptedBy: null,
                 attemptedReason: null,
                 attemptedAt: null,
@@ -1011,14 +1012,14 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
         select: { id: true, status: true },
     });
     const anyOpenSession = refreshedSessions.some((s) =>
-        !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)
+        ![SESSION_STATUS.CONFIRMED_BY_CUSTOMER, SESSION_STATUS.CANCELLED, SESSION_STATUS.MISSED, SESSION_STATUS.ATTEMPTED].includes(s.status)
     );
 
     let bookingFinalized = false;
-    if (!anyOpenSession && ["confirmed", "in_progress", "accepted"].includes(booking.status)) {
+    if (!anyOpenSession && [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.ACCEPTED].includes(booking.status)) {
         await prisma.booking.update({
             where: { id: booking.id },
-            data: { status: "finalized" },
+            data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
     }
@@ -1177,7 +1178,7 @@ export const scheduleSession = async (sessionId, therapistId, scheduledDate) => 
         throw new Error("Unauthorized");
     }
 
-    if (!["pending_schedule", "scheduled"].includes(session.status)) {
+    if (![SESSION_STATUS.PENDING_SCHEDULE, SESSION_STATUS.SCHEDULED].includes(session.status)) {
         throw new BadRequestError("Only pending or scheduled sessions can be scheduled/rescheduled");
     }
 
@@ -1191,7 +1192,7 @@ export const scheduleSession = async (sessionId, therapistId, scheduledDate) => 
         where: { id: sessionId },
         data: {
             scheduledDate: proposedDate,
-            status: "scheduled",
+            status: SESSION_STATUS.SCHEDULED,
         },
     });
 

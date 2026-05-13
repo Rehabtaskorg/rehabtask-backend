@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     getBookingByIdController, getCustomerBookingsController,
@@ -13,12 +14,12 @@ import { rescheduleSchema, respondToRescheduleSchema } from "../validators/offer
 
 const router = express.Router();
 
-router.get("/customer", authenticate, authorize(["customer"]), getCustomerBookingsController);
-router.get("/therapist", authenticate, authorize(["therapist"]), getTherapistBookingsController);
+router.get("/customer", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerBookingsController);
+router.get("/therapist", authenticate, authorize([USER_ROLES.THERAPIST]), getTherapistBookingsController);
 router.get("/:bookingId", authenticate, getBookingByIdController);
-router.post("/:bookingId/reschedule", authenticate, authorize(["therapist"]), validate(rescheduleSchema), rescheduleBookingController);
-router.post("/:bookingId/reschedule/respond", authenticate, authorize(["customer"]), validate(respondToRescheduleSchema), respondToRescheduleController)
-router.post("/:bookingId/finalize", authenticate, authorize(["therapist"]), finalizeBookingController);
+router.post("/:bookingId/reschedule", authenticate, authorize([USER_ROLES.THERAPIST]), validate(rescheduleSchema), rescheduleBookingController);
+router.post("/:bookingId/reschedule/respond", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(respondToRescheduleSchema), respondToRescheduleController)
+router.post("/:bookingId/finalize", authenticate, authorize([USER_ROLES.THERAPIST]), finalizeBookingController);
 router.get("/:bookingId/conversation", authenticate, getBookingConversationController);
 
 export default router;

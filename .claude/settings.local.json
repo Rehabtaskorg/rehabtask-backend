@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(find /home/steve/projects/RehabTaskApp-Frontend/src -type f \\\\\\( -name \"*.js\" -o -name \"*.jsx\" \\\\\\) | head -30)",
+      "Read(//home/steve/projects/RehabTaskApp-Frontend/src/**)",
+      "Bash(find /home/steve/projects/RehabTaskApp-Frontend -name \"onboardingValidation.js\" -o -name \"*validation*.js\" 2>/dev/null | head -20)",
+      "Read(//home/steve/projects/RehabTaskApp-Frontend/**)",
+      "Bash(grep -n '$transaction' /home/steve/projects/RehabTaskApp-Backend/src/services/payment.service.js)",
+      "Bash(grep -rn '$transaction\\\\|\\\\.create\\(\\\\|\\\\.update\\(\\\\|\\\\.delete\\(' /home/steve/projects/RehabTaskApp-Backend/src/services '--include=*.js' -l)",
+      "WebFetch(domain:docs.stripe.com)",
+      "Bash(grep -E \"\\\\.\\(js|ts|env\\)$\")",
+      "Bash(find /home/steve/projects -name \"env.js\" -type f | head -5)",
+      "Read(//home/steve/projects/**)",
+      "WebFetch(domain:docs.cloud.google.com)"
+    ],
+    "additionalDirectories": [
+      "/home/steve/projects/RehabTaskApp-Frontend/src/components/therapist/profile",
+      "/home/steve/projects/RehabTaskApp-Frontend/src/app/(dashboard)/customer/payments"
     ]
   }
 }

@@ -1,3 +1,4 @@
+import { TIME_MS } from "../utils/constants.js";
 import { runSessionReminders } from "./sessionReminders.js";
 import { runExpireOffers } from "./expireOffers.js";
 import { runAutoConfirm } from "./autoConfirm.js";
@@ -7,85 +8,44 @@ import { runExpiredRefunds } from "./expiredRefunds.js";
 import { runRetryPendingRefunds } from "./retryPendingRefunds.js";
 import { logger } from "../config/logger.js";
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
-const FIFTEEN_MIN_MS = 15 * 60 * 1000;
-const TEN_MIN_MS = 10 * 60 * 1000;
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-
-/**
- * Start all scheduled jobs.
- * Called once from server.js after the app is listening
- *
- * Uses setInterval since node-cron is not installed
- * Each job is wrapped in try/catch so a failure never crashes the server
- */
 export const startScheduledJobs = () => {
     logger.info('[Jobs] Starting scheduled jobs');
 
-    // Session reminders - every 1 hour
     setInterval(async () => {
-        try {
-            await runSessionReminders();
-        } catch (error) {
-            logger.error('[Jobs] Session reminders failed', { error: error.message });
-        }
-    }, ONE_HOUR_MS);
+        try { await runSessionReminders(); }
+        catch (error) { logger.error('[Jobs] Session reminders failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
 
-    // Offer expiry - every 15 minutes
     setInterval(async () => {
-        try {
-            await runExpireOffers();
-        } catch (error) {
-            logger.error('[Jobs] Expire offers failed', { error: error.message });
-        }
-    }, FIFTEEN_MIN_MS);
+        try { await runExpireOffers(); }
+        catch (error) { logger.error('[Jobs] Expire offers failed', { error: error.message }); }
+    }, TIME_MS.FIFTEEN_MIN);
 
-    // Auto-confirm - every 1 hour
     setInterval(async () => {
-        try {
-            await runAutoConfirm();
-        } catch (error) {
-            logger.error('[Jobs] Auto-confirm failed', { error: error.message });
-        }
-    }, ONE_HOUR_MS);
+        try { await runAutoConfirm(); }
+        catch (error) { logger.error('[Jobs] Auto-confirm failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
 
-    // Payment reminders - every 1 hour
     setInterval(async () => {
-        try {
-            await runPaymentReminders();
-        } catch (error) {
-            logger.error('[Jobs] Payment reminders failed', { error: error.message });
-        }
-    }, ONE_HOUR_MS);
+        try { await runPaymentReminders(); }
+        catch (error) { logger.error('[Jobs] Payment reminders failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
 
-    // Subscription cron (trial expiry, grace period expiry) - every 1 hour
     setInterval(async () => {
-        try {
-            await runSubscriptionCron();
-        } catch (error) {
-            logger.error('[Jobs] Subscription cron failed', { error: error.message });
-        }
-    }, ONE_HOUR_MS);
+        try { await runSubscriptionCron(); }
+        catch (error) { logger.error('[Jobs] Subscription cron failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
 
-    // Expired refund reminders (pending_connect — sends reminder emails every 7 days) - every 6 hours
     setInterval(async () => {
-        try {
-            await runExpiredRefunds();
-        } catch (error) {
-            logger.error('[Jobs] Expired refunds cron failed', { error: error.message });
-        }
-    }, SIX_HOURS_MS);
+        try { await runExpiredRefunds(); }
+        catch (error) { logger.error('[Jobs] Expired refunds cron failed', { error: error.message }); }
+    }, TIME_MS.SIX_HOURS);
 
-    // Retry failed attempted-visit refunds - every 10 minutes
     setInterval(async () => {
-        try {
-            await runRetryPendingRefunds();
-        } catch (error) {
-            logger.error('[Jobs] Retry pending refunds failed', { error: error.message });
-        }
-    }, TEN_MIN_MS);
+        try { await runRetryPendingRefunds(); }
+        catch (error) { logger.error('[Jobs] Retry pending refunds failed', { error: error.message }); }
+    }, TIME_MS.TEN_MIN);
 
-    // Run all once at startup (after a short delay to let DB connect)
     setTimeout(async () => {
         try { await runSessionReminders(); } catch (e) { logger.error('[Jobs] Startup sessionReminders failed', { error: e.message }); }
         try { await runExpireOffers(); } catch (e) { logger.error('[Jobs] Startup expireOffers failed', { error: e.message }); }

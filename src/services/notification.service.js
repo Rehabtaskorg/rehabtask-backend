@@ -1,7 +1,8 @@
 import { prisma } from "../config/prisma.js";
 import { logger } from "../config/logger.js";
+import { NOTIFICATION_DEDUP_WINDOW_MS } from "../utils/constants.js";
 
-const DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
+const DEDUP_WINDOW_MS = NOTIFICATION_DEDUP_WINDOW_MS;
 
 /**
  * Internal: returns true if an identical (non-failed notification)

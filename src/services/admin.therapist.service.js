@@ -1,3 +1,4 @@
+import { APPROVAL_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
@@ -88,14 +89,14 @@ export const approveTherapist = async (therapistUserId, adminId) => {
         include: { therapistProfile: true },
     });
     if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
-    if (user.therapistProfile.approvalStatus === "approved") {
+    if (user.therapistProfile.approvalStatus === APPROVAL_STATUS.APPROVED) {
         throw new ConflictError("Therapist is already approved");
     }
 
     const therapist = await prisma.therapistProfile.update({
         where: { userId: therapistUserId },
         data: {
-            approvalStatus: "approved",
+            approvalStatus: APPROVAL_STATUS.APPROVED,
             approvedAt: new Date(),
             approvedBy: adminId,
             rejectionReason: null,
@@ -123,14 +124,14 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
         include: { therapistProfile: true },
     });
     if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
-    if (user.therapistProfile.approvalStatus === "rejected") {
+    if (user.therapistProfile.approvalStatus === APPROVAL_STATUS.REJECTED) {
         throw new ConflictError("Therapist is already rejected");
     }
 
     const therapist = await prisma.therapistProfile.update({
         where: { userId: therapistUserId },
         data: {
-            approvalStatus: "rejected",
+            approvalStatus: APPROVAL_STATUS.REJECTED,
             approvedAt: null,
             approvedBy: null,
             rejectionReason: reason.trim(),

@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { sendSessionReminder } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
@@ -8,8 +9,8 @@ import { logger } from "../config/logger.js";
  */
 export const runSessionReminders = async () => {
     const now = new Date();
-    const windowStart = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-    const windowEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+    const windowStart = new Date(now.getTime() + TIME_MS.TWENTY_THREE_HOURS);
+    const windowEnd = new Date(now.getTime() + TIME_MS.TWENTY_FIVE_HOURS);
 
     // scheduleDate lives on Booking not Session
     const bookings = await prisma.booking.findMany({
@@ -34,8 +35,8 @@ export const runSessionReminders = async () => {
 
     const results = await Promise.allSettled(
         bookings.flatMap((booking) => [
-            sendSessionReminder({ recipient: booking.customer, booking, role: "customer" }),
-            sendSessionReminder({ recipient: booking.therapist, booking, role: "therapist" }),
+            sendSessionReminder({ recipient: booking.customer, booking, role: USER_ROLES.CUSTOMER }),
+            sendSessionReminder({ recipient: booking.therapist, booking, role: USER_ROLES.THERAPIST }),
         ])
     );
 

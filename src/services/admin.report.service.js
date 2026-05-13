@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
+import { REPORT_MS_PER_DAY } from "../utils/constants.js";
 
 const MAX_RANGE_DAYS = 366;
 
@@ -13,7 +14,7 @@ const parseDateRange = (startDate, endDate) => {
     end.setUTCHours(23, 59, 59, 999);
 
     const diffMs = end - start;
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const diffDays = diffMs / REPORT_MS_PER_DAY;
 
     if (diffDays < 0) {
         throw new BadRequestError("startDate must be before endDate");

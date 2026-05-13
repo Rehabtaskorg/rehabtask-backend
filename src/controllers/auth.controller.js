@@ -1,4 +1,5 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
+import { COOKIE_MAX_AGE } from "../utils/constants.js";
 import { supabase } from "../config/supabase.js";
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
@@ -19,7 +20,7 @@ const getAccessTokenCookieOptions = () => {
         httpOnly: true,
         secure: isSecureContext,
         sameSite: isSecureContext ? "none" : "lax", // "none" for cross-origin
-        maxAge: 60 * 60 * 1000,
+        maxAge: COOKIE_MAX_AGE.ONE_HOUR,
         path: "/",
     };
 };
@@ -28,7 +29,7 @@ const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days
     path: "/",
 });
 
@@ -43,7 +44,7 @@ const getRoleCookieOptions = () => ({
     httpOnly: false,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — matches refresh token
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days — matches refresh token
     path: "/",
 });
 

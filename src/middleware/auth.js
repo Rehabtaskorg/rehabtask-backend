@@ -1,3 +1,5 @@
+import { USER_ROLES } from "../utils/constants.js";
+import { APPROVAL_STATUS } from "../utils/constants.js";
 import { supabase } from "../config/supabase.js";
 import { prisma } from "../config/prisma.js";
 import { AuthenticationError, AuthorizationError } from "../utils/errors.js";
@@ -169,7 +171,7 @@ export const requireTherapistApproval = (req, res, next) => {
         return next(new AuthenticationError("Authentication required"));
     }
 
-    if (req.user.role !== "therapist") {
+    if (req.user.role !== USER_ROLES.THERAPIST) {
         return next(new AuthorizationError("This resource is only available to therapists"));
     }
 
@@ -177,7 +179,7 @@ export const requireTherapistApproval = (req, res, next) => {
         return next(new AuthenticationError("Therapist profile not found", "PROFILE_NOT_FOUND"));
     }
 
-    if (req.user.therapistProfile.approvalStatus !== "approved") {
+    if (req.user.therapistProfile.approvalStatus !== APPROVAL_STATUS.APPROVED) {
         const statusMessages = {
             pending: "Your therapist account is pending approval",
             rejected: "Your therapist account has been rejected. Please contact support."

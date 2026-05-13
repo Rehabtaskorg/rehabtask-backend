@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate, validateMultiple } from "../middleware/validate.js";
@@ -107,8 +108,8 @@ import {
 const router = express.Router();
 
 // Middleware shorthand
-const adminOrSubAdmin = [authenticate, authorize(["admin", "sub_admin"])];
-const adminOnly = [authenticate, authorize(["admin"])];
+const adminOrSubAdmin = [authenticate, authorize([USER_ROLES.ADMIN, USER_ROLES.SUB_ADMIN])];
+const adminOnly = [authenticate, authorize([USER_ROLES.ADMIN])];
 
 // ── FAQ Management ──
 router.get("/faqs", ...adminOrSubAdmin, requirePermission("faqs"), adminGetAllFaqsController);

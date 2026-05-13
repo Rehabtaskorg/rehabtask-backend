@@ -1,3 +1,4 @@
+import { USER_ROLES, APPROVAL_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js"
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -114,9 +115,9 @@ export const verifyConversationAccess = async (userId, contextType, contextId) =
                     select: { role: true },
                 });
                 const isCustomerToApprovedTherapist =
-                    requestingUser?.role === "customer" &&
-                    otherUser.role === "therapist" &&
-                    otherUser.therapistProfile?.approvalStatus === "approved";
+                    requestingUser?.role === USER_ROLES.CUSTOMER &&
+                    otherUser.role === USER_ROLES.THERAPIST &&
+                    otherUser.therapistProfile?.approvalStatus === APPROVAL_STATUS.APPROVED;
 
                 if (!isCustomerToApprovedTherapist) return null;
 
@@ -967,7 +968,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
     // 2. Fetch the latest message per conversation (single query, partitioned by conversationId)
     //    Also fetch the latest context-bearing message (bookingId or offerId set) for the badge.
     //    And unread counts per conversation.
-    const isCustomer = callerRole === "customer";
+    const isCustomer = callerRole === USER_ROLES.CUSTOMER;
 
     const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
         // Latest message per conversation
@@ -1137,15 +1138,15 @@ export const createDirectMessage = async ({ senderId, recipientId, content }) =>
     if (!recipient) throw new BadRequestError("Recipient not found");
 
     // Access control
-    if (sender.role === "customer") {
+    if (sender.role === USER_ROLES.CUSTOMER) {
         // Customer can message any approved therapist
         if (recipient.role !== "therapist") {
             throw new BadRequestError("Customers can only direct message therapists");
         }
-        if (recipient.therapistProfile?.approvalStatus !== "approved") {
+        if (recipient.therapistProfile?.approvalStatus !== APPROVAL_STATUS.APPROVED) {
             throw new BadRequestError("This therapist is not available for messaging");
         }
-    } else if (sender.role === "therapist") {
+    } else if (sender.role === USER_ROLES.THERAPIST) {
         // Therapist can only reply — conversation must already exist with messages from customer
         if (recipient.role !== "customer") {
             throw new BadRequestError("Therapists can only direct message customers");
@@ -1166,7 +1167,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content }) =>
 
     if (!conversation) {
         // Therapists cannot start a new direct conversation
-        if (sender.role === "therapist") {
+        if (sender.role === USER_ROLES.THERAPIST) {
             throw new AuthorizationError("Therapists cannot initiate direct conversations. The customer must message you first.");
         }
 
@@ -1185,7 +1186,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content }) =>
                 throw err;
             }
         }
-    } else if (sender.role === "therapist") {
+    } else if (sender.role === USER_ROLES.THERAPIST) {
         // Therapist replying — verify customer has sent at least one message
         const customerMessage = await prisma.message.findFirst({
             where: {

@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import {
     sendBookingRescheduleProposed,
@@ -174,7 +175,7 @@ export const rescheduleBooking = async (bookingId, therapistId, newDate) => {
     const updatedBooking = await prisma.booking.update({
         where: { id: bookingId },
         data: {
-            status: "reschedule_requested",
+            status: BOOKING_STATUS.RESCHEDULE_REQUESTED,
             proposedNewDate: proposedDate
         },
     });
@@ -218,7 +219,7 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
         throw err;
     }
 
-    if (booking.status !== "reschedule_requested") {
+    if (booking.status !== BOOKING_STATUS.RESCHEDULE_REQUESTED) {
         throw new Error("No pending reschedule request for this booking");
     }
 
@@ -239,7 +240,7 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
         });
 
         // Also update the first scheduled session's date if it exists
-        const firstSession = booking.sessions?.find(s => s.status === "scheduled");
+        const firstSession = booking.sessions?.find(s => s.status === SESSION_STATUS.SCHEDULED);
         if (firstSession) {
             await prisma.session.update({
                 where: { id: firstSession.id },

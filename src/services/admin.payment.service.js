@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, REFUND_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -295,7 +296,7 @@ export const adminReleaseRemainder = async (paymentId, adminId) => {
     if (payment.booking) {
         await prisma.booking.update({
             where: { id: payment.bookingId },
-            data: { status: "completed" },
+            data: { status: BOOKING_STATUS.COMPLETED },
         });
     }
 
@@ -386,12 +387,12 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         });
         await tx.booking.update({
             where: { id: payment.bookingId },
-            data: { status: "cancelled" },
+            data: { status: BOOKING_STATUS.CANCELLED },
         });
         if (payment.booking.sessions?.length > 0) {
             await tx.session.updateMany({
                 where: { bookingId: payment.bookingId },
-                data: { status: "cancelled", cancellationReason: reason },
+                data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: reason },
             });
         }
     }, { timeout: 15000 });
