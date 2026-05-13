@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS } from "../utils/constants.js";
+import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";

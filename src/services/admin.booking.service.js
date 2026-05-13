@@ -1,4 +1,4 @@
-import { BOOKING_STATUS } from "../utils/constants.js";
+import { BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
