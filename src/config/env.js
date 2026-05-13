@@ -20,8 +20,10 @@ const envSchema = z.object({
     SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
-    // reCAPTCHA (optional)
-    RECAPTCHA_SECRET_KEY: z.string().optional(),
+    // reCAPTCHA Enterprise
+    RECAPTCHA_SITE_KEY: z.string().optional(),
+    RECAPTCHA_API_KEY: z.string().optional(),
+    GCP_PROJECT_ID: z.string().optional(),
     RECAPTCHA_MIN_SCORE: z.preprocess(
         (val) => (val === "" || val == null ? "0.5" : val),
         z.string()
@@ -96,7 +98,9 @@ export const {
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY,
-    RECAPTCHA_SECRET_KEY,
+    RECAPTCHA_SITE_KEY,
+    RECAPTCHA_API_KEY,
+    GCP_PROJECT_ID,
     RECAPTCHA_MIN_SCORE,
     STRIPE_SECRET_KEY,
     STRIPE_PUBLISHABLE_KEY,

@@ -1,75 +1,84 @@
 /**
- * Verify reCAPTCHA token with Google
+ * Verify reCAPTCHA token with Google reCAPTCHA Enterprise
  *
  * @param {string} token - reCAPTCHA token from client
- * @param {string} remoteIp - Optional IP address of the user
+ * @param {string} expectedAction - The action name the token was generated for
  * @returns {Promise<Object>} Verification result
  */
-export async function verifyRecaptcha(token, remoteIp = null) {
-    const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
+export async function verifyRecaptcha(token, expectedAction = null) {
+    const apiKey     = process.env.RECAPTCHA_API_KEY;
+    const siteKey    = process.env.RECAPTCHA_SITE_KEY;
+    const projectId  = process.env.GCP_PROJECT_ID;
 
-    if (!recaptchaSecret) {
+    if (!apiKey) {
         if (process.env.NODE_ENV === "development") {
-            console.warn("reCAPTCHA secret not configured - skipping verification in development");
-            return { success: true, score: 1.0, action: "development" }
-
+            console.warn("reCAPTCHA API key not configured - skipping verification in development");
+            return { success: true, score: 1.0, action: expectedAction || "development" };
         }
-        throw new Error("reCAPTCHA secret key not configured");
+        throw new Error("reCAPTCHA API key not configured");
     }
 
     if (!token) {
         throw new Error("reCAPTCHA token is required");
     }
 
-    try {
-        const params = new URLSearchParams({
-            secret: recaptchaSecret,
-            response: token,
-            ...(remoteIp && { remoteip: remoteIp }),
-        });
+    const url = `https://recaptchaenterprise.googleapis.com/v1/projects/${projectId}/assessments?key=${apiKey}`;
 
+    try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        const response = await fetch(
-            "https://www.google.com/recaptcha/api/siteverify",
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: params.toString(),
-                signal: controller.signal,
-            }
-        );
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event: {
+                    token,
+                    siteKey,
+                    expectedAction,
+                },
+            }),
+            signal: controller.signal,
+        });
 
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            throw new Error(`reCAPTCHA API returned ${response.status}`);
+            throw new Error(`reCAPTCHA Enterprise API returned ${response.status}`);
         }
 
         const data = await response.json();
-        const { success, score, action, "error-codes": errorCodes } = data;
+        const { tokenProperties, riskAnalysis } = data;
 
-        if (!success) {
-            console.error("reCAPTCHA verification failed:", errorCodes);
+        if (!tokenProperties?.valid) {
+            console.error("reCAPTCHA token invalid:", tokenProperties?.invalidReason);
             return {
                 success: false,
                 score: 0,
-                action,
-                errors: errorCodes
+                action: tokenProperties?.action || null,
+                errors: [tokenProperties?.invalidReason || "invalid_token"],
             };
         }
 
-        // For reCAPTCHA v3, check score (0.0 to 1.0)
-        // Scores closer to 1.0 indicate legitimate interactions
+        if (expectedAction && tokenProperties.action !== expectedAction) {
+            console.error(`reCAPTCHA action mismatch: expected "${expectedAction}", got "${tokenProperties.action}"`);
+            return {
+                success: false,
+                score: 0,
+                action: tokenProperties.action,
+                errors: ["action_mismatch"],
+            };
+        }
+
+        const score = riskAnalysis?.score ?? 0;
         const minScore = parseFloat(process.env.RECAPTCHA_MIN_SCORE || "0.5");
 
-        if (score && score < minScore) {
-            console.warn(`reCAPTCHA score ${score} below minimun ${minScore}`);
+        if (score < minScore) {
+            console.warn(`reCAPTCHA score ${score} below minimum ${minScore}`);
             return {
                 success: false,
                 score,
-                action,
+                action: tokenProperties.action,
                 errors: ["score_too_low"],
             };
         }
@@ -77,7 +86,7 @@ export async function verifyRecaptcha(token, remoteIp = null) {
         return {
             success: true,
             score,
-            action
+            action: tokenProperties.action,
         };
     } catch (error) {
         console.error("reCAPTCHA verification error:", error);
@@ -89,17 +98,16 @@ export async function verifyRecaptcha(token, remoteIp = null) {
 
         throw new Error("reCAPTCHA verification failed");
     }
-
 }
 
 /**
  * Middleware to verify reCAPTCHA token
- * Expects recaptchaToken in request body
+ * Expects recaptchaToken and recaptchaAction in request body
  */
 export function recaptchaMiddleware(req, res, next) {
-    const { recaptchaToken } = req.body;
+    const { recaptchaToken, recaptchaAction } = req.body;
 
-    if (!process.env.RECAPTCHA_SECRET_KEY && process.env.NODE_ENV === "development") {
+    if (!process.env.RECAPTCHA_API_KEY && process.env.NODE_ENV === "development") {
         console.warn("reCAPTCHA bypassed in development mode");
         return next();
     }
@@ -112,9 +120,7 @@ export function recaptchaMiddleware(req, res, next) {
         });
     }
 
-    const clientIp = req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-
-    verifyRecaptcha(recaptchaToken, clientIp)
+    verifyRecaptcha(recaptchaToken, recaptchaAction)
         .then((result) => {
             if (!result.success) {
                 return res.status(400).json({
@@ -124,13 +130,12 @@ export function recaptchaMiddleware(req, res, next) {
                     ...(process.env.NODE_ENV === "development" && {
                         debug: {
                             score: result.score,
-                            errors: result.errors
-                        }
-                    })
+                            errors: result.errors,
+                        },
+                    }),
                 });
             }
 
-            // store verification result for potential logging/analytics
             req.recaptchaResult = result;
             next();
         })
