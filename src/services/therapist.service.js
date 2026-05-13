@@ -68,6 +68,8 @@ export const updateTherapistProfile = async (userId, data) => {
 export const updateWorkAreas = async (therapistId, workAreas) => {
     const geocoded = await Promise.all(
         workAreas.map(async (area) => {
+            // ZIP may be empty when therapist selects by city/address — skip geocode, trust frontend coordinates
+            if (!area.zipCode) return area;
             const geo = await geocodeZipCode(area.zipCode);
             assertCoherenceOrLog(`workArea.${area.zipCode}`, area.latitude, area.longitude, geo.latitude, geo.longitude, 10);
             return { ...area, ...geo };

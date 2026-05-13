@@ -49,7 +49,10 @@ export const updateWorkAreasSchema = z.object({
             z.object({
                 zipCode: z
                     .string()
-                    .regex(/^\d{5}$/, "ZIP code must be 5 digits"),
+                    .regex(/^\d{5}$/, "ZIP code must be 5 digits")
+                    .or(z.literal(""))
+                    .optional()
+                    .default(""),
                 city: z
                     .string()
                     .min(1, "City is required")
