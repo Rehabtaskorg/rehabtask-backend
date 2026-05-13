@@ -3,6 +3,7 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
+import { TIME_MS, APPROVAL_STATUS } from "../utils/constants.js";
 
 /**
  * Upload license document to Supabase storage and create database record
@@ -27,7 +28,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
     const therapistId = user.therapistProfile.id;
 
     // Check rate limit: Max 10 uploads per hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
         where: {
             userId,
@@ -91,7 +92,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
             fileName: file.originalname,
             mimeType: file.mimetype,
             fileSize: file.size,
-            status: "pending",
+            status: APPROVAL_STATUS.PENDING,
             uploadIp,
             isDeleted: false
         }

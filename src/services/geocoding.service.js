@@ -1,12 +1,12 @@
 import { GOOGLE_MAPS_API_KEY } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, ServiceUnavailableError } from "../utils/errors.js";
+import { ZIP_CACHE_TTL_MS } from "../utils/constants.js";
 
 const GEOCODE_BASE = "https://maps.googleapis.com/maps/api/geocode/json";
 
 // ZIP centroid results change rarely — cache for 24h to avoid redundant API calls.
 const zipCache = new Map();
-const ZIP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Haversine distance in miles between two lat/lng points.
 function distanceMiles(lat1, lng1, lat2, lng2) {

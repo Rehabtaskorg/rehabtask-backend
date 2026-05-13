@@ -1,3 +1,4 @@
+import { OFFER_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { logger } from "../config/logger.js";
 
@@ -11,7 +12,7 @@ export const runExpireOffers = async () => {
 
     const result = await prisma.offer.updateMany({
         where: {
-            status: { in: ["pending", "change_requested"] },
+            status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED] },
             expiresAt: { lt: now },
         },
         data: { status: "expired" },

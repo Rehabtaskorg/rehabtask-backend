@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, SESSION_STATUS, REFUND_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
 import {
@@ -334,7 +335,7 @@ const handlePaymentSuccess = async (paymentIntentId) => {
 
         await tx.booking.update({
             where: { id: payment.bookingId },
-            data: { status: "confirmed" },
+            data: { status: BOOKING_STATUS.CONFIRMED },
         });
 
 
@@ -347,7 +348,7 @@ const handlePaymentSuccess = async (paymentIntentId) => {
                 bookingId: payment.bookingId,
                 sessionNumber: i + 1,
                 scheduledDate: i === 0 ? payment.booking.scheduledDate : null,
-                status: i === 0 ? "scheduled" : "pending_schedule",
+                status: i === 0 ? SESSION_STATUS.SCHEDULED : SESSION_STATUS.PENDING_SCHEDULE,
             }));
 
             await tx.session.createMany({ data: sessionRows });
@@ -421,7 +422,7 @@ const releasePayment = async (sessionId) => {
         throw new Error("Session not found");
     }
 
-    if (session.status !== "confirmed_by_customer") {
+    if (session.status !== SESSION_STATUS.CONFIRMED_BY_CUSTOMER) {
         throw new Error("Session must be confirmed by customer before payout");
     }
 
@@ -440,7 +441,7 @@ const releasePayment = async (sessionId) => {
     const allSessions = await prisma.session.findMany({
         where: { bookingId: session.bookingId },
     });
-    const unconfirmedCount = allSessions.filter(s => s.status !== "confirmed_by_customer").length;
+    const unconfirmedCount = allSessions.filter(s => s.status !== SESSION_STATUS.CONFIRMED_BY_CUSTOMER).length;
     if (unconfirmedCount > 0) {
         throw new Error(`Cannot release payment: ${unconfirmedCount} of ${allSessions.length} session(s) not yet confirmed by customer`);
     }
@@ -922,7 +923,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
     if (!booking) throw new Error("Booking not found");
     if (booking.therapistId !== therapistId) throw new Error("Unauthorized");
 
-    if (!["confirmed", "in_progress"].includes(booking.status)) {
+    if (![BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) {
         throw new Error(`Booking cannot be finalized in '${booking.status}' status`);
     }
 
@@ -931,17 +932,17 @@ const finalizeBooking = async (bookingId, therapistId) => {
         throw new Error("Payment not in a releasable state");
     }
 
-    const confirmedSessions = booking.sessions.filter(s => s.status === "confirmed_by_customer");
+    const confirmedSessions = booking.sessions.filter(s => s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER);
     // Exclude sessions already fully resolved per-session:
     //   - missed:   refunded in full to customer via markSessionMissed
     //   - attempted: partial payout to therapist + remainder refunded to customer
     //                via markSessionAttempted (both money flows already completed)
     //   - cancelled: never refundable through finalize
     const undeliveredSessions = booking.sessions.filter(s =>
-        s.status !== "confirmed_by_customer" &&
-        s.status !== "cancelled" &&
-        s.status !== "missed" &&
-        s.status !== "attempted"
+        s.status !== SESSION_STATUS.CONFIRMED_BY_CUSTOMER &&
+        s.status !== BOOKING_STATUS.CANCELLED &&
+        s.status !== SESSION_STATUS.MISSED &&
+        s.status !== SESSION_STATUS.ATTEMPTED
     );
 
     if (confirmedSessions.length === 0) {
@@ -986,7 +987,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
             id: { in: undeliveredSessions.map(s => s.id) },
         },
         data: {
-            status: "cancelled",
+            status: BOOKING_STATUS.CANCELLED,
             cancellationReason: "Series finalized by therapist",
         },
     });
@@ -1088,7 +1089,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
 
     await prisma.booking.update({
         where: { id: booking.id },
-        data: { status: "finalized" },
+        data: { status: BOOKING_STATUS.FINALIZED },
     });
 
     // Audit events
@@ -1153,7 +1154,7 @@ const finalizeBooking = async (bookingId, therapistId) => {
     });
 
     return {
-        booking: { ...booking, status: "finalized" },
+        booking: { ...booking, status: BOOKING_STATUS.FINALIZED },
         payment: updatedPayment,
         paidSessions: confirmedSessions.length,
         refundedSessions: undeliveredSessions.length,
@@ -1228,13 +1229,13 @@ const processRefund = async (bookingId, userId, reason) => {
         await tx.payment.update({
             where: { id: payment.id },
             data: payment.status === "intent_created"
-                ? { status: "failed" }
+                ? { status: REFUND_STATUS.FAILED }
                 : { status: "refunded", refundedAt: new Date() },
         });
 
         await tx.booking.update({
             where: { id: bookingId },
-            data: { status: "cancelled" },
+            data: { status: BOOKING_STATUS.CANCELLED },
         });
 
         // Cancel all sessions in one batch — updateMany is a single DB round trip
@@ -1243,7 +1244,7 @@ const processRefund = async (bookingId, userId, reason) => {
             await tx.session.updateMany({
                 where: { bookingId },
                 data: {
-                    status: "cancelled",
+                    status: BOOKING_STATUS.CANCELLED,
                     cancellationReason: reason,
                 },
             });
@@ -1334,7 +1335,7 @@ const getTherapistPayoutHistory = async (therapistId) => {
     // will never pay out (all sessions missed/cancelled, customer refunded).
     const escrowedPayments = payments.filter((p) =>
         p.status === "escrowed" &&
-        !["finalized", "cancelled"].includes(p.booking?.status)
+        ![BOOKING_STATUS.FINALIZED, BOOKING_STATUS.CANCELLED].includes(p.booking?.status)
     );
 
     // Helper: adjust a payment's max payout for missed/cancelled sessions.
@@ -1345,7 +1346,7 @@ const getTherapistPayoutHistory = async (therapistId) => {
         const sessions = p.booking?.sessions || [];
         const total = sessions.length;
         if (total <= 1) return parseFloat(p.therapistPayout);
-        const missedOrCancelled = sessions.filter((s) => s.status === "missed" || s.status === "cancelled").length;
+        const missedOrCancelled = sessions.filter((s) => s.status === SESSION_STATUS.MISSED || s.status === BOOKING_STATUS.CANCELLED).length;
         if (missedOrCancelled === 0) return parseFloat(p.therapistPayout);
         const deliverable = Math.max(0, total - missedOrCancelled);
         return parseFloat(((parseFloat(p.therapistPayout) / total) * deliverable).toFixed(2));
@@ -1363,7 +1364,7 @@ const getTherapistPayoutHistory = async (therapistId) => {
     const pendingSessionCount = [...escrowedPayments, ...payments.filter((p) => p.status === "partially_released")]
         .reduce((count, p) => {
             const sessions = p.booking?.sessions || [];
-            return count + sessions.filter((s) => !["confirmed_by_customer", "cancelled", "missed", "attempted"].includes(s.status)).length;
+            return count + sessions.filter((s) => ![SESSION_STATUS.CONFIRMED_BY_CUSTOMER, SESSION_STATUS.CANCELLED, SESSION_STATUS.MISSED, SESSION_STATUS.ATTEMPTED].includes(s.status)).length;
         }, 0);
 
     // Earnings grouped by month (last 6 months) — aggregated in JS to avoid raw SQL
@@ -1973,7 +1974,7 @@ const getCustomerRefundSummary = async (customerId) => {
     const inEscrow = payments
         .filter(p =>
             ["escrowed", "partially_released"].includes(p.status) &&
-            !["finalized", "cancelled"].includes(p.booking?.status)
+            ![BOOKING_STATUS.FINALIZED, BOOKING_STATUS.CANCELLED].includes(p.booking?.status)
         )
         .reduce((sum, p) => {
             const amount = parseFloat(p.amount);
@@ -2147,7 +2148,7 @@ const processPendingRefundsForCustomer = async (customerId) => {
             refundId: refund.id,
             error: result.reason?.message,
         });
-        return { refundId: refund.id, status: "failed", error: result.reason?.message };
+        return { refundId: refund.id, status: REFUND_STATUS.FAILED, error: result.reason?.message };
     });
 
     return results;

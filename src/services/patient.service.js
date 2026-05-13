@@ -1,3 +1,4 @@
+import { CUSTOMER_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError } from "../utils/errors.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
@@ -6,7 +7,7 @@ import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
  * Validate that the customer is an agency type
  */
 const requireAgency = (customerProfile) => {
-    if (customerProfile.customerType !== "agency") {
+    if (customerProfile.customerType !== CUSTOMER_TYPES.AGENCY) {
         const err = new Error("Only agency accounts can manage patients");
         err.statusCode = 403;
         throw err;

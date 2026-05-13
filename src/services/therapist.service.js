@@ -1,3 +1,4 @@
+import { APPROVAL_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
@@ -154,7 +155,7 @@ export const searchTherapists = async ({
     let total;
 
     const where = {
-        approvalStatus: "approved",
+        approvalStatus: APPROVAL_STATUS.APPROVED,
         onboardingComplete: true,
     };
 
@@ -331,7 +332,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         },
     });
 
-    if (!therapist || therapist.approvalStatus !== "approved") {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -378,7 +379,7 @@ export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => 
         where: { id: therapistId },
     });
 
-    if (!therapist || therapist.approvalStatus !== "approved") {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -415,19 +416,19 @@ export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => 
 export const getPlatformStats = async () => {
     const [therapistCount, sessionCount, avgRating, distinctCities, distinctStates] = await Promise.all([
         prisma.therapistProfile.count({
-            where: { approvalStatus: "approved", onboardingComplete: true },
+            where: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true },
         }),
         prisma.session.count({
-            where: { status: "confirmed_by_customer" },
+            where: { status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER },
         }),
         prisma.review.aggregate({ _avg: { rating: true } }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: "approved", onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
             distinct: ["city"],
             select: { city: true },
         }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: "approved", onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
             distinct: ["state"],
             select: { state: true },
         }),

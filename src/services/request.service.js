@@ -1,3 +1,4 @@
+import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
@@ -15,7 +16,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
 
     // IF patientId is provided, validate the patient belongs to this agency
     if (patientId) {
-        if (customerProfile?.customerType !== "agency") {
+        if (customerProfile?.customerType !== CUSTOMER_TYPES.AGENCY) {
             throw new Error("Only agency accounts can assign requests to patients");
         }
 
@@ -34,7 +35,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             select: { id: true, approvalStatus: true },
         });
         if (!therapist) throw new Error("Target therapist not found");
-        if (therapist.approvalStatus !== "approved") throw new Error("Target therapist is not available");
+        if (therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new Error("Target therapist is not available");
     }
 
     const geocoded = await geocodeAddress(location);
@@ -206,7 +207,7 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
             offers: {
                 some: {
                     therapistId,
-                    status: "rejected",
+                    status: OFFER_STATUS.REJECTED,
                 },
             },
         },
@@ -242,7 +243,7 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
 
     // Server-side "show" filter
     if (show === "new") {
-        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const cutoff = new Date(Date.now() - TIME_MS.TWENTY_FOUR_HOURS);
         filteredRequests = filteredRequests.filter((r) => new Date(r.createdAt) > cutoff);
     } else if (show === "my_offers") {
         filteredRequests = filteredRequests.filter((r) => r.offers?.length > 0);
@@ -278,7 +279,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         where: { id: requestId },
         include: {
             offers: {
-                where: { status: { in: ["pending", "change_requested"] } },
+                where: { status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED] } },
                 include: {
                     therapist: {
                         include: { user: { select: { id: true, email: true } } }
@@ -345,7 +346,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
             await tx.offer.updateMany({
                 where: {
                     requestId,
-                    status: { in: ["pending", "change_requested"] },
+                    status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED] },
                 },
                 data: {
                     status: "withdrawn",
@@ -441,7 +442,7 @@ export const cancelRequest = async (requestId, customerId) => {
         where: { id: requestId },
         include: {
             offers: {
-                where: { status: { in: ["pending", "change_requested"] } },
+                where: { status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED] } },
                 include: {
                     therapist: {
                         include: { user: { select: { id: true, email: true } } }
@@ -480,7 +481,7 @@ export const cancelRequest = async (requestId, customerId) => {
             await tx.offer.updateMany({
                 where: {
                     requestId,
-                    status: { in: ["pending", "change_requested"] },
+                    status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED] },
                 },
                 data: {
                     status: "withdrawn",
@@ -491,7 +492,7 @@ export const cancelRequest = async (requestId, customerId) => {
 
         return tx.therapyRequest.update({
             where: { id: requestId },
-            data: { status: "cancelled" },
+            data: { status: BOOKING_STATUS.CANCELLED },
         });
     }, { timeout: 10000 });
 

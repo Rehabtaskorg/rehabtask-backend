@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import {
     NotFoundError,
@@ -112,7 +113,7 @@ export const getDisputeById = async (disputeId, userId, userRole) => {
 
     if (!dispute) throw new NotFoundError("Dispute not found");
 
-    if (userRole !== "admin" && dispute.userId !== userId) {
+    if (userRole !== USER_ROLES.ADMIN && dispute.userId !== userId) {
         throw new AuthorizationError("You do not have access to this dispute");
     }
 

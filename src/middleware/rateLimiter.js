@@ -1,16 +1,12 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { RATE_LIMIT, USER_ROLES } from "../utils/constants.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
-/**
- * Create rate limiter with custom options
- * Uses in-memory storage (no Redis required)
- * Perfect for single-server deployments
- */
 const createRateLimiter = (options = {}) => {
     const defaultOptions = {
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 100,
+        windowMs: RATE_LIMIT.API_WINDOW_MS,
+        max: RATE_LIMIT.API_MAX_PROD,
         message: "Too many requests from this IP, please try again later",
         standardHeaders: true,
         legacyHeaders: false,
@@ -29,42 +25,27 @@ const createRateLimiter = (options = {}) => {
     return rateLimit({ ...defaultOptions, ...options });
 }
 
-/**
- * Strict rate limiter for authentication endpoints
- * Prevents brute force attacks
- */
 export const registrationRateLimiter = createRateLimiter({
-    windowMs: 60 * 60 * 1000, // 1hr
-    max: isProd ? 15 : 1000,
+    windowMs: RATE_LIMIT.SENSITIVE_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.SENSITIVE_MAX_PROD : RATE_LIMIT.SENSITIVE_MAX_DEV,
     message: "Too many registration attempts, please try again later",
 });
 
-/**
- * Rate limiter for password reset requests
- */
 export const passwordResetLimiter = createRateLimiter({
-    windowMs: 60 * 60 * 1000, // 1hr
-    max: isProd ? 15 : 1000,
+    windowMs: RATE_LIMIT.SENSITIVE_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.SENSITIVE_MAX_PROD : RATE_LIMIT.SENSITIVE_MAX_DEV,
     message: "Too many password reset attempts, please try again later",
 });
 
-/**
- * Rate limiter for email verification
- */
 export const emailVerificationRateLimiter = createRateLimiter({
-    windowMs: 60 * 60 * 1000, // 1hr
-    max: isProd ? 5 : 1000,
+    windowMs: RATE_LIMIT.AUTH_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.AUTH_MAX_PROD : RATE_LIMIT.AUTH_MAX_DEV,
     message: "Too many verification attempts, please try again later",
 });
 
-/**
- * General API rate limiter
- * Sized for a polling-based messaging app:
- * ~25 req/min from messages page alone × 15 min = 375 baseline
- */
 export const apiRateLimiter = createRateLimiter({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isProd ? 600 : 10000,
+    windowMs: RATE_LIMIT.SOCKET_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.SOCKET_MAX_PROD : RATE_LIMIT.SOCKET_MAX_DEV,
     message: "Too many requests, please try again later",
     keyGenerator: (req) => {
         return req.user?.id || ipKeyGenerator(req);
@@ -72,44 +53,30 @@ export const apiRateLimiter = createRateLimiter({
     validate: { xForwardedForHeader: true }
 });
 
-/**
- * Aggressive rate limiter for sensitive operations
- */
 export const sensitiveOperationRateLimiter = createRateLimiter({
-    windowMs: 60 * 60 * 1000, // 1hr
-    max: isProd ? 20 : 1000,
+    windowMs: RATE_LIMIT.UPLOAD_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.UPLOAD_MAX_PROD : RATE_LIMIT.UPLOAD_MAX_DEV,
     message: "Rate limit exceeded for this operation.",
 });
 
-/**
- * Messaging rate limiter
- * Prevents spam - 20 messages per minute per user
- */
 export const messagingRateLimiter = createRateLimiter({
-    windowMs: 60 * 1000,
-    max: isProd ? 20 : 1000,
+    windowMs: RATE_LIMIT.MESSAGE_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.MESSAGE_MAX_PROD : RATE_LIMIT.MESSAGE_MAX_DEV,
     message: "Too many messages sent. Please wait a moment.",
     skip: (req) => {
         if (req.path === "/health") return true;
-        return req.user?.role === "admin";
+        return req.user?.role === USER_ROLES.ADMIN;
     },
-
-    // Rate limit per authenticated user, fallback to IP
     keyGenerator: (req) => {
         return req.user?.id || ipKeyGenerator(req);
     }
+});
 
-})
-
-/**
- * Conversations polling rate limiter
- * Frontend polls every 10s (6/min) + invalidations after sends + page loads
- */
 export const conversationsRateLimiter = createRateLimiter({
-    windowMs: 60 * 1000,
-    max: isProd ? 30 : 1000,
+    windowMs: RATE_LIMIT.MESSAGE_WINDOW_MS,
+    max: isProd ? 30 : RATE_LIMIT.MESSAGE_MAX_DEV,
     message: "Too many requests. Please wait a moment.",
     keyGenerator: (req) => {
         return req.user?.id || ipKeyGenerator(req);
     }
-})
+});

@@ -1,3 +1,4 @@
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
@@ -126,7 +127,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
     }
 
     // Rate limit check: Max 10 uploads per hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
         where: {
             userId,
@@ -298,7 +299,7 @@ export const submitBackgroundCheck = async (userId, data) => {
                 backgroundCheckConsent: data.consent,
                 backgroundCheckSignature: data.signature,
                 backgroundCheckDate: new Date(),
-                backgroundCheckStatus: "pending",
+                backgroundCheckStatus: BACKGROUND_CHECK_STATUS.PENDING,
                 onboardingStep: Math.max(therapist.onboardingStep, 5),
             },
         });
@@ -366,7 +367,7 @@ export const completeOnboarding = async (userId) => {
             where: { userId },
             data: {
                 onboardingComplete: true,
-                ...(!alreadyDecided && { approvalStatus: "review" }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
             },
             include: { user: { select: { email: true } } },
         });

@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     getTherapistProfileController,
@@ -19,7 +20,7 @@ const router = express.Router();
 router.get(
     "/profile",
     authenticate,
-    authorize(["therapist"]),
+    authorize([USER_ROLES.THERAPIST]),
     getTherapistProfileController
 );
 
@@ -27,7 +28,7 @@ router.get(
 router.put(
     "/profile",
     authenticate,
-    authorize(["therapist"]),
+    authorize([USER_ROLES.THERAPIST]),
     validate(updateProfileSchema),
     updateTherapistProfileController
 );
@@ -36,7 +37,7 @@ router.put(
 router.put(
     "/work-areas",
     authenticate,
-    authorize(["therapist"]),
+    authorize([USER_ROLES.THERAPIST]),
     validate(updateWorkAreasSchema),
     updateWorkAreasController
 );
@@ -45,7 +46,7 @@ router.put(
 router.put(
     "/availability",
     authenticate,
-    authorize(["therapist"]),
+    authorize([USER_ROLES.THERAPIST]),
     validate(updateAvailabilitySchema),
     updateAvailabilityController
 );

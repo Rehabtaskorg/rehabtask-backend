@@ -1,3 +1,4 @@
+import { BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { getActiveSubscription } from "../services/subscription.service.js";
 
@@ -66,7 +67,7 @@ export const enforceTherapistLimit = async (req, res, next) => {
             by: ["therapistId"],
             where: {
                 customerId,
-                status: { in: ["accepted", "confirmed", "in_progress"] },
+                status: { in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS] },
             },
         });
 

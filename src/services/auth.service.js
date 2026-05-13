@@ -4,6 +4,7 @@ import { AuthenticationError, ConflictError, ValidationError, BadRequestError, N
 import { sendTherapistWelcome, sendSubAdminWelcome, sendExistingAccountNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { createTrialSubscription } from "./subscription.service.js";
+import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
 
 /**
  * Register a new customer
@@ -46,7 +47,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
             options: {
                 data: {
                     full_name: fullName,
-                    role: "customer",
+                    role: USER_ROLES.CUSTOMER,
                     customer_type: customerType,
                 },
                 emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
@@ -111,7 +112,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                     id: authUser.id,
                     email: normalizedEmail,
                     passwordHash: "", // Supabase manages passwords
-                    role: "customer",
+                    role: USER_ROLES.CUSTOMER,
                     emailVerified: false,
                     isActive: true,
                     customerProfile: {
@@ -119,7 +120,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                             fullName,
                             phone,
                             customerType,
-                            agencyName: customerType === "agency" ? agencyName : null,
+                            agencyName: customerType === CUSTOMER_TYPES.AGENCY ? agencyName : null,
                         },
                     },
                     ...(existingPatient && {
@@ -228,7 +229,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
             options: {
                 data: {
                     full_name: fullName,
-                    role: "therapist",
+                    role: USER_ROLES.THERAPIST,
                 },
                 emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
             }
@@ -268,14 +269,14 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
                     id: authUser.id,
                     email: normalizedEmail,
                     passwordHash: "",
-                    role: "therapist",
+                    role: USER_ROLES.THERAPIST,
                     emailVerified: false,
                     isActive: true,
                     therapistProfile: {
                         create: {
                             fullName,
                             phone,
-                            approvalStatus: "pending", // requires admin approval
+                            approvalStatus: APPROVAL_STATUS.PENDING, // requires admin approval
                         },
                     },
                 },
@@ -465,11 +466,11 @@ export const getCurrentUser = async (userId) => {
         emailVerified: user.emailVerified,
         isActive: user.isActive,
         profile:
-            user.role === "customer"
+            user.role === USER_ROLES.CUSTOMER
                 ? user.customerProfile
-                : user.role === "therapist"
+                : user.role === USER_ROLES.THERAPIST
                     ? user.therapistProfile
-                    : user.role === "sub_admin"
+                    : user.role === USER_ROLES.SUB_ADMIN
                         ? user.subAdminProfile
                         : null
     };
@@ -509,7 +510,7 @@ export const markEmailVerified = async ({ userId, fullName }) => {
             });
 
             // Persist the sub-admin's chosen display name on invite acceptance
-            if (user.role === "sub_admin" && fullName?.trim()) {
+            if (user.role === USER_ROLES.SUB_ADMIN && fullName?.trim()) {
                 await db.subAdminProfile.update({
                     where: { userId },
                     data: { fullName: fullName.trim() },
@@ -518,14 +519,14 @@ export const markEmailVerified = async ({ userId, fullName }) => {
         });
 
         // Send welcome email to therapists on first verification only
-        if (!wasAlreadyVerified && user.role === "therapist" && user.therapistProfile) {
+        if (!wasAlreadyVerified && user.role === USER_ROLES.THERAPIST && user.therapistProfile) {
             sendTherapistWelcome({
                 therapist: { ...user.therapistProfile, user: { email: user.email } },
             }).catch(() => { });
         }
 
         // Send welcome email to sub-admins on first verification only
-        if (!wasAlreadyVerified && user.role === "sub_admin") {
+        if (!wasAlreadyVerified && user.role === USER_ROLES.SUB_ADMIN) {
             sendSubAdminWelcome({ user }).catch(() => { });
         }
 
@@ -641,11 +642,11 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
     }
 
     // Prevent re-onboarding if profile already exists
-    if (role === "customer" && user.customerProfile) {
+    if (role === USER_ROLES.CUSTOMER && user.customerProfile) {
         throw new ConflictError("Customer profile already exists");
     }
 
-    if (role === "therapist" && user.therapistProfile) {
+    if (role === USER_ROLES.THERAPIST && user.therapistProfile) {
         throw new ConflictError("Therapist profile already exists");
     }
 
@@ -668,17 +669,17 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
 
     // Update user role if needed
     const updatedUser = await withAdminAccess(async (db) => {
-        if (role === "customer") {
+        if (role === USER_ROLES.CUSTOMER) {
             const updated = await db.user.update({
                 where: { id: userId },
                 data: {
-                    role: "customer",
+                    role: USER_ROLES.CUSTOMER,
                     customerProfile: {
                         create: {
                             fullName: profileData.fullName,
                             phone: profileData.phone || null,
                             customerType: profileData.customerType || "individual",
-                            agencyName: profileData.customerType === "agency" ? profileData.agencyName : null,
+                            agencyName: profileData.customerType === CUSTOMER_TYPES.AGENCY ? profileData.agencyName : null,
                         },
                     },
                     ...(existingPatient && {
@@ -696,16 +697,16 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
             await createTrialSubscription(updated.customerProfile.id, db);
 
             return updated;
-        } else if (role === "therapist") {
+        } else if (role === USER_ROLES.THERAPIST) {
             return db.user.update({
                 where: { id: userId },
                 data: {
-                    role: "therapist",
+                    role: USER_ROLES.THERAPIST,
                     therapistProfile: {
                         create: {
                             fullName: profileData.fullName,
                             phone: profileData.phone || null,
-                            approvalStatus: "pending",
+                            approvalStatus: APPROVAL_STATUS.PENDING,
                         },
                     },
                 },
@@ -718,11 +719,11 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
 
     let message = "Profile completed successfully";
 
-    if (role === "customer" && existingPatient) {
+    if (role === USER_ROLES.CUSTOMER && existingPatient) {
         message += `. Your account has been linked to ${existingPatient.agency.agencyName || "an agency"}.`;
     }
 
-    if (role === "therapist") {
+    if (role === USER_ROLES.THERAPIST) {
         message += ". Your account is pending admin approval.";
         sendTherapistWelcome({
             therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } },
