@@ -1,9 +1,12 @@
-import { createPatientSchema, updatePatientSchema } from "../validators/patient.schema.js";
 import {
     getAgencyPatients, createPatient,
-    getPatientById, updatePatient, softDeletePatient
+    getPatientById, updatePatient, softDeletePatient,
 } from "../services/patient.service.js";
 
+/**
+ * GET /agency/patients
+ * List all active patients for the authenticated agency.
+ */
 export const listPatients = async (req, res, next) => {
     try {
         const patients = await getAgencyPatients(req.user.customerProfile);
@@ -11,56 +14,56 @@ export const listPatients = async (req, res, next) => {
     } catch (err) {
         next(err);
     }
-}
+};
 
+/**
+ * POST /agency/patients
+ * Create a new patient. Body validated by validate(createPatientSchema) middleware.
+ */
 export const addPatient = async (req, res, next) => {
     try {
-        const parsed = createPatientSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation failed",
-                errors: parsed.error.errors,
-            });
-        }
-        const patient = await createPatient(req.user.customerProfile, parsed.data);
+        const patient = await createPatient(req.user.customerProfile, req.body);
         res.status(201).json({ success: true, data: patient });
     } catch (err) {
         next(err);
     }
-}
+};
 
+/**
+ * GET /agency/patients/:patientId
+ * Get a single patient with full request and booking history.
+ */
 export const getPatient = async (req, res, next) => {
     try {
         const patient = await getPatientById(req.user.customerProfile, req.params.patientId);
         res.json({ success: true, data: patient });
-    } catch (error) {
-        next(error);
+    } catch (err) {
+        next(err);
     }
 };
 
+/**
+ * PUT /agency/patients/:patientId
+ * Update patient info. Body validated by validate(updatePatientSchema) middleware.
+ */
 export const editPatient = async (req, res, next) => {
     try {
-        const parsed = updatePatientSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation failed",
-                errors: parsed.error.errors,
-            });
-        }
-        const patient = await updatePatient(req.user.customerProfile, req.params.patientId, parsed.data);
+        const patient = await updatePatient(req.user.customerProfile, req.params.patientId, req.body);
         res.json({ success: true, data: patient });
-    } catch (error) {
-        next(error);
+    } catch (err) {
+        next(err);
     }
-}
+};
 
+/**
+ * DELETE /agency/patients/:patientId
+ * Soft-delete a patient (sets isActive = false).
+ */
 export const deletePatient = async (req, res, next) => {
     try {
         await softDeletePatient(req.user.customerProfile, req.params.patientId);
         res.json({ success: true, message: "Patient deactivated successfully" });
-    } catch (error) {
-        next(error);
+    } catch (err) {
+        next(err);
     }
-}
+};
