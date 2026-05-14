@@ -99,11 +99,11 @@ export const RATE_LIMIT = {
     API_MAX_DEV:             10000,
 
     SENSITIVE_WINDOW_MS:     60 * 60 * 1000,  // 1 hour
-    SENSITIVE_MAX_PROD:      15,
+    SENSITIVE_MAX_PROD:      10,
     SENSITIVE_MAX_DEV:       1000,
 
     AUTH_WINDOW_MS:          60 * 60 * 1000,  // 1 hour
-    AUTH_MAX_PROD:           5,
+    AUTH_MAX_PROD:           10,
     AUTH_MAX_DEV:            1000,
 
     SOCKET_WINDOW_MS:        15 * 60 * 1000,  // 15 minutes
