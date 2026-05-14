@@ -1,21 +1,22 @@
 import { CUSTOMER_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { NotFoundError } from "../utils/errors.js";
+import { NotFoundError, AuthorizationError, BadRequestError } from "../utils/errors.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
+import { logger } from "../config/logger.js";
 
 /**
- * Validate that the customer is an agency type
+ * Throws AuthorizationError if the customer is not an agency account.
+ * @param {Object} customerProfile
  */
 const requireAgency = (customerProfile) => {
     if (customerProfile.customerType !== CUSTOMER_TYPES.AGENCY) {
-        const err = new Error("Only agency accounts can manage patients");
-        err.statusCode = 403;
-        throw err;
+        throw new AuthorizationError("Only agency accounts can manage patients");
     }
 };
 
 /**
- * Get all active patients for an agency
+ * Get all active patients for an agency, including their request history.
+ * @param {Object} customerProfile
  */
 export const getAgencyPatients = async (customerProfile) => {
     requireAgency(customerProfile);
@@ -38,7 +39,10 @@ export const getAgencyPatients = async (customerProfile) => {
 };
 
 /**
- * Create a new patient under the agency
+ * Create a new patient under the agency.
+ * Geocodes the provided address and validates coordinate coherence.
+ * @param {Object} customerProfile
+ * @param {Object} data - Validated patient data
  */
 export const createPatient = async (customerProfile, data) => {
     requireAgency(customerProfile);
@@ -70,11 +74,14 @@ export const createPatient = async (customerProfile, data) => {
         },
     });
 
+    logger.info("[Patient] Created", { patientId: patient.id, agencyId: customerProfile.id });
     return patient;
 };
 
 /**
- * Get a single patient with their full history
+ * Get a single patient with their full request and booking history.
+ * @param {Object} customerProfile
+ * @param {string} patientId
  */
 export const getPatientById = async (customerProfile, patientId) => {
     requireAgency(customerProfile);
@@ -82,7 +89,7 @@ export const getPatientById = async (customerProfile, patientId) => {
     const patient = await prisma.patient.findFirst({
         where: {
             id: patientId,
-            agencyId: customerProfile.id
+            agencyId: customerProfile.id,
         },
         include: {
             requestsForPatient: {
@@ -104,7 +111,7 @@ export const getPatientById = async (customerProfile, patientId) => {
                     rate: true,
                     sessionType: true,
                     therapist: {
-                        select: { fullName: true, profilePhotoUrl: true }
+                        select: { fullName: true, profilePhotoUrl: true },
                     },
                 },
                 orderBy: { scheduledDate: "desc" },
@@ -117,10 +124,14 @@ export const getPatientById = async (customerProfile, patientId) => {
     }
 
     return patient;
-}
+};
 
 /**
- * Update patient info
+ * Update patient contact and address information.
+ * Re-geocodes if any address field changes.
+ * @param {Object} customerProfile
+ * @param {string} patientId
+ * @param {Object} data - Validated partial patient data
  */
 export const updatePatient = async (customerProfile, patientId, data) => {
     requireAgency(customerProfile);
@@ -133,8 +144,11 @@ export const updatePatient = async (customerProfile, patientId, data) => {
         throw new NotFoundError("Patient not found");
     }
 
-    const addressChanged = data.addressLine1 !== undefined || data.city !== undefined ||
-        data.state !== undefined || data.zipCode !== undefined;
+    const addressChanged =
+        data.addressLine1 !== undefined ||
+        data.city !== undefined ||
+        data.state !== undefined ||
+        data.zipCode !== undefined;
 
     let geocoded = null;
     if (addressChanged) {
@@ -162,14 +176,18 @@ export const updatePatient = async (customerProfile, patientId, data) => {
                 latitude: geocoded.latitude,
                 longitude: geocoded.longitude,
             } : {}),
-        }
+        },
     });
 
+    logger.info("[Patient] Updated", { patientId, agencyId: customerProfile.id });
     return updated;
-}
+};
 
 /**
- * Soft-delete a patient (set isActive = false)
+ * Soft-delete a patient by setting isActive = false.
+ * Blocked if the patient has a linked user account.
+ * @param {Object} customerProfile
+ * @param {string} patientId
  */
 export const softDeletePatient = async (customerProfile, patientId) => {
     requireAgency(customerProfile);
@@ -182,11 +200,8 @@ export const softDeletePatient = async (customerProfile, patientId) => {
         throw new NotFoundError("Patient not found");
     }
 
-    // Block deletion if patient has a linked user account
     if (patient.userId) {
-        const err = new Error("Cannot deactivate a patient who has registered account. Contact admin.");
-        err.statusCode = 400;
-        throw err;
+        throw new BadRequestError("Cannot deactivate a patient who has a registered account. Contact admin.");
     }
 
     const updated = await prisma.patient.update({
@@ -194,5 +209,6 @@ export const softDeletePatient = async (customerProfile, patientId) => {
         data: { isActive: false },
     });
 
+    logger.info("[Patient] Deactivated", { patientId, agencyId: customerProfile.id });
     return updated;
-}
+};
