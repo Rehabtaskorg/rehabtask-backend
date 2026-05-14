@@ -48,7 +48,8 @@ export const createPatient = async (customerProfile, data) => {
     requireAgency(customerProfile);
 
     const {
-        fullName, email, phone,
+        fullName, dateOfBirth, certificationExpiry,
+        email, phone,
         addressLine1, addressLine2, city, state, zipCode,
         latitude, longitude,
     } = data;
@@ -61,6 +62,8 @@ export const createPatient = async (customerProfile, data) => {
         data: {
             agencyId: customerProfile.id,
             fullName,
+            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+            certificationExpiry: certificationExpiry ? new Date(certificationExpiry) : null,
             email: email || null,
             phone: phone || null,
             addressLine1: addressLine1 || null,
@@ -165,6 +168,8 @@ export const updatePatient = async (customerProfile, patientId, data) => {
         where: { id: patientId },
         data: {
             ...(data.fullName && { fullName: data.fullName }),
+            ...(data.dateOfBirth !== undefined && { dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null }),
+            ...(data.certificationExpiry !== undefined && { certificationExpiry: data.certificationExpiry ? new Date(data.certificationExpiry) : null }),
             ...(data.email !== undefined && { email: data.email || null }),
             ...(data.phone !== undefined && { phone: data.phone || null }),
             ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),
