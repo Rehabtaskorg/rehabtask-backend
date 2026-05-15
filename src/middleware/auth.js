@@ -34,10 +34,12 @@ export const authenticate = async (req, res, next) => {
         }
 
         // Verify token with supabase
+        console.log("[Auth] Verifying token for:", req.method, req.path, "token prefix:", token?.slice(0, 20));
         const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+        console.log("[Auth] getUser result — user:", supabaseUser?.id ?? "null", "error:", error?.message ?? "none");
 
         if (error || !supabaseUser) {
-            console.error("Token verification error:", error);
+            console.error("[Auth] Token verification failed:", error?.message, "status:", error?.status);
             throw new AuthenticationError("Invalid or expired token", "INVALID_TOKEN");
         }
 
