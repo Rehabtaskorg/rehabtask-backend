@@ -264,7 +264,7 @@ const handleTransferUpdated = async (transfer) => {
 /**
  * Handle failed transfer
  */
-const handleTransferFailed = async (transfer) => {
+const _handleTransferFailed = async (transfer) => {
     console.log("Transfer failed:", transfer.id);
 
     try {
