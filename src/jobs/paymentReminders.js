@@ -16,7 +16,6 @@ import { logger } from "../config/logger.js";
  */
 export const runPaymentReminders = async () => {
     const now = new Date();
-    const in24h = new Date(now.getTime() + TIME_MS.TWENTY_FOUR_HOURS);
     const in48h = new Date(now.getTime() + TIME_MS.FORTY_EIGHT_HOURS);
     const twentyHoursAgo = new Date(now.getTime() - TIME_MS.TWENTY_HOURS);
 

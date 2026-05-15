@@ -6,7 +6,6 @@ import {
     markSessionMissed,
     markSessionAttempted,
 } from "../services/session.service.js";
-import { logAction } from "../services/audit.service.js";
 
 /**
  * Complete session by therapist

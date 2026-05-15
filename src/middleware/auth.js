@@ -114,7 +114,7 @@ export const optionalAuthenticate = async (req, res, next) => {
         }
 
         next();
-    } catch (error) {
+    } catch (_error) {
         next();
     }
 }
