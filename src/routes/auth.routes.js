@@ -108,8 +108,7 @@ router.post("/token/refresh", refreshTokenController);
  * Protected routes (authentication required)
  */
 
-// Logout
-router.post("/logout", authenticate, logoutController);
+router.post("/logout", logoutController);
 
 // Get current user
 router.get("/me", authenticate, getCurrentUserController);

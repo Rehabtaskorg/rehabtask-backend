@@ -149,7 +149,7 @@ export const loginController = async (req, res, next) => {
  */
 export const logoutController = async (req, res, next) => {
     try {
-        await logout(req.accessToken);
+        await logout();
 
         // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
         const isSecureContext = process.env.COOKIE_SECURE === "true";
