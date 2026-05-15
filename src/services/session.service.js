@@ -1,4 +1,4 @@
-import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
+import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -594,6 +594,83 @@ export const resubmitSession = async (sessionId, therapistId) => {
 export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
     await respondToRevision(sessionId, therapistId, { dueBy });
     return resubmitSession(sessionId, therapistId);
+};
+
+/**
+ * Therapist extends the revision deadline by REVISION_EXTEND_DAYS days.
+ *
+ * New deadline = max(currentRevisionDueBy, now) + REVISION_EXTEND_DAYS days.
+ * This ensures the deadline always moves forward regardless of when the
+ * therapist clicks — early extenders get more buffer, last-second extenders
+ * get the same buffer as if they had no prior deadline.
+ * Can be called unlimited times while the session is in_revision.
+ *
+ * @param {string} sessionId
+ * @param {string} therapistId
+ */
+export const extendRevision = async (sessionId, therapistId) => {
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+            booking: {
+                include: {
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { include: { user: { select: { id: true, email: true } } } },
+                },
+            },
+        },
+    });
+
+    if (!session) throw new Error("Session not found");
+    if (session.booking.therapistId !== therapistId) throw new Error("Unauthorized");
+    if (session.status !== "in_revision") {
+        throw new BadRequestError(
+            "Only sessions in revision can be extended.",
+            "INVALID_SESSION_STATUS"
+        );
+    }
+
+    const base = session.revisionDueBy && session.revisionDueBy > new Date()
+        ? session.revisionDueBy
+        : new Date();
+    const newDueBy = new Date(base.getTime() + REVISION_EXTEND_DAYS * 24 * 60 * 60 * 1000);
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: { revisionDueBy: newDueBy },
+    });
+
+    logAction({
+        actorId: session.booking.therapist.user.id,
+        action: "session.revision_extended",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            revisionRound: session.revisionCount,
+            newDueBy,
+            extendedByDays: REVISION_EXTEND_DAYS,
+        },
+    });
+
+    const therapistUserId = session.booking.therapist.user.id;
+    const customerUserId = session.booking.customer.user.id;
+    findOrCreateDirectConversation(therapistUserId, customerUserId)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapistUserId,
+                recipientId: customerUserId,
+                content: `Therapist extended the revision deadline to ${newDueBy.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`,
+                systemType: "session_revision_extended",
+                bookingId: session.bookingId,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (session_revision_extended) failed", { error: err.message });
+        });
+
+    return updatedSession;
 };
 
 /**

@@ -92,6 +92,10 @@ export const TIME_MS = {
     SEVEN_DAYS:    7  * 24 * 60 * 60 * 1000,
 };
 
+// Number of days added to the revision deadline on each therapist "Extend" action.
+// Uses max(currentDueBy, now) + this value so early extensions always move the deadline forward.
+export const REVISION_EXTEND_DAYS = 3;
+
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
 export const RATE_LIMIT = {
     API_WINDOW_MS:           15 * 60 * 1000,  // 15 minutes

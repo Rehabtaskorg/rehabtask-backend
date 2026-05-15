@@ -5,7 +5,7 @@ import {
     confirmByCustomerController, getCustomerSessionsController,
     getSessionController, getTherapistSessionsController, scheduleSessionController,
     requestRevisionController, submitRevisionController,
-    respondToRevisionController, resubmitSessionController,
+    respondToRevisionController, resubmitSessionController, extendRevisionController,
     markMissedByTherapistController, markMissedByCustomerController,
     markAttemptedByTherapistController,
 } from "../controllers/session.controller.js";
@@ -26,6 +26,7 @@ router.post("/:sessionId/submit-revision", authenticate, authorize([USER_ROLES.T
 // New two-step revision flow
 router.post("/:sessionId/revision-respond", authenticate, authorize([USER_ROLES.THERAPIST]), respondToRevisionController);
 router.post("/:sessionId/revision-resubmit", authenticate, authorize([USER_ROLES.THERAPIST]), resubmitSessionController);
+router.post("/:sessionId/revision-extend", authenticate, authorize([USER_ROLES.THERAPIST]), extendRevisionController);
 
 // Missed visit (no-show). Two distinct endpoints for clear authorization + audit differentiation.
 //   Therapist: self-report they couldn't attend
