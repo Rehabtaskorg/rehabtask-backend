@@ -149,7 +149,7 @@ export const loginController = async (req, res, next) => {
  */
 export const logoutController = async (req, res, next) => {
     try {
-        await logout(req.accessToken);
+        await logout();
 
         // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
         const isSecureContext = process.env.COOKIE_SECURE === "true";
@@ -307,9 +307,12 @@ export const processOAuthController = async (req, res, next) => {
         }
 
         // Verify the session with Supabase and get user
+        console.log("[processOAuth] Verifying token prefix:", accessToken?.slice(0, 20));
         const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser(accessToken);
+        console.log("[processOAuth] getUser result — user:", supabaseUser?.id ?? "null", "error:", userError?.message ?? "none", "status:", userError?.status ?? "none");
 
         if (userError || !supabaseUser) {
+            console.error("[processOAuth] Token rejected by Supabase:", userError?.message);
             return res.status(401).json({
                 success: false,
                 message: "Invalid OAuth session"
