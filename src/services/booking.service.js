@@ -223,10 +223,8 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
         throw new Error("No pending reschedule request for this booking");
     }
 
-    // Determine which status to restore based on whether payment was made
-    // If session exists, payment was made → restore to "confirmed"
-    // If no session, booking is pre-payment → restore to "accepted" (new flow) or "pending" (legacy)
-    const restoreStatus = booking.session ? "confirmed" : "accepted";
+    // Determine which status to restore based on whether sessions exist.
+    const restoreStatus = booking.sessions?.length > 0 ? "confirmed" : "accepted";
     const newScheduledDate = booking.proposedNewDate;
 
     if (accept) {
