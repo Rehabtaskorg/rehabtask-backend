@@ -1,4 +1,4 @@
-import { USER_ROLES, APPROVAL_STATUS, BOOKING_STATUS } from "../utils/constants.js";
+import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js"
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -160,7 +160,7 @@ export const createSystemMessage = async ({ conversationId, actorId, recipientId
  * Get conversation messages by conversationId (Phase 3).
  */
 export const getConversationMessagesByConvId = async (userId, conversationId, options = {}) => {
-    const { limit = 50, cursor, order = "desc" } = options;
+    const { limit = 50, cursor } = options;
 
     // Verify access: user must be a participant
     const conversation = await prisma.directConversation.findFirst({
@@ -466,7 +466,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
  * Create a direct message — get-or-create DirectConversation + send first message
  * Only customers can initiate; therapists can only reply to existing conversations.
  */
-export const createDirectMessage = async ({ senderId, recipientId, content }) => {
+export const createDirectMessage = async ({ senderId, recipientId, content, replyToId }) => {
     if (!content?.trim()) {
         throw new BadRequestError("Message content cannot be empty");
     }
