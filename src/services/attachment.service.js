@@ -2,9 +2,8 @@ import { prisma } from "../config/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js";
-import { findOrCreateDirectConversation, createMessage } from "./message.service.js";
-import { getIO } from "../socket/index.js";
 import { getUnreadCount } from "./message.service.js";
+import { getIO } from "../socket/index.js";
 import { TIME_MS } from "../utils/constants.js";
 
 const BUCKET = "message-attachments";

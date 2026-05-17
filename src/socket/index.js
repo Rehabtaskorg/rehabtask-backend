@@ -83,22 +83,17 @@ export function initSocketIO(httpServer) {
         // Auto-join personal room for direct notifications (unread counts, etc.)
         socket.join(`user:${socket.userId}`);
 
-        // Client joins a specific conversation room
-        // Phase 3: supports both { conversationId } and legacy { contextType, contextId }
+        // Client joins a specific conversation room (Phase 3: conversationId only)
         socket.on("join:conversation", (data) => {
             if (data.conversationId) {
                 socket.join(`conversation:${data.conversationId}`);
-            } else if (data.contextType && data.contextId) {
-                socket.join(`conversation:${data.contextType}:${data.contextId}`);
             }
         });
 
-        // Client leaves a conversation room
+        // Client leaves a conversation room (Phase 3: conversationId only)
         socket.on("leave:conversation", (data) => {
             if (data.conversationId) {
                 socket.leave(`conversation:${data.conversationId}`);
-            } else if (data.contextType && data.contextId) {
-                socket.leave(`conversation:${data.contextType}:${data.contextId}`);
             }
         });
 

@@ -265,6 +265,7 @@ export const searchTherapists = async ({
 
         return {
             id: t.id,
+            userId: t.userId,
             fullName: t.fullName,
             specialization: t.specialization,
             profilePhotoUrl: t.profilePhotoUrl,

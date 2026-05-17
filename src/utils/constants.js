@@ -1,3 +1,10 @@
+// ─── Message Context Types ────────────────────────────────────────────────────
+export const MESSAGE_CONTEXT = {
+    OFFER:   "offer",
+    BOOKING: "booking",
+    DIRECT:  "direct",
+};
+
 // ─── User Roles ───────────────────────────────────────────────────────────────
 export const USER_ROLES = {
     CUSTOMER:  "customer",
