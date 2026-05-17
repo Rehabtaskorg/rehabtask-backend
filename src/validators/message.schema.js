@@ -60,3 +60,17 @@ export const getContextSchema = {
         contextId: z.uuid("Invalid context ID format"),
     }),
 };
+
+/**
+ * Phase 3: Send a message by conversationId — no contextType needed
+ */
+export const sendMessageByConversationSchema = z.object({
+    content: z
+        .string()
+        .trim()
+        .min(1, "Message cannot be empty")
+        .max(2000, "Message too long (max 2000 characters)"),
+    replyToId: z
+        .uuid("Invalid reply message ID format")
+        .optional(),
+});

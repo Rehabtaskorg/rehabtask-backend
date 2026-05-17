@@ -1,35 +1,10 @@
 import {
-    createMessage, createDirectMessage,
-    getConversationMessages, getConversationMessagesByConvId,
-    markMessagesAsRead, markMessagesAsReadByConvId,
-    getUnreadCount, getUserConversations, getConversationContext
+    createDirectMessage,
+    sendMessageByConversation,
+    getConversationMessagesByConvId,
+    markMessagesAsReadByConvId,
+    getUnreadCount, getUserConversations,
 } from "../services/message.service.js";
-
-/**
- * Send a new message
- */
-export const sendMessageController = async (req, res, next) => {
-    try {
-        const { content, contextType, contextId, replyToId } = req.body;
-        const senderId = req.user.id;
-
-        const message = await createMessage({
-            senderId,
-            content,
-            contextType,
-            contextId,
-            replyToId,
-        });
-
-        res.status(201).json({
-            success: true,
-            message: "Message sent successfully",
-            data: { message },
-        });
-    } catch (error) {
-        next(error);
-    }
-}
 
 /**
  * Send a direct message (get-or-create conversation + send)
@@ -49,60 +24,6 @@ export const sendDirectMessageController = async (req, res, next) => {
             success: true,
             message: "Message sent successfully",
             data: { message },
-        });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Get messages for a specific conversation
- */
-export const getConversationMessagesController = async (req, res, next) => {
-    try {
-        const { contextType, contextId } = req.params;
-        const { limit, cursor, order } = req.query;
-
-        const messages = await getConversationMessages(
-            req.user.id,
-            contextType,
-            contextId,
-            {
-                limit: limit ? parseInt(limit) : undefined,
-                cursor,
-                order,
-            }
-        );
-
-        // For stitched threads (direct/booking), _totalRealMessages tracks actual message count
-        // excluding system dividers. For standard queries, use array length.
-        const realCount = messages._totalRealMessages ?? messages.length;
-        const parsedLimit = limit ? parseInt(limit) : 50;
-
-        res.status(200).json({
-            success: true,
-            data: {
-                messages,
-                hasMore: realCount >= parsedLimit,
-            },
-        });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Mark messages as read in a conversation
- */
-export const markAsReadController = async (req, res, next) => {
-    try {
-        const { contextType, contextId } = req.params;
-        const count = await markMessagesAsRead(req.user.id, contextType, contextId);
-
-        res.status(200).json({
-            success: true,
-            message: `${count} message(s) marked as read`,
-            data: { count },
         });
     } catch (error) {
         next(error);
@@ -141,24 +62,28 @@ export const getConversationsController = async (req, res, next) => {
     }
 }
 
-/**
- * Get the other party's info for a conversation (used when no messages exist yet)
- */
-export const getConversationContextController = async (req, res, next) => {
-    try {
-        const { contextType, contextId } = req.params;
-        const context = await getConversationContext(req.user.id, contextType, contextId);
+// ─── Phase 3: conversationId-based endpoints ───────────────────────
 
-        res.status(200).json({
+/**
+ * Send a message by conversationId (Phase 3 — no contextType needed)
+ */
+export const sendMessageByConversationController = async (req, res, next) => {
+    try {
+        const { conversationId } = req.params;
+        const { content, replyToId } = req.body;
+        const senderId = req.user.id;
+
+        const message = await sendMessageByConversation(senderId, conversationId, content, replyToId);
+
+        res.status(201).json({
             success: true,
-            data: context
+            message: "Message sent successfully",
+            data: { message },
         });
     } catch (error) {
         next(error);
     }
-}
-
-// ─── Phase 3: conversationId-based endpoints ───────────────────────
+};
 
 /**
  * Get messages by conversationId
