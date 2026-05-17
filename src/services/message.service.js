@@ -285,6 +285,34 @@ export const getUnreadCount = async (userId) => {
 }
 
 /**
+ * Get basic public info for a user by userId.
+ * Used by the messaging UI to resolve a pending direct recipient's name
+ * before any conversation exists between them.
+ *
+ * @param {string} requesterId - The authenticated user making the request
+ * @param {string} targetUserId - The user whose info is being requested
+ * @returns {Promise<object>} { id, role, fullName, profilePhotoUrl }
+ */
+export const getUserPublicInfo = async (requesterId, targetUserId) => {
+    const user = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: {
+            id: true,
+            role: true,
+            therapistProfile: { select: { fullName: true, profilePhotoUrl: true } },
+            customerProfile: { select: { fullName: true, agencyName: true } },
+        },
+    });
+
+    if (!user) throw new BadRequestError("User not found", "USER_NOT_FOUND");
+
+    const fullName = user.therapistProfile?.fullName || user.customerProfile?.fullName || null;
+    const profilePhotoUrl = user.therapistProfile?.profilePhotoUrl || null;
+
+    return { id: user.id, role: user.role, fullName, profilePhotoUrl };
+};
+
+/**
  * Get all conversations for a user.
  *
  * Phase 3 rewrite: queries DirectConversations directly instead of the old 6-pass

@@ -4,6 +4,7 @@ import {
     getConversationMessagesByConvId,
     markMessagesAsReadByConvId,
     getUnreadCount, getUserConversations,
+    getUserPublicInfo,
 } from "../services/message.service.js";
 
 /**
@@ -63,6 +64,20 @@ export const getConversationsController = async (req, res, next) => {
 }
 
 // ─── Phase 3: conversationId-based endpoints ───────────────────────
+
+/**
+ * Get basic public info for a user — used to resolve a pending direct recipient's
+ * name before any conversation exists between them.
+ */
+export const getUserPublicInfoController = async (req, res, next) => {
+    try {
+        const { userId } = req.params;
+        const info = await getUserPublicInfo(req.user.id, userId);
+        res.status(200).json({ success: true, data: info });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
  * Send a message by conversationId (Phase 3 — no contextType needed)

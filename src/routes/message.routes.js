@@ -2,6 +2,7 @@ import express from "express";
 import {
     sendDirectMessageController,
     sendMessageByConversationController,
+    getUserPublicInfoController,
     getUnreadCountController,
     getConversationsController,
     getMessagesByConversationController,
@@ -41,6 +42,12 @@ router.post(
  * Get all conversations for current user
  */
 router.get("/conversations", conversationsRateLimiter, getConversationsController);
+
+/**
+ * GET /api/messages/users/:userId/info
+ * Get basic public info for a user — resolves pending direct recipient name
+ */
+router.get("/users/:userId/info", getUserPublicInfoController);
 
 /**
  * GET /api/messages/unread-count
