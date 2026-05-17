@@ -116,7 +116,7 @@ export const newRequestNotification = ({ therapist, request }) => {
             ${field('Preferred Date', formatDate(request.preferredDate))}
             ${truncatedDesc ? `${field('Description', truncatedDesc)}` : ''}
             ${hr()}
-            ${button(`${FRONTEND_URL}/therapist/requests`, 'View Request')}
+            ${button(`${FRONTEND_URL}/therapist/requests/${request.id}`, 'View Request')}
         `),
     };
 };
@@ -143,7 +143,7 @@ export const newOfferNotification = ({ customer, therapist, offer }) => {
                     This offer expires on ${expiryDate}.
                 </p>
             ` : ''}
-            ${button(`${FRONTEND_URL}/customer/requests`, 'Review Offer')}
+            ${button(`${FRONTEND_URL}/customer/requests/${offer.requestId}`, 'Review Offer')}
         `),
     };
 };
@@ -162,7 +162,7 @@ export const offerAccepted = ({ therapist, customer, booking }) => ({
         ${field('Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${text('Please make sure to prepare for the session and review the booking details.')}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -282,7 +282,7 @@ export const sessionConfirmed = ({ therapist, customer, booking }) => ({
         ${field('Gross Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${muted('The final payout amount will reflect the platform fee deduction. You\'ll receive a separate confirmation once the payout has been sent to your Stripe account.')}
-        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -365,7 +365,7 @@ export const offerDeclined = ({ therapist, customer, offer }) => ({
         ${field('Session Type', offer.sessionType)}
         ${hr()}
         ${text('You can continue submitting offers on other open requests.')}
-        ${button(`${FRONTEND_URL}/therapist/requests`, 'Browse Requests')}
+        ${button(`${FRONTEND_URL}/therapist/requests/${offer.requestId}`, 'View Request')}
     `),
 });
 
@@ -381,7 +381,7 @@ export const offerWithdrawn = ({ customer, therapist, offer }) => ({
         ${field('Rate', formatCurrency(offer.rate))}
         ${hr()}
         ${text('Other therapists may still submit offers on your request.')}
-        ${button(`${FRONTEND_URL}/customer/requests`, 'View Your Requests')}
+        ${button(`${FRONTEND_URL}/customer/requests/${offer.requestId}`, 'View Your Request')}
     `),
 });
 
@@ -418,7 +418,7 @@ export const offerChangeRequested = ({ therapist, customer, offer, note }) => ({
             <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${note}</p>
         </div>
         ${text('You can withdraw your current offer and submit a revised one, or reach out via messages to discuss.')}
-        ${button(`${FRONTEND_URL}/therapist/offers`, 'View Offer')}
+        ${button(`${FRONTEND_URL}/therapist/requests/${offer.requestId}`, 'View Request')}
     `),
 });
 
@@ -451,7 +451,7 @@ export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
         ${field('New Session Date', formatDate(booking.scheduledDate))}
         ${field('Session Type', booking.sessionType)}
         ${hr()}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -540,7 +540,7 @@ export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
                 <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
             </div>
         ` : ''}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -557,7 +557,7 @@ export const paymentFailed = ({ customer, booking, reason }) => ({
         ${reason ? `${field('Reason', reason)}` : ''}
         ${hr()}
         ${text('Please try again with a different payment method or contact your bank for more details.')}
-        ${button(`${FRONTEND_URL}/customer/bookings`, 'View Bookings')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -644,7 +644,7 @@ export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }
             </div>
         ` : ''}
         ${text('If you have any questions about this cancellation, please contact our support team.')}
-        ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings`, 'View Bookings')}
+        ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
