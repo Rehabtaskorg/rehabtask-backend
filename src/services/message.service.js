@@ -329,6 +329,22 @@ export const createMessage = async ({ senderId, content, contextType, contextId,
         }
     }
 
+    // Validate reply target belongs to the same conversation before creating the message.
+    // Without this check a user could reply to a message from a different conversation.
+    if (replyToId) {
+        const replyTarget = await prisma.message.findUnique({ where: { id: replyToId } });
+        if (!replyTarget) {
+            throw new BadRequestError("Reply target message not found", "REPLY_TARGET_NOT_FOUND");
+        }
+        const isSameContext =
+            (contextType === "direct"  && replyTarget.conversationId === contextId) ||
+            (contextType === "offer"   && replyTarget.offerId         === contextId) ||
+            (contextType === "booking" && replyTarget.bookingId       === contextId);
+        if (!isSameContext) {
+            throw new BadRequestError("Cannot reply to a message from a different conversation", "REPLY_TARGET_CONTEXT_MISMATCH");
+        }
+    }
+
     const message = await prisma.message.create({
         data: {
             senderId,
