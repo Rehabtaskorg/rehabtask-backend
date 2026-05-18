@@ -183,12 +183,6 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
         }
 
 
-        logger.error("[Auth] registerCustomer failed", {
-            email: normalizedEmail,
-            errorCode: error?.code,
-            errorMeta: error?.meta,
-            errorMessage: error?.message,
-        });
         throw new BadRequestError("Failed to process registration. Please try again.");
     }
 
