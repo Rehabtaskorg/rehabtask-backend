@@ -26,9 +26,12 @@ app.use(
     })
 );
 
-// Security headers
+// Security headers — CSP is handled by the Next.js frontend (next.config.mjs).
+// Helmet's default CSP is disabled here to avoid conflicting headers on
+// proxied API responses. All other helmet defaults remain active.
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
 // Compression
