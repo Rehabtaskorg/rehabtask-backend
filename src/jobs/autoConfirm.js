@@ -1,3 +1,4 @@
+import { TIME_MS, SESSION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { releaseSessionPayout } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
@@ -12,7 +13,7 @@ import { logger } from "../config/logger.js";
  */
 export const runAutoConfirm = async () => {
     const hours = parseInt(process.env.AUTO_CONFIRM_HOURS || "72", 10);
-    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - hours * TIME_MS.ONE_HOUR);
 
     // ── Phase 1: Auto-confirm expired sessions ──────────────────────────
     const sessions = await prisma.session.findMany({
@@ -39,7 +40,7 @@ export const runAutoConfirm = async () => {
                     await tx.session.update({
                         where: { id: session.id },
                         data: {
-                            status: "confirmed_by_customer",
+                            status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
                             confirmedByCustomerAt: new Date(),
                         },
                     });
@@ -49,18 +50,18 @@ export const runAutoConfirm = async () => {
                         where: { bookingId: session.bookingId },
                     });
                     const confirmedCount = allSessions.filter(s =>
-                        s.id === session.id || s.status === "confirmed_by_customer"
+                        s.id === session.id || s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER
                     ).length;
 
                     if (confirmedCount === allSessions.length) {
                         await tx.booking.update({
                             where: { id: session.bookingId },
-                            data: { status: "completed" },
+                            data: { status: BOOKING_STATUS.COMPLETED },
                         });
                         return true;
                     }
                     return false;
-                });
+                }, { timeout: 10000 });
 
                 // Per-session payout — release for this session immediately
                 const payment = session.booking.payment;
@@ -69,7 +70,7 @@ export const runAutoConfirm = async () => {
                         // Refresh payment to get latest releasedAmount
                         const currentPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
                         await releaseSessionPayout({
-                            session: { ...session, status: "confirmed_by_customer" },
+                            session: { ...session, status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER },
                             payment: currentPayment,
                             booking: session.booking,
                             isLast: allConfirmed,
@@ -99,7 +100,7 @@ export const runAutoConfirm = async () => {
     // therapist's money stays in escrow forever.
     const stuckSessions = await prisma.session.findMany({
         where: {
-            status: "confirmed_by_customer",
+            status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
             payout: null, // no SessionPayout record exists
             booking: {
                 payment: { status: { in: ["escrowed", "partially_released"] } },
@@ -122,11 +123,11 @@ export const runAutoConfirm = async () => {
         const recoveryResults = await Promise.allSettled(
             stuckSessions.map(async (session) => {
                 const allSessions = session.booking.sessions;
-                const allConfirmed = allSessions.every(s => s.status === "confirmed_by_customer");
+                const allConfirmed = allSessions.every(s => s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER);
                 // This is the last payout if all sessions are confirmed and this
                 // is the last confirmed session by sessionNumber
                 const confirmedSorted = allSessions
-                    .filter(s => s.status === "confirmed_by_customer")
+                    .filter(s => s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER)
                     .sort((a, b) => (a.sessionNumber ?? 0) - (b.sessionNumber ?? 0));
                 const isLast = allConfirmed && confirmedSorted[confirmedSorted.length - 1]?.id === session.id;
 

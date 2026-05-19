@@ -1,3 +1,4 @@
+import { REFUND_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { createPerSessionRefund } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
@@ -12,7 +13,7 @@ const MAX_ATTEMPTS = 5;
  */
 export const runRetryPendingRefunds = async () => {
     const pending = await prisma.pendingRefundRetry.findMany({
-        where: { status: "pending" },
+        where: { status: REFUND_STATUS.PENDING },
         orderBy: { createdAt: "asc" },
     });
 
@@ -68,14 +69,14 @@ export const runRetryPendingRefunds = async () => {
                 select: { attempts: true },
             });
 
-            const newStatus = currentRow && currentRow.attempts >= MAX_ATTEMPTS ? "failed" : "pending";
+            const newStatus = currentRow && currentRow.attempts >= MAX_ATTEMPTS ? REFUND_STATUS.FAILED : REFUND_STATUS.PENDING;
 
             await prisma.pendingRefundRetry.update({
                 where: { id: row.id },
                 data: { errorLog: err.message, status: newStatus },
             });
 
-            if (newStatus === "failed") {
+            if (newStatus === REFUND_STATUS.FAILED) {
                 logger.error("[RetryPendingRefunds] CRITICAL: Refund permanently failed after max attempts — manual action required", {
                     retryId: row.id,
                     sessionId: row.sessionId,

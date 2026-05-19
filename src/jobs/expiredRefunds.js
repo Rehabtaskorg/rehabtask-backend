@@ -1,3 +1,4 @@
+import { REPORT_MS_PER_DAY } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { sendCustomerRefundReminder } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
@@ -29,7 +30,7 @@ const sendRefundReminders = async () => {
 
     for (const refund of pendingRefunds) {
         const daysSinceCreation = Math.floor(
-            (now.getTime() - new Date(refund.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+            (now.getTime() - new Date(refund.createdAt).getTime()) / REPORT_MS_PER_DAY
         );
 
         try {
@@ -47,7 +48,7 @@ const sendRefundReminders = async () => {
                 sent++;
             } else if (refund.connectReminderSentAt && daysSinceCreation >= 14) {
                 const daysSinceLastReminder = Math.floor(
-                    (now.getTime() - new Date(refund.connectReminderSentAt).getTime()) / (1000 * 60 * 60 * 24)
+                    (now.getTime() - new Date(refund.connectReminderSentAt).getTime()) / REPORT_MS_PER_DAY
                 );
 
                 if (daysSinceLastReminder >= 7) {

@@ -2,11 +2,10 @@ import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
     getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession,
     requestSessionRevision, submitSessionRevision,
-    respondToRevision, resubmitSession,
+    respondToRevision, resubmitSession, extendRevision,
     markSessionMissed,
     markSessionAttempted,
 } from "../services/session.service.js";
-import { logAction } from "../services/audit.service.js";
 
 /**
  * Complete session by therapist
@@ -169,6 +168,21 @@ const resubmitSessionController = async (req, res, next) => {
 };
 
 /**
+ * Therapist extends the revision deadline by a fixed number of days.
+ * New deadline = max(currentDueBy, now) + REVISION_EXTEND_DAYS.
+ */
+const extendRevisionController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await extendRevision(sessionId, therapistId);
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Therapist: self-report they couldn't attend a scheduled session.
  * Creates a per-session refund for the customer.
  */
@@ -226,6 +240,7 @@ export {
     submitRevisionController,
     respondToRevisionController,
     resubmitSessionController,
+    extendRevisionController,
     markMissedByTherapistController,
     markMissedByCustomerController,
     markAttemptedByTherapistController,

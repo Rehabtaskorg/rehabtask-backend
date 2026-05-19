@@ -64,6 +64,7 @@ export const registerCustomerSchema = z.object({
     customerType: customerTypeSchema,
     agencyName: z.string().min(2).max(255).trim().optional(),
     recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
 }).refine(
     (data) => {
         if (data.customerType === "agency") {
@@ -85,6 +86,7 @@ export const registerTherapistSchema = z.object({
     fullName: fullNameSchema,
     phone: phoneSchema,
     recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
 });
 
 /**
@@ -94,6 +96,7 @@ export const loginSchema = z.object({
     email: emailSchema,
     password: z.string().min(1, "Password is required"),
     recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
 });
 
 /**
@@ -102,6 +105,7 @@ export const loginSchema = z.object({
 export const requestPasswordResetSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
 });
 
 /**
@@ -168,6 +172,7 @@ export const completeOAuthOnboardingSchema = z.object({
 export const resendVerificationSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
 });
 
 /**

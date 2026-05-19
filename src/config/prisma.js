@@ -7,7 +7,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
  * @typedef {import('@prisma/client').PrismaClient} PrismaClient
  * @typedef {import('@prisma/client').Prisma.TransactionClient} TransactionClient
  */
-let prismaInstance;
+let _prismaInstance;
 
 const adapter = new PrismaPg({
     connectionString: process.env.DATABASE_URL,
@@ -24,7 +24,7 @@ const globalForPrisma = global;
  */
 export const prisma =
     globalForPrisma.prisma ||
-    (prismaInstance = new PrismaClient({
+    (_prismaInstance = new PrismaClient({
         adapter,
         log:
             process.env.NODE_ENV === "production"

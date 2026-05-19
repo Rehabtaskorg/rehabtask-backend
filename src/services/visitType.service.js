@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { VISIT_TYPES } from "../../prisma/seeds/visitTypes.js";
 import { logger } from "../config/logger.js";
@@ -42,11 +43,11 @@ const resolveDiscipline = ({ discipline, serviceType, licenseType }) => {
  *          are therapist-internal workflow codes by design).
  * @returns {Promise<Array<{id:string,code:string,name:string,discipline:string,sortOrder:number}>>}
  */
-export const getVisitTypes = async ({ discipline, serviceType, licenseType, audience = "therapist" } = {}) => {
+export const getVisitTypes = async ({ discipline, serviceType, licenseType, audience = USER_ROLES.THERAPIST } = {}) => {
     const resolvedDiscipline = resolveDiscipline({ discipline, serviceType, licenseType });
     if (!resolvedDiscipline) return [];
 
-    const isCustomer = audience === "customer";
+    const isCustomer = audience === USER_ROLES.CUSTOMER;
 
     return prisma.visitType.findMany({
         where: {
@@ -77,7 +78,7 @@ export const getVisitTypes = async ({ discipline, serviceType, licenseType, audi
  * Prefer `getVisitTypes({ licenseType })` in new code.
  */
 export const getVisitTypesByDiscipline = async (licenseType) => {
-    return getVisitTypes({ licenseType, audience: "therapist" });
+    return getVisitTypes({ licenseType, audience: USER_ROLES.THERAPIST });
 };
 
 /**

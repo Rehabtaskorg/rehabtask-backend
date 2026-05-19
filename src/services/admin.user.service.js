@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
@@ -84,7 +85,7 @@ export const deactivateUser = async (userId, adminId, callerRole) => {
     if (!user.isActive) throw new ConflictError("User is already deactivated");
 
     // Sub-admins cannot deactivate admin or other sub-admin accounts
-    if (callerRole === "sub_admin" && (user.role === "admin" || user.role === "sub_admin")) {
+    if (callerRole === USER_ROLES.SUB_ADMIN && (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.SUB_ADMIN)) {
         throw new AuthorizationError("Sub-admins cannot deactivate admin accounts");
     }
 
@@ -144,10 +145,10 @@ export const updateUser = async (userId, updates, adminId) => {
 
     // Update customer profile fields
     const customerFields = {};
-    if (fullName !== undefined && user.role === "customer") customerFields.fullName = fullName;
-    if (phone !== undefined && user.role === "customer") customerFields.phone = phone;
-    if (customerType !== undefined && user.role === "customer") customerFields.customerType = customerType;
-    if (agencyName !== undefined && user.role === "customer") customerFields.agencyName = agencyName;
+    if (fullName !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.fullName = fullName;
+    if (phone !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.phone = phone;
+    if (customerType !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.customerType = customerType;
+    if (agencyName !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.agencyName = agencyName;
 
     if (Object.keys(customerFields).length > 0 && user.customerProfile) {
         await prisma.customerProfile.update({
@@ -158,10 +159,10 @@ export const updateUser = async (userId, updates, adminId) => {
 
     // Update therapist profile fields
     const therapistFields = {};
-    if (fullName !== undefined && user.role === "therapist") therapistFields.fullName = fullName;
-    if (phone !== undefined && user.role === "therapist") therapistFields.phone = phone;
-    if (primaryLicenseType !== undefined && user.role === "therapist") therapistFields.primaryLicenseType = primaryLicenseType;
-    if (bio !== undefined && user.role === "therapist") therapistFields.bio = bio;
+    if (fullName !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.fullName = fullName;
+    if (phone !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.phone = phone;
+    if (primaryLicenseType !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.primaryLicenseType = primaryLicenseType;
+    if (bio !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.bio = bio;
 
     if (Object.keys(therapistFields).length > 0 && user.therapistProfile) {
         await prisma.therapistProfile.update({

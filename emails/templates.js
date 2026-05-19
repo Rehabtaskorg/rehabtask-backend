@@ -116,7 +116,7 @@ export const newRequestNotification = ({ therapist, request }) => {
             ${field('Preferred Date', formatDate(request.preferredDate))}
             ${truncatedDesc ? `${field('Description', truncatedDesc)}` : ''}
             ${hr()}
-            ${button(`${FRONTEND_URL}/therapist/requests`, 'View Request')}
+            ${button(`${FRONTEND_URL}/therapist/requests/${request.id}`, 'View Request')}
         `),
     };
 };
@@ -143,7 +143,7 @@ export const newOfferNotification = ({ customer, therapist, offer }) => {
                     This offer expires on ${expiryDate}.
                 </p>
             ` : ''}
-            ${button(`${FRONTEND_URL}/customer/requests`, 'Review Offer')}
+            ${button(`${FRONTEND_URL}/customer/requests/${offer.requestId}`, 'Review Offer')}
         `),
     };
 };
@@ -162,7 +162,7 @@ export const offerAccepted = ({ therapist, customer, booking }) => ({
         ${field('Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${text('Please make sure to prepare for the session and review the booking details.')}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -282,7 +282,7 @@ export const sessionConfirmed = ({ therapist, customer, booking }) => ({
         ${field('Gross Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${muted('The final payout amount will reflect the platform fee deduction. You\'ll receive a separate confirmation once the payout has been sent to your Stripe account.')}
-        ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -365,7 +365,7 @@ export const offerDeclined = ({ therapist, customer, offer }) => ({
         ${field('Session Type', offer.sessionType)}
         ${hr()}
         ${text('You can continue submitting offers on other open requests.')}
-        ${button(`${FRONTEND_URL}/therapist/requests`, 'Browse Requests')}
+        ${button(`${FRONTEND_URL}/therapist/requests/${offer.requestId}`, 'View Request')}
     `),
 });
 
@@ -381,7 +381,7 @@ export const offerWithdrawn = ({ customer, therapist, offer }) => ({
         ${field('Rate', formatCurrency(offer.rate))}
         ${hr()}
         ${text('Other therapists may still submit offers on your request.')}
-        ${button(`${FRONTEND_URL}/customer/requests`, 'View Your Requests')}
+        ${button(`${FRONTEND_URL}/customer/requests/${offer.requestId}`, 'View Your Request')}
     `),
 });
 
@@ -418,7 +418,7 @@ export const offerChangeRequested = ({ therapist, customer, offer, note }) => ({
             <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${note}</p>
         </div>
         ${text('You can withdraw your current offer and submit a revised one, or reach out via messages to discuss.')}
-        ${button(`${FRONTEND_URL}/therapist/offers`, 'View Offer')}
+        ${button(`${FRONTEND_URL}/therapist/requests/${offer.requestId}`, 'View Request')}
     `),
 });
 
@@ -451,7 +451,7 @@ export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
         ${field('New Session Date', formatDate(booking.scheduledDate))}
         ${field('Session Type', booking.sessionType)}
         ${hr()}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -540,7 +540,7 @@ export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
                 <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
             </div>
         ` : ''}
-        ${button(`${FRONTEND_URL}/therapist/bookings`, 'View Booking')}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -557,7 +557,7 @@ export const paymentFailed = ({ customer, booking, reason }) => ({
         ${reason ? `${field('Reason', reason)}` : ''}
         ${hr()}
         ${text('Please try again with a different payment method or contact your bank for more details.')}
-        ${button(`${FRONTEND_URL}/customer/bookings`, 'View Bookings')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -644,7 +644,7 @@ export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }
             </div>
         ` : ''}
         ${text('If you have any questions about this cancellation, please contact our support team.')}
-        ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings`, 'View Bookings')}
+        ${button(`${FRONTEND_URL}/${role === 'customer' ? 'customer' : 'therapist'}/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -877,6 +877,100 @@ export const customerRefundReturnedToCard = ({ customer, refundAmount }) => ({
         ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
     `),
 });
+
+// Stripe requirements alert — sent when account.updated webhook fires with new requirements
+export const stripeRequirementsAlert = ({ therapist, pastDueCount, currentlyDueCount, currentDeadline, hasUpcomingRequirements, futureDeadline }) => {
+    const isPastDue = pastDueCount > 0;
+    const isCurrentlyDue = currentlyDueCount > 0;
+
+    const subject = isPastDue
+        ? 'Action required — your RehabTask payout account has been restricted'
+        : isCurrentlyDue
+            ? `Action needed by ${currentDeadline ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'upcoming deadline'} to keep your payout account active`
+            : 'Upcoming information required for your RehabTask payout account';
+
+    const urgencyColor = isPastDue ? '#dc2626' : isCurrentlyDue ? '#d97706' : '#2563EB';
+    const urgencyBg = isPastDue ? '#fef2f2' : isCurrentlyDue ? '#fffbeb' : '#eff6ff';
+    const urgencyBorder = isPastDue ? '#fca5a5' : isCurrentlyDue ? '#fcd34d' : '#bfdbfe';
+
+    const deadlineStr = currentDeadline
+        ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const futureDeadlineStr = futureDeadline
+        ? new Date(futureDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const bodyContent = isPastDue
+        ? `Your payout account has been <strong>restricted by Stripe</strong> because required information was not provided by the deadline. Your ability to receive payments and payouts is currently paused.`
+        : isCurrentlyDue
+            ? `Stripe requires updated information for your payout account${deadlineStr ? ` by <strong>${deadlineStr}</strong>` : ' soon'}. If not completed, your payments and payouts will be paused.`
+            : `Stripe will require new information for your payout account${futureDeadlineStr ? ` by <strong>${futureDeadlineStr}</strong>` : ' in the future'}. Completing it now ensures no interruption to your earnings.`;
+
+    return {
+        subject,
+        html: layout(`
+            ${heading(isPastDue ? 'Payout Account Restricted' : isCurrentlyDue ? 'Action Required' : 'Upcoming Requirements')}
+            ${text(`Hi ${therapist.fullName},`)}
+            <div style="background-color:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;padding:16px 20px;margin:20px 0;">
+                <p style="color:${urgencyColor};font-size:14px;font-weight:600;margin:0 0 6px;">${isPastDue ? '⚠️ Account restricted' : isCurrentlyDue ? '⏰ Deadline approaching' : 'ℹ️ Upcoming requirement'}</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${bodyContent}</p>
+            </div>
+            ${text('To resolve this, log in to RehabTask and complete your payout account information. The process takes just a few minutes.')}
+            ${button(`${FRONTEND_URL}/therapist/onboarding/stripe`, isPastDue ? 'Restore My Account' : 'Complete Required Information')}
+            ${hr()}
+            ${muted('If you have questions about what information Stripe requires, the form will show you exactly what is needed. If you need help, contact our support team.')}
+        `),
+    };
+};
+
+// Customer Stripe requirements alert — payout account for refunds
+export const customerStripeRequirementsAlert = ({ customer, pastDueCount, currentlyDueCount, currentDeadline, hasUpcomingRequirements, futureDeadline }) => {
+    const isPastDue = pastDueCount > 0;
+    const isCurrentlyDue = currentlyDueCount > 0;
+
+    const subject = isPastDue
+        ? 'Action required — your RehabTask refund account has been restricted'
+        : isCurrentlyDue
+            ? `Action needed by ${currentDeadline ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'upcoming deadline'} to keep your refund account active`
+            : 'Upcoming information required for your RehabTask refund account';
+
+    const urgencyColor = isPastDue ? '#dc2626' : isCurrentlyDue ? '#d97706' : '#2563EB';
+    const urgencyBg = isPastDue ? '#fef2f2' : isCurrentlyDue ? '#fffbeb' : '#eff6ff';
+    const urgencyBorder = isPastDue ? '#fca5a5' : isCurrentlyDue ? '#fcd34d' : '#bfdbfe';
+
+    const deadlineStr = currentDeadline
+        ? new Date(currentDeadline * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const futureDeadlineStr = futureDeadline
+        ? new Date(futureDeadline * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : null;
+
+    const customerName = customer.fullName || customer.agencyName || 'there';
+
+    const bodyContent = isPastDue
+        ? `Your refund payout account has been <strong>restricted by Stripe</strong> because required information was not provided by the deadline. Your ability to receive refunds is currently paused.`
+        : isCurrentlyDue
+            ? `Stripe requires updated information for your refund account${deadlineStr ? ` by <strong>${deadlineStr}</strong>` : ' soon'}. If not completed, your ability to receive refunds will be paused.`
+            : `Stripe will require new information for your refund account${futureDeadlineStr ? ` by <strong>${futureDeadlineStr}</strong>` : ' in the future'}. Completing it now ensures you can always receive refunds without interruption.`;
+
+    return {
+        subject,
+        html: layout(`
+            ${heading(isPastDue ? 'Refund Account Restricted' : isCurrentlyDue ? 'Action Required' : 'Upcoming Requirements')}
+            ${text(`Hi ${customerName},`)}
+            <div style="background-color:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;padding:16px 20px;margin:20px 0;">
+                <p style="color:${urgencyColor};font-size:14px;font-weight:600;margin:0 0 6px;">${isPastDue ? '⚠️ Account restricted' : isCurrentlyDue ? '⏰ Deadline approaching' : 'ℹ️ Upcoming requirement'}</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${bodyContent}</p>
+            </div>
+            ${text('Log in to RehabTask and complete your refund account information. The process takes just a few minutes.')}
+            ${button(`${FRONTEND_URL}/customer/payout-setup`, isPastDue ? 'Restore My Account' : 'Complete Required Information')}
+            ${hr()}
+            ${muted('Your refund payout account is separate from your payment method. It is used only to receive refunds when sessions are cancelled or missed.')}
+        `),
+    };
+};
 
 // Attempted Visit — therapist payout notification
 export const attemptedVisitTherapistPayout = ({ therapist, customer, session, booking, grossAmount, refundAmount }) => ({

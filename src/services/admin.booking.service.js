@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -103,13 +104,13 @@ export const adminGetBookingStats = async () => {
     const [total, pending, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
         await Promise.all([
             prisma.booking.count(),
-            prisma.booking.count({ where: { status: "pending" } }),
-            prisma.booking.count({ where: { status: "accepted" } }),
-            prisma.booking.count({ where: { status: "confirmed" } }),
-            prisma.booking.count({ where: { status: "in_progress" } }),
-            prisma.booking.count({ where: { status: "completed" } }),
-            prisma.booking.count({ where: { status: "cancelled" } }),
-            prisma.booking.count({ where: { status: "reschedule_requested" } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.ACCEPTED } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.CONFIRMED } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.IN_PROGRESS } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.COMPLETED } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.CANCELLED } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.RESCHEDULE_REQUESTED } }),
         ]);
 
     return {
@@ -140,7 +141,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
 
-    const cancellable = ["pending", "accepted", "confirmed", "reschedule_requested"];
+    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
     if (!cancellable.includes(booking.status)) {
         throw new ConflictError(
             `Booking cannot be cancelled in status '${booking.status}'`
@@ -149,7 +150,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
 
     const updated = await prisma.booking.update({
         where: { id: bookingId },
-        data: { status: "cancelled" },
+        data: { status: BOOKING_STATUS.CANCELLED },
         include: BOOKING_INCLUDE,
     });
 
@@ -158,7 +159,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         recipientName: booking.customer.fullName,
         booking,
         reason,
-        role: "customer",
+        role: USER_ROLES.CUSTOMER,
     }).catch(() => {});
 
     sendBookingCancelledByAdmin({
@@ -166,7 +167,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         recipientName: booking.therapist.fullName,
         booking,
         reason,
-        role: "therapist",
+        role: USER_ROLES.THERAPIST,
     }).catch(() => {});
 
     logger.info("[AdminBookingService] Booking cancelled", {
@@ -182,7 +183,7 @@ export const adminApproveReschedule = async (bookingId, adminId) => {
         where: { id: bookingId },
     });
     if (!booking) throw new NotFoundError("Booking not found");
-    if (booking.status !== "reschedule_requested") {
+    if (booking.status !== BOOKING_STATUS.RESCHEDULE_REQUESTED) {
         throw new ConflictError("Booking is not awaiting a reschedule decision");
     }
     if (!booking.proposedNewDate) {
@@ -194,7 +195,7 @@ export const adminApproveReschedule = async (bookingId, adminId) => {
         data: {
             scheduledDate: booking.proposedNewDate,
             proposedNewDate: null,
-            status: "confirmed",
+            status: BOOKING_STATUS.CONFIRMED,
         },
         include: BOOKING_INCLUDE,
     });
@@ -212,7 +213,7 @@ export const adminDenyReschedule = async (bookingId, adminId, reason) => {
         where: { id: bookingId },
     });
     if (!booking) throw new NotFoundError("Booking not found");
-    if (booking.status !== "reschedule_requested") {
+    if (booking.status !== BOOKING_STATUS.RESCHEDULE_REQUESTED) {
         throw new ConflictError("Booking is not awaiting a reschedule decision");
     }
 
@@ -220,7 +221,7 @@ export const adminDenyReschedule = async (bookingId, adminId, reason) => {
         where: { id: bookingId },
         data: {
             proposedNewDate: null,
-            status: "confirmed",
+            status: BOOKING_STATUS.CONFIRMED,
         },
         include: BOOKING_INCLUDE,
     });

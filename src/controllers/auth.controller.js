@@ -1,4 +1,5 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
+import { COOKIE_MAX_AGE } from "../utils/constants.js";
 import { supabase } from "../config/supabase.js";
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
@@ -19,7 +20,7 @@ const getAccessTokenCookieOptions = () => {
         httpOnly: true,
         secure: isSecureContext,
         sameSite: isSecureContext ? "none" : "lax", // "none" for cross-origin
-        maxAge: 60 * 60 * 1000,
+        maxAge: COOKIE_MAX_AGE.ONE_HOUR,
         path: "/",
     };
 };
@@ -28,7 +29,7 @@ const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days
     path: "/",
 });
 
@@ -43,7 +44,7 @@ const getRoleCookieOptions = () => ({
     httpOnly: false,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — matches refresh token
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days — matches refresh token
     path: "/",
 });
 
@@ -148,7 +149,7 @@ export const loginController = async (req, res, next) => {
  */
 export const logoutController = async (req, res, next) => {
     try {
-        await logout(req.accessToken);
+        await logout();
 
         // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
         const isSecureContext = process.env.COOKIE_SECURE === "true";
@@ -306,9 +307,12 @@ export const processOAuthController = async (req, res, next) => {
         }
 
         // Verify the session with Supabase and get user
+        console.log("[processOAuth] Verifying token prefix:", accessToken?.slice(0, 20));
         const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser(accessToken);
+        console.log("[processOAuth] getUser result — user:", supabaseUser?.id ?? "null", "error:", userError?.message ?? "none", "status:", userError?.status ?? "none");
 
         if (userError || !supabaseUser) {
+            console.error("[processOAuth] Token rejected by Supabase:", userError?.message);
             return res.status(401).json({
                 success: false,
                 message: "Invalid OAuth session"
@@ -324,46 +328,64 @@ export const processOAuthController = async (req, res, next) => {
             },
         });
 
-        // If user doesn't exists, create a minimal user record
+        // If user doesn't exist by Supabase UUID, check by email before creating.
+        // This handles the case where a Prisma record exists from a different auth
+        // environment (e.g. staging vs production Supabase projects) or from a
+        // prior email/password registration where the UUID differs.
+        // Google guarantees the email is verified so this link is safe.
         if (!user) {
-            // Check if this email was already registered as a patient
-            const existingPatient = await prisma.patient.findFirst({
-                where: {
-                    email: supabaseUser.email.toLowerCase().trim(),
-                    userId: null
-                },
-                include: {
-                    agency: {
-                        select: {
-                            id: true,
-                            fullName: true,
-                            agencyName: true
-                        }
-                    }
-                }
+            const normalizedEmail = supabaseUser.email.toLowerCase().trim();
+
+            const existingByEmail = await prisma.user.findUnique({
+                where: { email: normalizedEmail },
+                include: { customerProfile: true, therapistProfile: true },
             });
 
-            user = await withAdminAccess(async (db) => {
-                return db.user.create({
-                    data: {
-                        id: supabaseUser.id,
-                        email: supabaseUser.email.toLowerCase().trim(),
-                        passwordHash: "",
-                        role: "customer",
-                        emailVerified: true,
-                        isActive: true,
-                        ...(existingPatient && {
-                            patientProfile: {
-                                connect: { id: existingPatient.id }
-                            }
-                        })
-                    },
+            if (existingByEmail) {
+                // Account exists under a different UUID — link by updating the id
+                // to match the current Supabase auth user so future lookups hit by UUID.
+                user = await withAdminAccess(async (db) => {
+                    return db.user.update({
+                        where: { email: normalizedEmail },
+                        data: {
+                            id: supabaseUser.id,
+                            emailVerified: true,
+                        },
+                        include: { customerProfile: true, therapistProfile: true },
+                    });
+                });
+            } else {
+                // Genuinely new user — create the record.
+                const existingPatient = await prisma.patient.findFirst({
+                    where: { email: normalizedEmail, userId: null },
                     include: {
-                        customerProfile: true,
-                        therapistProfile: true,
+                        agency: { select: { id: true, fullName: true, agencyName: true } }
                     }
                 });
-            });
+
+                user = await withAdminAccess(async (db) => {
+                    return db.user.create({
+                        data: {
+                            id: supabaseUser.id,
+                            email: normalizedEmail,
+                            passwordHash: "",
+                            role: "customer",
+                            emailVerified: true,
+                            isActive: true,
+                            ...(existingPatient && {
+                                patientProfile: { connect: { id: existingPatient.id } }
+                            })
+                        },
+                        include: { customerProfile: true, therapistProfile: true },
+                    });
+                });
+            }
+
+            const needsOnboarding = user.role === "customer"
+                ? !user.customerProfile
+                : user.role === "therapist"
+                    ? !user.therapistProfile
+                    : false;
 
             // Set session cookies
             res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
@@ -379,8 +401,7 @@ export const processOAuthController = async (req, res, next) => {
                         email: user.email,
                         role: user.role,
                         emailVerified: user.emailVerified,
-                        needsOnboarding: true,
-                        hasLinkedRecords: Boolean(existingPatient)
+                        needsOnboarding,
                     }
                 }
             });

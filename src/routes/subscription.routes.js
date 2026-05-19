@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     getSubscriptionController,
@@ -16,13 +17,13 @@ import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
-router.get("/current", authenticate, authorize(["customer"]), getSubscriptionController);
-router.post("/checkout", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), createCheckoutController);
-router.post("/billing-portal", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createBillingPortalController);
-router.post("/cancel", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, cancelSubscriptionController);
-router.post("/resume", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, resumeSubscriptionController);
-router.post("/preview-upgrade", authenticate, authorize(["customer"]), validate(createCheckoutSchema), previewUpgradeController);
-router.post("/upgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), upgradeSubscriptionController);
-router.post("/downgrade", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), downgradeSubscriptionController);
+router.get("/current", authenticate, authorize([USER_ROLES.CUSTOMER]), getSubscriptionController);
+router.post("/checkout", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), createCheckoutController);
+router.post("/billing-portal", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createBillingPortalController);
+router.post("/cancel", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, cancelSubscriptionController);
+router.post("/resume", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, resumeSubscriptionController);
+router.post("/preview-upgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(createCheckoutSchema), previewUpgradeController);
+router.post("/upgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), upgradeSubscriptionController);
+router.post("/downgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), downgradeSubscriptionController);
 
 export default router;

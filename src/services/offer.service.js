@@ -1,3 +1,4 @@
+import { OFFER_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { addHours, addMinutes } from "date-fns";
 import {
@@ -42,7 +43,7 @@ export const createOffer = async (therapistId, data) => {
         where: {
             requestId,
             therapistId,
-            status: { in: ["pending", "accepted", "change_requested"] },
+            status: { in: [OFFER_STATUS.PENDING, OFFER_STATUS.ACCEPTED, OFFER_STATUS.CHANGE_REQUESTED] },
         },
     });
 
@@ -79,7 +80,7 @@ export const createOffer = async (therapistId, data) => {
             sessionType,
             proposedDate: new Date(proposedDate),
             description,
-            status: "pending",
+            status: BOOKING_STATUS.PENDING,
             expiresAt,
             attemptedVisitRate: resolvedAttemptedVisitRate,
             ...(visitTypeId && { visitTypeId }),
@@ -244,7 +245,7 @@ export const acceptOffer = async (offerId, customerId) => {
         throw new Error("Unauthorized");
     }
 
-    if (offer.status !== "pending") {
+    if (offer.status !== OFFER_STATUS.PENDING) {
         throw new Error("Offer is no longer available");
     }
 
@@ -260,7 +261,7 @@ export const acceptOffer = async (offerId, customerId) => {
         // prevents the TOCTOU race with the expiry cron
         const txUpdatedOffer = await tx.offer.update({
             where: { id: offerId },
-            data: { status: "accepted" }
+            data: { status: BOOKING_STATUS.ACCEPTED }
         });
 
         // Reject other offers for this request
@@ -268,9 +269,9 @@ export const acceptOffer = async (offerId, customerId) => {
             where: {
                 requestId: offer.requestId,
                 id: { not: offerId },
-                status: "pending",
+                status: BOOKING_STATUS.PENDING,
             },
-            data: { status: "rejected" },
+            data: { status: OFFER_STATUS.REJECTED },
         });
 
         // Update request status
@@ -290,7 +291,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     rate: offer.rate,
                     attemptedVisitRate: offer.attemptedVisitRate,
                     sessionType: offer.sessionType,
-                    status: "accepted",
+                    status: BOOKING_STATUS.ACCEPTED,
                     patientId: offer.request.patientId || null,
                     visitTypeId: effectivePlan.visitTypeId,
                     visitType: effectivePlan.visitType,
@@ -333,7 +334,7 @@ export const acceptOffer = async (offerId, customerId) => {
         }
 
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
-    });
+    }, { timeout: 15000 });
 
     // Event: offer.approved_by_customer
     logAction({
@@ -416,7 +417,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         throw new Error("You are not authorized to revise this offer");
     }
 
-    if (existing.status !== "change_requested") {
+    if (existing.status !== OFFER_STATUS.CHANGE_REQUESTED) {
         throw new Error("This offer cannot be revised in its current state");
     }
 
@@ -453,7 +454,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
             sessionType,
             proposedDate: new Date(proposedDate),
             description,
-            status: "pending",
+            status: BOOKING_STATUS.PENDING,
             expiresAt,
             changeRequestNote: null,
             ...(nextAttemptedVisitRate !== undefined && { attemptedVisitRate: nextAttemptedVisitRate }),
@@ -482,7 +483,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         action: "offer.updated",
         entityType: "offer",
         entityId: offerId,
-        changes: { rate, sessionType, proposedDate, previousStatus: "change_requested" },
+        changes: { rate, sessionType, proposedDate, previousStatus: OFFER_STATUS.CHANGE_REQUESTED },
     });
 
     // System message: offer_revised
@@ -553,7 +554,7 @@ export const declineOffer = async (offerId, customerId) => {
         throw err;
     }
 
-    if (offer.status !== "pending") {
+    if (offer.status !== OFFER_STATUS.PENDING) {
         throw new Error("Only pending offers can be declined");
     }
 
@@ -563,7 +564,7 @@ export const declineOffer = async (offerId, customerId) => {
 
     const updatedOffer = await prisma.offer.update({
         where: { id: offerId },
-        data: { status: "rejected" },
+        data: { status: OFFER_STATUS.REJECTED },
         include: {
             therapist: {
                 include: { user: { select: { id: true, email: true } } }
@@ -649,7 +650,7 @@ export const requestOfferChange = async (offerId, customerId, note) => {
         throw err;
     }
 
-    if (offer.status !== "pending") {
+    if (offer.status !== OFFER_STATUS.PENDING) {
         throw new Error("Only pending offers can have changes requested");
     }
 
@@ -660,7 +661,7 @@ export const requestOfferChange = async (offerId, customerId, note) => {
     const updatedOffer = await prisma.offer.update({
         where: { id: offerId },
         data: {
-            status: "change_requested",
+            status: OFFER_STATUS.CHANGE_REQUESTED,
             changeRequestNote: note,
         }
     });
@@ -726,7 +727,7 @@ export const withdrawOffer = async (offerId, therapistId) => {
         throw err;
     }
 
-    if (!["pending", "change_requested"].includes(offer.status)) {
+    if (![OFFER_STATUS.PENDING, OFFER_STATUS.CHANGE_REQUESTED].includes(offer.status)) {
         throw new Error("Only pending or change-requested offers can be withdrawn");
     }
 

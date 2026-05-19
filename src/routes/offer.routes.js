@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     acceptOfferController, createOfferController,
@@ -14,16 +15,16 @@ import { enforceTherapistLimit } from "../middleware/subscriptionLimits.js";
 const router = express.Router();
 
 // Therapist routes
-router.post("/", authenticate, authorize(["therapist"]), createOfferController);
-router.get("/my-offers", authenticate, authorize(["therapist"]), getTherapistOffersController);
-router.get("/:offerId", authenticate, authorize(["therapist", "customer"]), getOfferByIdController)
-router.put("/:offerId/revise", authenticate, authorize(["therapist"]), reviseOfferController);
-router.post("/:offerId/withdraw", authenticate, authorize(["therapist"]), withdrawOfferController);
+router.post("/", authenticate, authorize([USER_ROLES.THERAPIST]), createOfferController);
+router.get("/my-offers", authenticate, authorize([USER_ROLES.THERAPIST]), getTherapistOffersController);
+router.get("/:offerId", authenticate, authorize([USER_ROLES.THERAPIST, USER_ROLES.CUSTOMER]), getOfferByIdController)
+router.put("/:offerId/revise", authenticate, authorize([USER_ROLES.THERAPIST]), reviseOfferController);
+router.post("/:offerId/withdraw", authenticate, authorize([USER_ROLES.THERAPIST]), withdrawOfferController);
 
 
 // Customer routes
-router.post("/:offerId/accept", authenticate, authorize(["customer"]), enforceTherapistLimit, acceptOfferController);
-router.post("/:offerId/decline", authenticate, authorize(["customer"]), declineOfferController);
-router.post("/:offerId/request-change", authenticate, authorize(["customer"]), validate(requestChangeSchema), requestOfferChangeController);
+router.post("/:offerId/accept", authenticate, authorize([USER_ROLES.CUSTOMER]), enforceTherapistLimit, acceptOfferController);
+router.post("/:offerId/decline", authenticate, authorize([USER_ROLES.CUSTOMER]), declineOfferController);
+router.post("/:offerId/request-change", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(requestChangeSchema), requestOfferChangeController);
 
 export default router;

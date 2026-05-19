@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_STATUS, BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { getOrCreateStripeCustomer } from "./payment.service.js";
@@ -28,14 +29,14 @@ const parseStripeDate = (value) => {
  * Called during registration inside the withAdminAccess transaction.
  */
 export const createTrialSubscription = async (customerId, tx = prisma) => {
-    const trialEndsAt = new Date(Date.now() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
+    const trialEndsAt = new Date(Date.now() + TRIAL_DURATION_DAYS * TIME_MS.TWENTY_FOUR_HOURS);
     const { requestLimit, therapistLimit } = PLAN_CONFIG.standard;
 
     return tx.subscription.create({
         data: {
             customerId,
             planType: "standard",
-            status: "trialing",
+            status: SUBSCRIPTION_STATUS.TRIALING,
             trialEndsAt,
             therapistLimit,
             requestLimit,
@@ -51,7 +52,7 @@ export const getActiveSubscription = async (customerId) => {
     const subscription = await prisma.subscription.findFirst({
         where: {
             customerId,
-            status: { in: ["active", "trialing", "grace_period"] },
+            status: { in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.TRIALING, SUBSCRIPTION_STATUS.GRACE_PERIOD] },
         },
         orderBy: { createdAt: "desc" },
     });
@@ -64,7 +65,7 @@ export const getActiveSubscription = async (customerId) => {
         data: {
             customerId,
             planType: "free",
-            status: "active",
+            status: SUBSCRIPTION_STATUS.ACTIVE,
             therapistLimit,
             requestLimit,
         },
@@ -88,7 +89,7 @@ export const getSubscriptionWithUsage = async (customerId) => {
             by: ["therapistId"],
             where: {
                 customerId,
-                status: { in: ["accepted", "confirmed", "in_progress"] },
+                status: { in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS] },
             },
         }),
     ]);
@@ -179,7 +180,7 @@ export const resumeSubscription = async (customerId) => {
     const subscription = await prisma.subscription.findFirst({
         where: {
             customerId,
-            status: "active",
+            status: SUBSCRIPTION_STATUS.ACTIVE,
             stripeSubscriptionId: { not: null },
             cancelledAt: { not: null },
         },
@@ -450,7 +451,7 @@ export const handleCheckoutCompleted = async (session) => {
         stripePriceId: subscriptionItem?.price?.id || null,
         planType,
         billingInterval: billingInterval || null,
-        status: "active",
+        status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
         currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
         trialEndsAt: null,
@@ -525,7 +526,7 @@ export const handleInvoicePaid = async (invoice) => {
 
     // Check if there's a scheduled downgrade pending
     const updateData = {
-        status: "active",
+        status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
         currentPeriodEnd: periodEnd,
         gracePeriodEndsAt: null,
@@ -601,7 +602,7 @@ export const handleInvoicePaymentFailed = async (invoice) => {
 
     await prisma.subscription.update({
         where: { id: subscription.id },
-        data: { status: "past_due" },
+        data: { status: SUBSCRIPTION_STATUS.PAST_DUE },
     });
 
     // Send payment failed email
@@ -638,12 +639,12 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
 
     if (!subscription) return;
 
-    const gracePeriodEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    const gracePeriodEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * TIME_MS.TWENTY_FOUR_HOURS);
 
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
-            status: "grace_period",
+            status: SUBSCRIPTION_STATUS.GRACE_PERIOD,
             gracePeriodEndsAt,
             cancelledAt: subscription.cancelledAt || new Date(),
         },
@@ -676,12 +677,12 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 
     const statusMap = {
         active: "active",
-        past_due: "past_due",
+        past_due: SUBSCRIPTION_STATUS.PAST_DUE,
         canceled: "cancelled",
-        unpaid: "past_due",
+        unpaid: SUBSCRIPTION_STATUS.PAST_DUE,
         incomplete: "inactive",
         incomplete_expired: "inactive",
-        trialing: "trialing",
+        trialing: SUBSCRIPTION_STATUS.TRIALING,
     };
 
     const mappedStatus = statusMap[stripeSubscription.status] || subscription.status;
@@ -755,7 +756,7 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 export const runTrialExpiry = async () => {
     const expired = await prisma.subscription.findMany({
         where: {
-            status: "trialing",
+            status: SUBSCRIPTION_STATUS.TRIALING,
             trialEndsAt: { lte: new Date() },
         },
         include: { customer: { include: { user: true } } },
@@ -769,7 +770,7 @@ export const runTrialExpiry = async () => {
         await prisma.subscription.update({
             where: { id: sub.id },
             data: {
-                status: "active",
+                status: SUBSCRIPTION_STATUS.ACTIVE,
                 planType: "free",
                 trialEndsAt: null,
                 therapistLimit,
@@ -806,7 +807,7 @@ export const runTrialExpiry = async () => {
 export const runGracePeriodExpiry = async () => {
     const expired = await prisma.subscription.findMany({
         where: {
-            status: "grace_period",
+            status: SUBSCRIPTION_STATUS.GRACE_PERIOD,
             gracePeriodEndsAt: { lte: new Date() },
         },
         include: { customer: { include: { user: true } } },
@@ -820,7 +821,7 @@ export const runGracePeriodExpiry = async () => {
         await prisma.subscription.update({
             where: { id: sub.id },
             data: {
-                status: "active",
+                status: SUBSCRIPTION_STATUS.ACTIVE,
                 planType: "free",
                 gracePeriodEndsAt: null,
                 stripeSubscriptionId: null,

@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     createPaymentIntentController,
@@ -25,24 +26,24 @@ import { createPaymentIntentSchema, refundSchema, paymentMethodIdParamSchema } f
 const router = express.Router();
 
 // Customer routes
-router.post("/create-intent", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
-router.get("/history", authenticate, authorize(["customer"]), getPaymentHistoryController);
-router.post("/refund", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(refundSchema), processRefundController);
+router.post("/create-intent", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
+router.get("/history", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentHistoryController);
+router.post("/refund", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(refundSchema), processRefundController);
 
 // Saved payment methods
-router.get("/methods", authenticate, authorize(["customer"]), getPaymentMethodsController);
-router.post("/methods/setup", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createSetupIntentController);
-router.delete("/methods/:paymentMethodId", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
-router.post("/methods/:paymentMethodId/default", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
+router.get("/methods", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentMethodsController);
+router.post("/methods/setup", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createSetupIntentController);
+router.delete("/methods/:paymentMethodId", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
+router.post("/methods/:paymentMethodId/default", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
 
 // Customer Connect account (for receiving refunds)
-router.post("/customer-connect/create", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createCustomerConnectAccountController);
-router.get("/customer-connect/status", authenticate, authorize(["customer"]), getCustomerConnectStatusController);
-router.post("/customer-connect/account-session", authenticate, authorize(["customer"]), sensitiveOperationRateLimiter, createCustomerAccountSessionController);
+router.post("/customer-connect/create", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createCustomerConnectAccountController);
+router.get("/customer-connect/status", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerConnectStatusController);
+router.post("/customer-connect/account-session", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createCustomerAccountSessionController);
 
 // Customer refund endpoints
-router.get("/refunds/summary", authenticate, authorize(["customer"]), getCustomerRefundSummaryController);
-router.get("/refunds/history", authenticate, authorize(["customer"]), getCustomerRefundHistoryController);
+router.get("/refunds/summary", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerRefundSummaryController);
+router.get("/refunds/history", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerRefundHistoryController);
 
 // Commission rate (authenticated — therapists need this for offer UI)
 router.get("/commission-rate", authenticate, async (req, res, next) => {
@@ -54,16 +55,16 @@ router.get("/commission-rate", authenticate, async (req, res, next) => {
 });
 
 // Therapist routes
-router.post("/connect/create", authenticate, authorize(["therapist"]), createConnectAccountController);
-router.get("/connect/status", authenticate, authorize(["therapist"]), getConnectAccountStatusController);
+router.post("/connect/create", authenticate, authorize([USER_ROLES.THERAPIST]), createConnectAccountController);
+router.get("/connect/status", authenticate, authorize([USER_ROLES.THERAPIST]), getConnectAccountStatusController);
 
 // Account Session — creates a short-lived client_secret for the frontend
 // StripeConnectProvider (embedded onboarding + earnings dashboard components).
 // Rate-limited: Stripe sessions expire after ~60 min and fetchClientSecret is
 // called automatically, so normal usage is well within the 20/hr limit.
-router.post("/account-session", authenticate, authorize(["therapist"]), sensitiveOperationRateLimiter, createAccountSessionController);
+router.post("/account-session", authenticate, authorize([USER_ROLES.THERAPIST]), sensitiveOperationRateLimiter, createAccountSessionController);
 
-router.get("/payouts", authenticate, authorize(["therapist"]), getPayoutHistoryController);
+router.get("/payouts", authenticate, authorize([USER_ROLES.THERAPIST]), getPayoutHistoryController);
 // /dashboard/create removed — external Stripe Express Dashboard replaced by embedded ConnectBalances.
 
 // NOTE: Payment release is handled exclusively through the session confirmation flow:

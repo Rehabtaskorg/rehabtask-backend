@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -106,7 +107,7 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
         },
     });
     if (!subscription) throw new NotFoundError("Subscription not found");
-    if (subscription.status === "cancelled") {
+    if (subscription.status === BOOKING_STATUS.CANCELLED) {
         throw new ConflictError("Subscription is already cancelled");
     }
 
@@ -115,7 +116,7 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
         const updated = await prisma.subscription.update({
             where: { id: subscriptionId },
             data: {
-                status: "active",
+                status: SUBSCRIPTION_STATUS.ACTIVE,
                 planType: "free",
                 therapistLimit: PLAN_CONFIG.free.therapistLimit,
                 requestLimit: PLAN_CONFIG.free.requestLimit,
@@ -150,7 +151,7 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
 
     const updated = await prisma.subscription.update({
         where: { id: subscriptionId },
-        data: { status: "cancelled" },
+        data: { status: BOOKING_STATUS.CANCELLED },
     });
 
     sendSubscriptionCancelledByAdmin({
@@ -168,16 +169,16 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
 export const adminGetSubscriptionStats = async () => {
     const [total, active, inactive, cancelled, pastDue, trialing, gracePeriod, byPlan] = await Promise.all([
         prisma.subscription.count(),
-        prisma.subscription.count({ where: { status: "active" } }),
-        prisma.subscription.count({ where: { status: "inactive" } }),
-        prisma.subscription.count({ where: { status: "cancelled" } }),
-        prisma.subscription.count({ where: { status: "past_due" } }),
-        prisma.subscription.count({ where: { status: "trialing" } }),
-        prisma.subscription.count({ where: { status: "grace_period" } }),
+        prisma.subscription.count({ where: { status: SUBSCRIPTION_STATUS.ACTIVE } }),
+        prisma.subscription.count({ where: { status: SUBSCRIPTION_STATUS.INACTIVE } }),
+        prisma.subscription.count({ where: { status: BOOKING_STATUS.CANCELLED } }),
+        prisma.subscription.count({ where: { status: SUBSCRIPTION_STATUS.PAST_DUE } }),
+        prisma.subscription.count({ where: { status: SUBSCRIPTION_STATUS.TRIALING } }),
+        prisma.subscription.count({ where: { status: SUBSCRIPTION_STATUS.GRACE_PERIOD } }),
         prisma.subscription.groupBy({
             by: ["planType"],
             _count: { id: true },
-            where: { status: { in: ["active", "trialing", "grace_period"] } },
+            where: { status: { in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.TRIALING, SUBSCRIPTION_STATUS.GRACE_PERIOD] } },
         }),
     ]);
 

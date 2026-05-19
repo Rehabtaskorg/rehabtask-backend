@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import {
     sendBookingRescheduleProposed,
@@ -174,7 +175,7 @@ export const rescheduleBooking = async (bookingId, therapistId, newDate) => {
     const updatedBooking = await prisma.booking.update({
         where: { id: bookingId },
         data: {
-            status: "reschedule_requested",
+            status: BOOKING_STATUS.RESCHEDULE_REQUESTED,
             proposedNewDate: proposedDate
         },
     });
@@ -218,14 +219,12 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
         throw err;
     }
 
-    if (booking.status !== "reschedule_requested") {
+    if (booking.status !== BOOKING_STATUS.RESCHEDULE_REQUESTED) {
         throw new Error("No pending reschedule request for this booking");
     }
 
-    // Determine which status to restore based on whether payment was made
-    // If session exists, payment was made → restore to "confirmed"
-    // If no session, booking is pre-payment → restore to "accepted" (new flow) or "pending" (legacy)
-    const restoreStatus = booking.session ? "confirmed" : "accepted";
+    // Determine which status to restore based on whether sessions exist.
+    const restoreStatus = booking.sessions?.length > 0 ? "confirmed" : "accepted";
     const newScheduledDate = booking.proposedNewDate;
 
     if (accept) {
@@ -239,7 +238,7 @@ export const respondToReschedule = async (bookingId, customerId, accept, reason)
         });
 
         // Also update the first scheduled session's date if it exists
-        const firstSession = booking.sessions?.find(s => s.status === "scheduled");
+        const firstSession = booking.sessions?.find(s => s.status === SESSION_STATUS.SCHEDULED);
         if (firstSession) {
             await prisma.session.update({
                 where: { id: firstSession.id },

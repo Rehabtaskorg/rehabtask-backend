@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     createReviewController,
@@ -13,7 +14,7 @@ const router = express.Router();
 router.post(
     "/",
     authenticate,
-    authorize(["customer"]),
+    authorize([USER_ROLES.CUSTOMER]),
     validate(createReviewSchema),
     createReviewController
 );
@@ -22,7 +23,7 @@ router.post(
 router.get(
     "/my-reviews",
     authenticate,
-    authorize(["customer"]),
+    authorize([USER_ROLES.CUSTOMER]),
     getCustomerReviewsController
 );
 

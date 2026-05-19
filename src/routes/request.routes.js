@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
     createRequestController, getAvailableRequestsController,
@@ -12,12 +13,12 @@ import { enforceRequestLimit } from "../middleware/subscriptionLimits.js";
 
 const router = express.Router();
 
-router.post("/", authenticate, authorize(["customer"]), enforceRequestLimit, validate(createRequestSchema), createRequestController);
-router.get("/my-requests", authenticate, authorize(["customer"]), getCustomerRequestsController);
-router.get("/available", authenticate, authorize(["therapist"]), getAvailableRequestsController);
-router.get("/by-customer/:customerUserId", authenticate, authorize(["therapist"]), getCustomerOpenRequestsController);
+router.post("/", authenticate, authorize([USER_ROLES.CUSTOMER]), enforceRequestLimit, validate(createRequestSchema), createRequestController);
+router.get("/my-requests", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerRequestsController);
+router.get("/available", authenticate, authorize([USER_ROLES.THERAPIST]), getAvailableRequestsController);
+router.get("/by-customer/:customerUserId", authenticate, authorize([USER_ROLES.THERAPIST]), getCustomerOpenRequestsController);
 router.get("/:requestId", authenticate, getRequestByIdController);
-router.put("/:requestId", authenticate, authorize(["customer"]), validate(updateRequestSchema), updateRequestController);
-router.post("/:requestId/cancel", authenticate, authorize(["customer"]), cancelRequestController);
+router.put("/:requestId", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(updateRequestSchema), updateRequestController);
+router.post("/:requestId/cancel", authenticate, authorize([USER_ROLES.CUSTOMER]), cancelRequestController);
 
 export default router;

@@ -6,12 +6,8 @@ import {
     getPlatformStatsController,
 } from "../controllers/therapist.controller.js";
 import { optionalAuthenticate } from "../middleware/auth.js";
-import { validate, validateMultiple } from "../middleware/validate.js";
-import {
-    searchTherapistsSchema,
-    therapistIdParamSchema,
-    reviewsPaginationSchema
-} from "../validators/therapist.schema.js";
+import { validate } from "../middleware/validate.js";
+import { searchTherapistsSchema } from "../validators/therapist.schema.js";
 
 const router = express.Router();
 

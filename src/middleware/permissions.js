@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { AuthorizationError } from "../utils/errors.js";
 
@@ -17,12 +18,12 @@ export const requirePermission = (module) => {
                 return next(new AuthorizationError("Authentication required"));
             }
 
-            if (user.role === "admin") {
+            if (user.role === USER_ROLES.ADMIN) {
                 return next();
             }
 
             // Sub-admins: look up their profile and check permissions
-            if (user.role === "sub_admin") {
+            if (user.role === USER_ROLES.SUB_ADMIN) {
                 const profile = await prisma.subAdminProfile.findUnique({
                     where: { userId: user.id },
                 });

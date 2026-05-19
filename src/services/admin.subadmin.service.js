@@ -1,3 +1,4 @@
+import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
@@ -98,7 +99,7 @@ export const createSubAdmin = async (email, permissions, adminId) => {
 
     const { data: inviteData, error: inviteError } =
         await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            data: { role: "sub_admin" },
+            data: { role: USER_ROLES.SUB_ADMIN },
             redirectTo: `${env.FRONTEND_URL}/invite/accept`,
         });
 
@@ -114,7 +115,7 @@ export const createSubAdmin = async (email, permissions, adminId) => {
         data: {
             id: inviteData.user.id,
             email,
-            role: "sub_admin",
+            role: USER_ROLES.SUB_ADMIN,
             isActive: true,
             subAdminProfile: {
                 create: {
@@ -146,13 +147,13 @@ export const promoteToSubAdmin = async (userId, permissions, adminId) => {
         include: { subAdminProfile: true },
     });
     if (!user) throw new NotFoundError("User not found");
-    if (user.role === "admin") throw new BadRequestError("Cannot modify an admin account");
+    if (user.role === USER_ROLES.ADMIN) throw new BadRequestError("Cannot modify an admin account");
     if (user.subAdminProfile) throw new ConflictError("User already has a sub-admin profile");
 
     const updated = await prisma.user.update({
         where: { id: userId },
         data: {
-            role: "sub_admin",
+            role: USER_ROLES.SUB_ADMIN,
             subAdminProfile: {
                 create: {
                     permissions,
@@ -234,7 +235,7 @@ export const resendSubAdminInvite = async (userId) => {
     if (user.emailVerified) throw new ConflictError("Sub-admin has already accepted their invite");
 
     const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(user.email, {
-        data: { role: "sub_admin" },
+        data: { role: USER_ROLES.SUB_ADMIN },
         redirectTo: `${env.FRONTEND_URL}/invite/accept`,
     });
     if (error) throw new BadRequestError(`Failed to resend invite: ${error.message}`);

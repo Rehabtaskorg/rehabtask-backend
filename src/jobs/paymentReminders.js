@@ -1,3 +1,4 @@
+import { BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { sendPaymentReminder } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
@@ -15,14 +16,13 @@ import { logger } from "../config/logger.js";
  */
 export const runPaymentReminders = async () => {
     const now = new Date();
-    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-    const twentyHoursAgo = new Date(now.getTime() - 20 * 60 * 60 * 1000);
+    const in48h = new Date(now.getTime() + TIME_MS.FORTY_EIGHT_HOURS);
+    const twentyHoursAgo = new Date(now.getTime() - TIME_MS.TWENTY_HOURS);
 
     // Find accepted bookings with scheduledDate within the next 48 hours
     const bookings = await prisma.booking.findMany({
         where: {
-            status: "accepted",
+            status: BOOKING_STATUS.ACCEPTED,
             scheduledDate: {
                 gt: now,
                 lte: in48h,
@@ -47,7 +47,7 @@ export const runPaymentReminders = async () => {
     let skipped = 0;
 
     for (const booking of bookings) {
-        const hoursUntil = (new Date(booking.scheduledDate).getTime() - now.getTime()) / (60 * 60 * 1000);
+        const hoursUntil = (new Date(booking.scheduledDate).getTime() - now.getTime()) / (TIME_MS.ONE_HOUR);
 
         // Determine if we should send a reminder
         let shouldSend = false;
