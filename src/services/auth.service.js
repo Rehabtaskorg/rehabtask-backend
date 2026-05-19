@@ -40,6 +40,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
     }
 
     try {
+        const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
         const { data, error } = await supabase.auth.signUp({
             email: normalizedEmail,
             password,
@@ -50,7 +51,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                     role: USER_ROLES.CUSTOMER,
                     customer_type: customerType,
                 },
-                emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
+                emailRedirectTo: `${frontendUrl}/verify-callback`
             }
         })
 
@@ -221,7 +222,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
     }
 
     try {
-
+        const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
         const { data, error } = await supabase.auth.signUp({
             email: normalizedEmail,
             password,
@@ -231,7 +232,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
                     full_name: fullName,
                     role: USER_ROLES.THERAPIST,
                 },
-                emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
+                emailRedirectTo: `${frontendUrl}/verify-callback`
             }
         });
 
@@ -601,11 +602,12 @@ export const changePassword = async ({ userId, currentPassword, newPassword }) =
 export const resendVerificationEmail = async ({ email }) => {
     const normalizedEmail = email.toLowerCase().trim();
 
+    const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
     const { error } = await supabase.auth.resend({
         type: "signup",
         email: normalizedEmail,
         options: {
-            emailRedirectTo: `${process.env.FRONTEND_URL}/verify-callback`
+            emailRedirectTo: `${frontendUrl}/verify-callback`
         }
     });
 
