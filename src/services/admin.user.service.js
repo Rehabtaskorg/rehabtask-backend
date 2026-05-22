@@ -130,7 +130,7 @@ export const updateUser = async (userId, updates, adminId) => {
     });
     if (!user) throw new NotFoundError("User not found");
 
-    const { email, fullName, phone, customerType, agencyName, primaryLicenseType, bio } = updates;
+    const { email, fullName, phone, customerType, agencyName, primaryLicenseType, professionalSummary } = updates;
 
     // Update email in both Supabase and Prisma
     if (email && email !== user.email) {
@@ -162,7 +162,7 @@ export const updateUser = async (userId, updates, adminId) => {
     if (fullName !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.fullName = fullName;
     if (phone !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.phone = phone;
     if (primaryLicenseType !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.primaryLicenseType = primaryLicenseType;
-    if (bio !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.bio = bio;
+    if (professionalSummary !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.professionalSummary = professionalSummary;
 
     if (Object.keys(therapistFields).length > 0 && user.therapistProfile) {
         await prisma.therapistProfile.update({
