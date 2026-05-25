@@ -121,9 +121,14 @@ export const newRequestNotification = ({ therapist, request }) => {
     };
 };
 
-// Direct Request Notification (to the specific targeted therapist only)
-// PHI fields are commented out pending BAA signature with Resend.
-// TODO: Uncomment PHI fields after BAA is signed with Resend.
+/**
+ * Direct Request Notification — sent only to the single targeted therapist.
+ * PHI fields are commented out pending BAA signature with Resend.
+ * TODO: Uncomment PHI fields after BAA is signed with Resend.
+ *
+ * @param {{ therapist: { fullName: string }, request: { id: string } }} props
+ * @returns {{ subject: string, html: string }}
+ */
 export const directRequestNotification = ({ therapist, request }) => {
     // const truncatedDesc = request.description && request.description.length > 150
     //     ? request.description.slice(0, 150) + '...'
