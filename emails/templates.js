@@ -121,6 +121,32 @@ export const newRequestNotification = ({ therapist, request }) => {
     };
 };
 
+// Direct Request Notification (to the specific targeted therapist only)
+// PHI fields are commented out pending BAA signature with Resend.
+// TODO: Uncomment PHI fields after BAA is signed with Resend.
+export const directRequestNotification = ({ therapist, request }) => {
+    // const truncatedDesc = request.description && request.description.length > 150
+    //     ? request.description.slice(0, 150) + '...'
+    //     : request.description;
+
+    return {
+        subject: 'You have a new direct therapy request',
+        html: layout(`
+            ${heading('Direct Therapy Request')}
+            ${text(`Hi ${therapist.fullName},`)}
+            ${text('A customer has sent a therapy request directly to you. This request is private and only visible to you.')}
+            ${text('Log in to view the full details and submit an offer if you\'re available.')}
+            ${hr()}
+            ${/* TODO: Uncomment after BAA is signed with Resend */ ''}
+            ${/* field('Service Type', request.serviceType) */ ''}
+            ${/* field('Location', request.location) */ ''}
+            ${/* field('Preferred Date', formatDate(request.preferredDate)) */ ''}
+            ${/* truncatedDesc ? field('Description', truncatedDesc) : '' */ ''}
+            ${button(`${FRONTEND_URL}/therapist/requests/${request.id}`, 'View Request')}
+        `),
+    };
+};
+
 // New Offer Notification (to customer)
 export const newOfferNotification = ({ customer, therapist, offer }) => {
     const expiryDate = offer.expiresAt ? formatDate(offer.expiresAt) : null;

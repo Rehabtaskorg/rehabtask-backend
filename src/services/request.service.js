@@ -2,7 +2,7 @@ import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES 
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
-import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated } from "./email.service.js";
+import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDirectRequestNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
@@ -28,14 +28,21 @@ export const createRequest = async (customerId, data, customerProfile) => {
         }
     }
 
-    // For direct requests, verify the target therapist exists and is approved
+    // For direct requests, verify the target therapist exists and is approved.
+    // Fetch fullName and user email here so we can notify them after the request is created.
+    let directTargetTherapist = null;
     if (requestType === "DIRECT") {
-        const therapist = await prisma.therapistProfile.findUnique({
+        directTargetTherapist = await prisma.therapistProfile.findUnique({
             where: { id: targetTherapistId },
-            select: { id: true, approvalStatus: true },
+            select: {
+                id: true,
+                fullName: true,
+                approvalStatus: true,
+                user: { select: { email: true } },
+            },
         });
-        if (!therapist) throw new Error("Target therapist not found");
-        if (therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new Error("Target therapist is not available");
+        if (!directTargetTherapist) throw new Error("Target therapist not found");
+        if (directTargetTherapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new Error("Target therapist is not available");
     }
 
     const geocoded = await geocodeAddress(location);
@@ -80,6 +87,14 @@ export const createRequest = async (customerId, data, customerProfile) => {
     // Auto-persist EMR and legacy string visit_type values to the lookup table.
     if (!visitTypeId && visitType) await ensureOption("visit_type", visitType);
     if (emr) await ensureOption("emr", emr);
+
+    // Notify the targeted therapist — ONLY for direct requests
+    if (requestType === "DIRECT" && directTargetTherapist) {
+        sendDirectRequestNotification({
+            therapist: directTargetTherapist,
+            request,
+        }).catch(() => { });
+    }
 
     // Notify matching therapists — ONLY for public requests
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {
