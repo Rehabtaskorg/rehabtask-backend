@@ -10,6 +10,7 @@ import {
     therapistRejected,
     subscriptionActivated,
     newRequestNotification,
+    directRequestNotification,
     newOfferNotification,
     offerAccepted,
     paymentConfirmation,
@@ -111,6 +112,13 @@ export const sendNewRequestNotifications = async ({ therapists, request, custome
             dispatch(therapist.user.email, newRequestNotification, { therapist, request, customer })
         )
     );
+};
+
+/**
+ * Direct therapy request created — notify the single targeted therapist only
+ */
+export const sendDirectRequestNotification = async ({ therapist, request }) => {
+    return dispatch(therapist.user.email, directRequestNotification, { therapist, request });
 };
 
 /**
