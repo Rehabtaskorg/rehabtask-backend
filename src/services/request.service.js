@@ -6,6 +6,7 @@ import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDir
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
+import { NotFoundError, BadRequestError } from "../utils/errors.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
@@ -41,8 +42,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
                 user: { select: { email: true } },
             },
         });
-        if (!directTargetTherapist) throw new Error("Target therapist not found");
-        if (directTargetTherapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new Error("Target therapist is not available");
+        if (!directTargetTherapist) throw new NotFoundError("Target therapist not found");
+        if (directTargetTherapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new BadRequestError("Target therapist is not available");
     }
 
     const geocoded = await geocodeAddress(location);
@@ -88,12 +89,12 @@ export const createRequest = async (customerId, data, customerProfile) => {
     if (!visitTypeId && visitType) await ensureOption("visit_type", visitType);
     if (emr) await ensureOption("emr", emr);
 
-    // Notify the targeted therapist — ONLY for direct requests
+    // Notify the targeted therapist — ONLY for direct requests (fire-and-forget, non-blocking)
     if (requestType === "DIRECT" && directTargetTherapist) {
         sendDirectRequestNotification({
             therapist: directTargetTherapist,
             request,
-        }).catch(() => { });
+        }).catch((err) => logger.error("[RequestService] Failed to send direct request notification", { error: err.message }));
     }
 
     // Notify matching therapists — ONLY for public requests
