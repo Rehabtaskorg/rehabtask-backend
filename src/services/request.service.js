@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
+import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES, LICENSE_TYPE_TO_SERVICE_TYPE } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
@@ -200,7 +200,7 @@ export const getRequestById = async (requestId, userId) => {
 }
 
 // GEO-FILTERED: Only return requests within the therapist's work area radii
-export const getAvailableRequests = async (therapistId, { serviceType, show, page = 1, limit = 20 } = {}) => {
+export const getAvailableRequests = async (therapistId, { primaryLicenseType, serviceType, show, page = 1, limit = 20 } = {}) => {
     // Fetch therapist's work areas
     const workAreas = await prisma.workArea.findMany({
         where: { therapistId },
@@ -211,12 +211,25 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
         return { requests: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
 
-    // Build where clause with server-side filters
+    // Resolve the allowed service type from the therapist's license type.
+    // Falls back to null if the license type is unrecognised — in that case
+    // the PUBLIC branch is omitted entirely (safe default: show nothing).
+    const allowedServiceType = primaryLicenseType
+        ? (LICENSE_TYPE_TO_SERVICE_TYPE[primaryLicenseType] ?? null)
+        : null;
+
+    // Build where clause with server-side filters.
+    // PUBLIC requests are filtered to the therapist's own discipline.
+    // DIRECT requests bypass the discipline filter — the customer chose this
+    // therapist specifically, so we always show it regardless of service type.
+    const publicFilter = allowedServiceType
+        ? { requestType: "PUBLIC", serviceType: allowedServiceType }
+        : null;
+
     const where = {
         status: { in: ["created", "offers_received"] },
-        // Visibility: public requests OR direct requests targeting this therapist
         OR: [
-            { requestType: "PUBLIC" },
+            ...(publicFilter ? [publicFilter] : []),
             { requestType: "DIRECT", targetTherapistId: therapistId },
         ],
         NOT: {
@@ -229,6 +242,8 @@ export const getAvailableRequests = async (therapistId, { serviceType, show, pag
         },
     };
 
+    // Additional client-side serviceType filter (from query param) — applies to
+    // both branches since the therapist is explicitly searching by type.
     if (serviceType) {
         where.serviceType = { contains: serviceType, mode: "insensitive" };
     }
