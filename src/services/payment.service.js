@@ -8,6 +8,7 @@ import {
 import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
 import { logAction, logSystemEvent } from "./audit.service.js";
+import { trackServerEvent } from "../config/posthog.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 
@@ -722,6 +723,15 @@ const releaseSessionPayout = async ({ session, payment, booking, isLast }) => {
         isLast,
         newReleasedAmount,
     });
+
+    // Fire-and-forget analytics — use therapist userId as the distinct ID
+    if (booking.therapist?.userId) {
+        trackServerEvent(booking.therapist.userId, "payout_sent", {
+            amount: perSessionTherapistPayout,
+            session_number: session.sessionNumber,
+            is_last: isLast,
+        });
+    }
 
     return sessionPayout;
 };

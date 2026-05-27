@@ -2,6 +2,7 @@ import { TIME_MS, SESSION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { releaseSessionPayout } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
+import { trackServerEvent } from "../config/posthog.js";
 
 /**
  * Auto-confirm sessions that were marked complete by therapist but not
@@ -26,6 +27,7 @@ export const runAutoConfirm = async () => {
                 include: {
                     therapist: true,
                     payment: true,
+                    customer: { select: { user: { select: { id: true } } } },
                 },
             },
         },
@@ -62,6 +64,15 @@ export const runAutoConfirm = async () => {
                     }
                     return false;
                 }, { timeout: 10000 });
+
+                // Fire-and-forget analytics for auto-confirmed session
+                const customerUserId = session.booking.customer?.user?.id;
+                if (customerUserId) {
+                    trackServerEvent(customerUserId, "session_auto_confirmed", {
+                        session_number: session.sessionNumber,
+                        booking_id: session.bookingId,
+                    });
+                }
 
                 // Per-session payout — release for this session immediately
                 const payment = session.booking.payment;
