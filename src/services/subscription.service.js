@@ -11,6 +11,7 @@ import {
 import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, TRIAL_DURATION_DAYS, GRACE_PERIOD_DAYS, getStripePriceId, getPlanFromPriceId } from "../config/subscriptionPlans.js";
 import { logSystemEvent } from "./audit.service.js";
+import { trackServerEvent } from "../config/posthog.js";
 
 /**
  * Safely parse a Stripe timestamp to a Date.
@@ -474,7 +475,7 @@ export const handleCheckoutCompleted = async (session) => {
         });
     }
 
-    // Send activation email
+    // Send activation email and fire analytics
     try {
         const customer = await prisma.customerProfile.findUnique({
             where: { id: customerId },
@@ -482,6 +483,12 @@ export const handleCheckoutCompleted = async (session) => {
         });
         if (customer) {
             await sendSubscriptionActivated({ customer, subscription });
+            if (customer.user?.id) {
+                trackServerEvent(customer.user.id, "subscription_activated", {
+                    plan_type: planType,
+                    billing_interval: billingInterval || null,
+                });
+            }
         }
     } catch (err) {
         logger.error("[Subscription] Failed to send activation email", { error: err.message });
@@ -584,6 +591,19 @@ export const handleInvoicePaid = async (invoice) => {
         changes: { stripeSubscriptionId, periodEnd: parseStripeDate(invoice.lines?.data[0]?.period?.end) },
     });
 
+    // Fire-and-forget analytics
+    prisma.customerProfile.findUnique({
+        where: { id: subscription.customerId },
+        select: { user: { select: { id: true } } },
+    }).then((customer) => {
+        if (customer?.user?.id) {
+            trackServerEvent(customer.user.id, "subscription_renewed", {
+                plan_type: updateData.planType ?? subscription.planType,
+                billing_interval: updateData.billingInterval ?? subscription.billingInterval,
+            });
+        }
+    }).catch(() => { });
+
     logger.info("[Subscription] Invoice paid — period renewed", { subscriptionId: subscription.id });
 };
 
@@ -605,13 +625,20 @@ export const handleInvoicePaymentFailed = async (invoice) => {
         data: { status: SUBSCRIPTION_STATUS.PAST_DUE },
     });
 
-    // Send payment failed email
+    // Send payment failed email and fire analytics
     try {
         const customer = await prisma.customerProfile.findUnique({
             where: { id: subscription.customerId },
             include: { user: true },
         });
-        if (customer) await sendSubscriptionPaymentFailed({ customer });
+        if (customer) {
+            await sendSubscriptionPaymentFailed({ customer });
+            if (customer.user?.id) {
+                trackServerEvent(customer.user.id, "subscription_payment_failed", {
+                    plan_type: subscription.planType,
+                });
+            }
+        }
     } catch (err) {
         logger.error("[Subscription] Failed to send payment failed email", { error: err.message });
     }
@@ -657,6 +684,18 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
         entityId: subscription.id,
         changes: { previousPlan: subscription.planType, gracePeriodEndsAt },
     });
+
+    // Fire-and-forget analytics
+    prisma.customerProfile.findUnique({
+        where: { id: subscription.customerId },
+        select: { user: { select: { id: true } } },
+    }).then((customer) => {
+        if (customer?.user?.id) {
+            trackServerEvent(customer.user.id, "subscription_cancelled", {
+                plan_type: subscription.planType,
+            });
+        }
+    }).catch(() => { });
 
     logger.info("[Subscription] Deleted — entering grace period", {
         subscriptionId: subscription.id,
