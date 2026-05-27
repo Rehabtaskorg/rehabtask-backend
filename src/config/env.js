@@ -53,6 +53,9 @@ const envSchema = z.object({
 
     // Better Stack
     BETTERSTACK_LOG_TOKEN: z.string().optional(),
+
+    // PostHog (server-side analytics)
+    POSTHOG_API_KEY: z.string().optional(),
 });
 
 /**
@@ -116,4 +119,5 @@ export const {
     GOOGLE_MAPS_API_KEY,
     SENTRY_DSN,
     BETTERSTACK_LOG_TOKEN,
+    POSTHOG_API_KEY,
 } = env;

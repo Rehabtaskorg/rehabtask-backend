@@ -5,6 +5,7 @@ import { prisma, withAdminAccess } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendCustomerStripeRequirementsAlert } from "../services/email.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
+import { trackServerEvent } from "../config/posthog.js";
 
 /**
  * Handle Stripe webhooks
@@ -135,8 +136,26 @@ const handlePaymentIntentSucceeded = async (paymentIntent) => {
             return;
         }
 
-        await paymentService.handlePaymentSuccess(paymentIntent.id);
+        const payment = await paymentService.handlePaymentSuccess(paymentIntent.id);
         console.log("Payment moved to escrow successfully");
+
+        // Fire-and-forget analytics — never awaited, never throws
+        if (payment?.bookingId) {
+            prisma.booking.findUnique({
+                where: { id: payment.bookingId },
+                select: {
+                    sessionType: true,
+                    customer: { select: { user: { select: { id: true } } } },
+                },
+            }).then((booking) => {
+                if (booking?.customer?.user?.id) {
+                    trackServerEvent(booking.customer.user.id, "payment_confirmed", {
+                        session_type: booking.sessionType,
+                        amount: parseFloat(payment.amount),
+                    });
+                }
+            }).catch(() => { });
+        }
     } catch (error) {
         console.error("Error handling payment success:", error);
         throw error;
@@ -175,6 +194,18 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                 customer: { ...payment.booking, user: null },
                 booking: payment.booking,
                 reason: paymentIntent.last_payment_error?.message,
+            }).catch(() => { });
+
+            // Fire-and-forget analytics — resolve customer userId for identify
+            prisma.booking.findUnique({
+                where: { id: payment.bookingId },
+                select: { customer: { select: { user: { select: { id: true } } } } },
+            }).then((booking) => {
+                if (booking?.customer?.user?.id) {
+                    trackServerEvent(booking.customer.user.id, "payment_failed", {
+                        booking_id: payment.bookingId,
+                    });
+                }
             }).catch(() => { });
         }
 
