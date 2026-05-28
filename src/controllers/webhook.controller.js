@@ -29,6 +29,18 @@ const handleStripeWebhook = async (req, res) => {
 
 
     try {
+        // DEBUG — log every incoming event so we can audit exactly what Stripe sends.
+        // Remove this block once the event registration investigation is complete.
+        logger.info("[Webhook][DEBUG] Incoming Stripe event", {
+            type: event.type,
+            id: event.id,
+            account: event.account ?? "(platform)",
+            livemode: event.livemode,
+            apiVersion: event.api_version,
+            dataKeys: event.data?.object ? Object.keys(event.data.object) : [],
+            data: event.data?.object,
+        });
+
         switch (event.type) {
             // Payment Flow
             case "payment_intent.succeeded":
@@ -108,7 +120,13 @@ const handleStripeWebhook = async (req, res) => {
                 break;
 
             default:
-                console.log(`Unhandled event type:${event.type}`);
+                // DEBUG — surface unhandled event types so we can see v2 events
+                // or anything not yet registered. Remove once investigation is complete.
+                logger.info("[Webhook][DEBUG] Unhandled event type", {
+                    type: event.type,
+                    id: event.id,
+                    account: event.account ?? "(platform)",
+                });
         }
 
         res.json({ received: true, event: event.type });
@@ -460,6 +478,19 @@ const handleAccountUpdated = async (account, accountId) => {
 }
 
 const handleTherapistAccountUpdated = async (account, therapist) => {
+    // DEBUG — log the full requirements snapshot so we can see what triggered this call.
+    // Remove once investigation is complete.
+    logger.info("[Webhook][DEBUG] handleTherapistAccountUpdated", {
+        therapistId: therapist.id,
+        stripeAccountId: account.id,
+        detailsSubmitted: account.details_submitted,
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        requirements: account.requirements,
+        futureRequirements: account.future_requirements,
+        controller: account.controller,
+    });
+
     const isOnboardingComplete =
         account.details_submitted === true &&
         account.charges_enabled === true;
