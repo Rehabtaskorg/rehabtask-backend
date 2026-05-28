@@ -31,15 +31,19 @@ const handleStripeWebhook = async (req, res) => {
     try {
         // DEBUG — log every incoming event so we can audit exactly what Stripe sends.
         // Remove this block once the event registration investigation is complete.
-        logger.info("[Webhook][DEBUG] Incoming Stripe event", {
+        console.log("[Webhook][DEBUG] Incoming Stripe event: " + JSON.stringify({
             type: event.type,
             id: event.id,
             account: event.account ?? "(platform)",
             livemode: event.livemode,
             apiVersion: event.api_version,
             dataKeys: event.data?.object ? Object.keys(event.data.object) : [],
-            data: event.data?.object,
-        });
+            requirements: event.data?.object?.requirements ?? null,
+            futureRequirements: event.data?.object?.future_requirements ?? null,
+            chargesEnabled: event.data?.object?.charges_enabled ?? null,
+            payoutsEnabled: event.data?.object?.payouts_enabled ?? null,
+            detailsSubmitted: event.data?.object?.details_submitted ?? null,
+        }));
 
         switch (event.type) {
             // Payment Flow
@@ -122,11 +126,11 @@ const handleStripeWebhook = async (req, res) => {
             default:
                 // DEBUG — surface unhandled event types so we can see v2 events
                 // or anything not yet registered. Remove once investigation is complete.
-                logger.info("[Webhook][DEBUG] Unhandled event type", {
+                console.log("[Webhook][DEBUG] Unhandled event type: " + JSON.stringify({
                     type: event.type,
                     id: event.id,
                     account: event.account ?? "(platform)",
-                });
+                }));
         }
 
         res.json({ received: true, event: event.type });
@@ -480,7 +484,7 @@ const handleAccountUpdated = async (account, accountId) => {
 const handleTherapistAccountUpdated = async (account, therapist) => {
     // DEBUG — log the full requirements snapshot so we can see what triggered this call.
     // Remove once investigation is complete.
-    logger.info("[Webhook][DEBUG] handleTherapistAccountUpdated", {
+    console.log("[Webhook][DEBUG] handleTherapistAccountUpdated: " + JSON.stringify({
         therapistId: therapist.id,
         stripeAccountId: account.id,
         detailsSubmitted: account.details_submitted,
@@ -489,7 +493,7 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
         requirements: account.requirements,
         futureRequirements: account.future_requirements,
         controller: account.controller,
-    });
+    }));
 
     const isOnboardingComplete =
         account.details_submitted === true &&
