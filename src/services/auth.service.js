@@ -597,33 +597,52 @@ export const changePassword = async ({ userId, currentPassword, newPassword }) =
 };
 
 /**
- * Resend verification email
+ * Resend verification email.
+ *
+ * Guards against calling Supabase when the account is already verified —
+ * Supabase silently no-ops in that case (returns 200, sends no email,
+ * emits no auth_event), which causes the user to wait for mail that
+ * never arrives.
  */
 export const resendVerificationEmail = async ({ email }) => {
     const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { emailVerified: true },
+    });
+
+    if (user?.emailVerified) {
+        throw new BadRequestError(
+            "This email is already verified. Please log in.",
+            "EMAIL_ALREADY_VERIFIED"
+        );
+    }
 
     const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
     const { error } = await supabase.auth.resend({
         type: "signup",
         email: normalizedEmail,
         options: {
-            emailRedirectTo: `${frontendUrl}/verify-callback`
-        }
+            emailRedirectTo: `${frontendUrl}/verify-callback`,
+        },
     });
 
     if (error) {
-        // Rate limit errors should be surfaced — user needs to know to wait
         if (error.status === 429 || error.code === "over_email_send_rate_limit") {
             const waitMatch = error.message?.match(/after (\d+) seconds/);
             const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 60;
-            throw new BadRequestError(`Please wait ${waitSeconds} seconds before requesting another verification email.`, "EMAIL_RATE_LIMITED");
+            throw new BadRequestError(
+                `Please wait ${waitSeconds} seconds before requesting another verification email.`,
+                "EMAIL_RATE_LIMITED"
+            );
         }
-        // Other errors: don't reveal if email exists (prevents enumeration)
+        // Non-enumeration: log internally, don't reveal whether the email exists
         logger.warn("[Auth] Resend verification error", { email: normalizedEmail, error: error.message });
     }
 
     return {
-        message: "If an unverified account exists with this email, a verification link has been sent."
+        message: "If an unverified account exists with this email, a verification link has been sent.",
     };
 };
 
