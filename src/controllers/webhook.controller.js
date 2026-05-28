@@ -8,43 +8,26 @@ import { logSystemEvent } from "../services/audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
 
 /**
- * Handle Stripe webhooks
- * Supports both Platform events and Connected Account events
+ * Main Stripe webhook handler.
+ * Supports both platform events and connected account events.
+ * Tries the platform secret first, then the Connect secret.
  */
 const handleStripeWebhook = async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
 
-    // Try platform webhook secret first
     try {
         event = stripe.webhooks.constructEvent(req.body, sig, stripeConfig.webhookSecret);
-    } catch (err) {
+    } catch {
         try {
             event = stripe.webhooks.constructEvent(req.body, sig, stripeConfig.webhookSecretConnect);
         } catch (err2) {
-            console.error("Webhook signature verification failed:", err.message);
+            logger.warn("[Webhook] Signature verification failed", { error: err2.message });
             return res.status(400).send(`Webhook Error: ${err2.message}`);
         }
     }
 
-
     try {
-        // DEBUG — log every incoming event so we can audit exactly what Stripe sends.
-        // Remove this block once the event registration investigation is complete.
-        console.log("[Webhook][DEBUG] Incoming Stripe event: " + JSON.stringify({
-            type: event.type,
-            id: event.id,
-            account: event.account ?? "(platform)",
-            livemode: event.livemode,
-            apiVersion: event.api_version,
-            dataKeys: event.data?.object ? Object.keys(event.data.object) : [],
-            requirements: event.data?.object?.requirements ?? null,
-            futureRequirements: event.data?.object?.future_requirements ?? null,
-            chargesEnabled: event.data?.object?.charges_enabled ?? null,
-            payoutsEnabled: event.data?.object?.payouts_enabled ?? null,
-            detailsSubmitted: event.data?.object?.details_submitted ?? null,
-        }));
-
         switch (event.type) {
             // Payment Flow
             case "payment_intent.succeeded":
@@ -72,16 +55,15 @@ const handleStripeWebhook = async (req, res) => {
                 await handleTransferUpdated(event.data.object);
                 break;
 
-            // (Connected Accounts)
-
+            // Connected Account events
             case "account.updated":
                 await handleAccountUpdated(event.data.object, event.account);
                 break;
 
             case "capability.updated":
                 // Informational — capability state changes are reflected on the account
-                // and picked up by account.updated. Just log and ack.
-                console.log(`Capability ${event.data.object.id} updated → status: ${event.data.object.status}`);
+                // and picked up by account.updated. No action needed here.
+                logger.debug(`[Webhook] capability.updated: ${event.data.object.id} → ${event.data.object.status}`);
                 break;
 
             case "account.external_account.created":
@@ -93,12 +75,10 @@ const handleStripeWebhook = async (req, res) => {
                 break;
 
             case "payout.paid":
-                // Send notification: "Your money arrived in bank!"
                 await handlePayoutPaid(event.data.object, event.account);
                 break;
 
             case "payout.failed":
-                // ALert therapist: "Update your bank details"
                 await handlePayoutFailed(event.data.object, event.account);
                 break;
 
@@ -124,44 +104,30 @@ const handleStripeWebhook = async (req, res) => {
                 break;
 
             default:
-                // DEBUG — surface unhandled event types so we can see v2 events
-                // or anything not yet registered. Remove once investigation is complete.
-                console.log("[Webhook][DEBUG] Unhandled event type: " + JSON.stringify({
-                    type: event.type,
-                    id: event.id,
-                    account: event.account ?? "(platform)",
-                }));
+                logger.debug(`[Webhook] Unhandled event type: ${event.type}`);
         }
 
         res.json({ received: true, event: event.type });
     } catch (error) {
-        console.error(`Error handling webhook ${event.type}:`, error);
-        res.status(200).json({
-            received: true,
-            error: error.message,
-            event: event.type,
-        });
+        logger.error(`[Webhook] Error handling ${event.type}`, { error: error.message });
+        res.status(200).json({ received: true, error: error.message, event: event.type });
     }
-
-}
+};
 
 /**
- * Handle successful payment intent
- * This is triggered when customer successfully pays
+ * Handle successful payment intent — moves booking payment to escrow.
  */
 const handlePaymentIntentSucceeded = async (paymentIntent) => {
     try {
-        // Skip subscription-related PaymentIntents — they don't have booking Payment records.
-        // Subscription payments are handled by invoice.paid and checkout.session.completed.
+        // Skip subscription PaymentIntents — handled by invoice.paid and checkout.session.completed.
         if (paymentIntent.invoice) {
-            console.log(`Skipping subscription payment_intent.succeeded (invoice: ${paymentIntent.invoice})`);
+            logger.debug(`[Webhook] Skipping subscription payment_intent.succeeded (invoice: ${paymentIntent.invoice})`);
             return;
         }
 
         const payment = await paymentService.handlePaymentSuccess(paymentIntent.id);
-        console.log("Payment moved to escrow successfully");
+        logger.info("[Webhook] Payment moved to escrow", { paymentIntentId: paymentIntent.id });
 
-        // Fire-and-forget analytics — never awaited, never throws
         if (payment?.bookingId) {
             prisma.booking.findUnique({
                 where: { id: payment.bookingId },
@@ -179,13 +145,13 @@ const handlePaymentIntentSucceeded = async (paymentIntent) => {
             }).catch(() => { });
         }
     } catch (error) {
-        console.error("Error handling payment success:", error);
+        logger.error("[Webhook] Error handling payment success", { error: error.message });
         throw error;
     }
-}
+};
 
 /**
- * Handle failed payment intent
+ * Handle failed payment intent — marks payment failed, preserves booking for retry.
  */
 const handlePaymentIntentFailed = async (paymentIntent) => {
     try {
@@ -201,11 +167,8 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
 
         const isActivePayment = payment.booking.payment?.id === payment.id;
 
-        // Mark the payment record as failed, but NEVER cancel the booking.
-        // A failed payment is recoverable — the customer can retry with a
-        // different card. The createPaymentIntent reuse pattern will detect
-        // the failed status and create a new intent on the next attempt.
-        // Only explicit user/admin cancellation should cancel a booking.
+        // Mark failed but never cancel the booking — a failed payment is recoverable.
+        // createPaymentIntent will detect the failed status and issue a new intent.
         await prisma.payment.update({
             where: { id: payment.id },
             data: { status: "failed" },
@@ -218,7 +181,6 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
                 reason: paymentIntent.last_payment_error?.message,
             }).catch(() => { });
 
-            // Fire-and-forget analytics — resolve customer userId for identify
             prisma.booking.findUnique({
                 where: { id: payment.bookingId },
                 select: { customer: { select: { user: { select: { id: true } } } } },
@@ -248,15 +210,14 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
             bookingId: payment.bookingId,
             isActivePayment,
         });
-
     } catch (error) {
-        console.error("Error handling payment failure:", error);
+        logger.error("[Webhook] Error handling payment failure", { error: error.message });
         throw error;
     }
-}
+};
 
 /**
- * Handle canceled payment intent
+ * Handle canceled payment intent — marks payment failed, preserves booking for retry.
  */
 const handlePaymentIntentCanceled = async (paymentIntent) => {
     try {
@@ -266,9 +227,6 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
 
         if (!payment || payment.status !== "intent_created") return;
 
-        // Mark payment as failed but preserve the booking for retry.
-        // The createPaymentIntent reuse pattern will detect the failed
-        // status and create a new intent on the customer's next attempt.
         await prisma.payment.update({
             where: { id: payment.id },
             data: { status: "failed" },
@@ -279,225 +237,121 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
             bookingId: payment.bookingId,
         });
     } catch (error) {
-        console.error("Error handling payment cancellation:", error.message);
+        logger.error("[Webhook] Error handling payment cancellation", { error: error.message });
     }
-}
+};
 
 const handleTransferReversed = async (transfer) => {
     try {
-        console.log(`Transfer reversed: ${transfer.id}`);
         const paymentId = transfer.metadata?.paymentId;
-
         if (paymentId) {
             await prisma.payment.update({
                 where: { id: paymentId },
-                data: {
-                    status: "escrowed",
-                    stripeTransferId: null,
-                    releasedAt: null,
-                }
+                data: { status: "escrowed", stripeTransferId: null, releasedAt: null },
             });
-            console.log(`Payment reverted to escrowed`);
+            logger.info("[Webhook] Transfer reversed — payment reverted to escrowed", { transferId: transfer.id, paymentId });
         }
-
     } catch (error) {
-        console.error(`Error: ${error.message}`)
+        logger.error("[Webhook] Error handling transfer reversal", { error: error.message });
     }
-}
+};
 
 const handleTransferUpdated = async (transfer) => {
-    try {
-        console.log(`Transfer updated: ${transfer.id}`);
-        // Transfer updates usually just status changes - for monitoring
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-    }
-}
+    logger.debug(`[Webhook] transfer.updated: ${transfer.id}`);
+};
 
 /**
- * Handle failed transfer
- */
-const _handleTransferFailed = async (transfer) => {
-    console.log("Transfer failed:", transfer.id);
-
-    try {
-        const payment = await prisma.payment.findUnique({
-            where: { stripeTransferId: transfer.id },
-            include: {
-                booking: {
-                    include: {
-                        therapist: true,
-                        customer: true,
-                    },
-                },
-            },
-        });
-
-        if (payment) {
-            console.error(`Transfer failed for payment ${payment.id}`);
-            // Keep payment in escrowed state for manual resolution
-        }
-
-    } catch (error) {
-        console.error("Error handling transfer failure:", error);
-    }
-
-}
-
-/**
- * Handle Transfer created - With recovery logic
- * This webhook serves two purposes:
- * 1. Confirmation that transfer succeeded (normal case)
- * 2. Recovery mechanism if database update failed (edge case)
+ * Handle transfer.created with recovery logic.
+ * Primary purpose: confirm transfer succeeded.
+ * Secondary purpose: recover if the DB update failed after the transfer went through.
  */
 const handleTransferCreatedWithRecovery = async (transfer) => {
     try {
         const paymentId = transfer.metadata?.paymentId;
 
         if (!paymentId) {
-            console.log(`No payment metadata found for transfer: ${transfer.id}`);
+            logger.debug(`[Webhook] transfer.created has no paymentId metadata — skipping`, { transferId: transfer.id });
             return;
         }
 
         const payment = await prisma.payment.findUnique({
             where: { id: paymentId },
-            include: {
-                booking: {
-                    include: {
-                        therapist: true,
-                        customer: true,
-                    }
-                }
-            }
+            include: { booking: { include: { therapist: true, customer: true } } },
         });
 
         if (!payment) {
-            console.error(`Payment not found: ${paymentId}`);
+            logger.warn("[Webhook] Payment not found for transfer", { paymentId, transferId: transfer.id });
             return;
         }
-        // RECOVERY CASE: Transfer succeeded but DB wasn't updated.
-        // Skip if already processed (released, partially_released, or has transfer ID).
+
+        // RECOVERY: transfer succeeded but DB wasn't updated.
         if (payment.status === "escrowed" && !payment.stripeTransferId) {
-            // Skip admin-initiated transfers — the admin service handles its own DB updates.
-            // Without this, the webhook races the admin's DB write and overwrites partially_released → released.
-            if (transfer.metadata?.releasedByAdmin) {
-                console.log(`Payment ${payment.id} transfer was admin-initiated, skipping webhook recovery`);
-                return;
-            }
+            // Admin-initiated transfers handle their own DB updates.
+            if (transfer.metadata?.releasedByAdmin) return;
 
-            if (transfer.metadata?.isPerSession === "true") {
-                console.log(`Payment ${payment.id} transfer is per-session payout, skipping webhook recovery (handled by releaseSessionPayout)`);
-                return;
-            }
+            // Per-session payouts are handled by releaseSessionPayout.
+            if (transfer.metadata?.isPerSession === "true") return;
 
-            // Customer refund transfers (finalize, missed visit, pending-refund claim)
-            // are customer-destined, not therapist-destined. They should never flip
-            // the payment to "released" — only therapist payouts do that.
-            if (transfer.metadata?.type === "customer_refund") {
-                console.log(`Payment ${payment.id} transfer is customer refund, skipping webhook recovery (handled by refund flow)`);
-                return;
-            }
+            // Customer refund transfers should never flip the payment to "released".
+            if (transfer.metadata?.type === "customer_refund") return;
 
             try {
-                // Verify transfer is valid, not reversed, and not failed
                 const verifiedTransfer = await stripe.transfers.retrieve(transfer.id);
 
-                if (verifiedTransfer.reversed) {
-                    console.log(`Transfer was reversed, not updating payment`);
-                    return;
-                }
+                if (verifiedTransfer.reversed) return;
+                if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) return;
 
-                if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) {
-                    console.log(`Transfer has invalid amount (${verifiedTransfer.amount}), skipping recovery`);
-                    return;
-                }
-
-                // Update payment to released state (only for non-admin, non-per-session recovery)
                 await prisma.payment.update({
                     where: { id: payment.id },
-                    data: {
-                        status: "released",
-                        stripeTransferId: transfer.id,
-                        releasedAt: new Date(),
-                    }
+                    data: { status: "released", stripeTransferId: transfer.id, releasedAt: new Date() },
                 });
 
-                console.log(`Payment ${payment.id} recovered and marked as released`);
+                logger.info("[Webhook] Payment recovered and marked as released", { paymentId: payment.id, transferId: transfer.id });
             } catch (recoveryError) {
-                console.error(`Recovery Failed: ${recoveryError.message}`);
-                console.error(`MANUAL INTERVENTION REQUIRED`);
-
-                // TODO: CRITICAL -Alert admin immediately
-                // TODO: Create support ticket
+                logger.error("[Webhook] Recovery failed — MANUAL INTERVENTION REQUIRED", {
+                    paymentId: payment.id,
+                    transferId: transfer.id,
+                    error: recoveryError.message,
+                });
+                // TODO: CRITICAL — alert admin immediately and create support ticket
             }
             return;
         }
 
-        // Skip per-session transfers when payment is already partially_released —
-        // releaseSessionPayout handles the status transitions.
-        if (payment.status === "partially_released" && transfer.metadata?.isPerSession === "true") {
-            return;
-        }
+        // Per-session transfers when payment is already partially_released are expected.
+        if (payment.status === "partially_released" && transfer.metadata?.isPerSession === "true") return;
 
-        // UNEXPECTED STATE: Payment as different status
         if (payment.status !== "escrowed" && payment.status !== "released") {
-            console.log(`Unexpected payment status: ${payment.status}`);
-            console.log(`Payment ID: ${payment.id}`);
-            console.log(`Transfer ID: ${transfer.id}`);
-            console.log(`Manual review may be needed}`);
+            logger.warn("[Webhook] Unexpected payment status on transfer.created — manual review may be needed", {
+                paymentStatus: payment.status,
+                paymentId: payment.id,
+                transferId: transfer.id,
+            });
         }
-
     } catch (error) {
-        console.error(`Error handling transfer.created:`, error.message);
+        logger.error("[Webhook] Error handling transfer.created", { error: error.message });
     }
-}
+};
 
-/**Connected account handlers */
+/** Dispatch to therapist or customer handler based on which profile owns the account. */
 const handleAccountUpdated = async (account, accountId) => {
     try {
         const stripeAccountId = accountId || account.id;
 
-        // Try therapist first (most common case)
-        const therapist = await prisma.therapistProfile.findUnique({
-            where: { stripeAccountId },
-        });
+        const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId } });
+        if (therapist) return handleTherapistAccountUpdated(account, therapist);
 
-        if (therapist) {
-            return handleTherapistAccountUpdated(account, therapist);
-        }
+        const customer = await prisma.customerProfile.findUnique({ where: { stripeAccountId } });
+        if (customer) return handleCustomerAccountUpdated(account, customer);
 
-        // Try customer (for refund payout accounts)
-        const customer = await prisma.customerProfile.findUnique({
-            where: { stripeAccountId },
-        });
-
-        if (customer) {
-            return handleCustomerAccountUpdated(account, customer);
-        }
-
-        console.log(`No therapist or customer found for Stripe account: ${stripeAccountId}`);
+        logger.debug(`[Webhook] No profile found for Stripe account: ${stripeAccountId}`);
     } catch (error) {
-        console.error(`Error handling account.updated:`, error.message);
+        logger.error("[Webhook] Error handling account.updated", { error: error.message });
     }
-}
+};
 
 const handleTherapistAccountUpdated = async (account, therapist) => {
-    // DEBUG — log the full requirements snapshot so we can see what triggered this call.
-    // Remove once investigation is complete.
-    console.log("[Webhook][DEBUG] handleTherapistAccountUpdated: " + JSON.stringify({
-        therapistId: therapist.id,
-        stripeAccountId: account.id,
-        detailsSubmitted: account.details_submitted,
-        chargesEnabled: account.charges_enabled,
-        payoutsEnabled: account.payouts_enabled,
-        requirements: account.requirements,
-        futureRequirements: account.future_requirements,
-        controller: account.controller,
-    }));
-
-    const isOnboardingComplete =
-        account.details_submitted === true &&
-        account.charges_enabled === true;
+    const isOnboardingComplete = account.details_submitted === true && account.charges_enabled === true;
 
     if (isOnboardingComplete && !therapist.stripeOnboardingComplete) {
         await withAdminAccess(async (db) => {
@@ -506,7 +360,7 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
                 data: { stripeOnboardingComplete: true },
             });
         });
-        logger.info(`Stripe onboarding completed for therapist: ${therapist.fullName}`);
+        logger.info(`[Webhook] Stripe onboarding completed for therapist: ${therapist.fullName}`);
         return;
     }
 
@@ -517,14 +371,15 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
                 data: { stripeOnboardingComplete: false },
             });
         });
-        logger.info(`Stripe onboarding status reverted for therapist: ${therapist.fullName}`);
+        logger.info(`[Webhook] Stripe onboarding reverted for therapist: ${therapist.fullName}`);
     }
 
-    // Proactively email the therapist when Stripe imposes new requirements
-    // so they act before capabilities are restricted. Covers all three stages:
-    //   past_due    → account already restricted, urgent
-    //   currently_due → deadline approaching, warning
-    //   future_requirements → upcoming, informational
+    // Only alert when onboarding was previously completed. A brand-new account going
+    // through onboarding for the first time will have past_due fields simply because
+    // nothing has been submitted yet — that is not a restriction. Alerting here would
+    // fire "Payout Account Restricted" the moment the therapist selects business type.
+    if (!account.details_submitted) return;
+
     const req = account.requirements ?? {};
     const futureReq = account.future_requirements ?? {};
     const pastDueCount = req.past_due?.length ?? 0;
@@ -534,9 +389,7 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
         (futureReq.currently_due?.length ?? 0) +
         (futureReq.eventually_due?.length ?? 0);
 
-    const shouldAlert = pastDueCount > 0 || currentlyDueCount > 0 || futureDueCount > 0;
-
-    if (shouldAlert) {
+    if (pastDueCount > 0 || currentlyDueCount > 0 || futureDueCount > 0) {
         const therapistWithUser = await prisma.therapistProfile.findUnique({
             where: { id: therapist.id },
             include: { user: { select: { email: true } } },
@@ -551,20 +404,18 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
                 hasUpcomingRequirements: futureDueCount > 0,
                 futureDeadline: futureReq.current_deadline ?? null,
             }).catch((err) => {
-                logger.error('[Webhook] Failed to send Stripe requirements alert email', {
+                logger.error("[Webhook] Failed to send Stripe requirements alert email", {
                     therapistId: therapist.id,
                     error: err.message,
                 });
             });
         }
     }
-}
+};
 
 const handleCustomerAccountUpdated = async (account, customer) => {
-    // Customer Connect accounts only need transfers capability (no charges)
-    const isOnboardingComplete =
-        account.details_submitted === true &&
-        account.payouts_enabled === true;
+    // Customer Connect accounts only need transfers capability (no charges).
+    const isOnboardingComplete = account.details_submitted === true && account.payouts_enabled === true;
 
     if (isOnboardingComplete && !customer.stripeOnboardingComplete) {
         await withAdminAccess(async (db) => {
@@ -574,7 +425,7 @@ const handleCustomerAccountUpdated = async (account, customer) => {
             });
         });
 
-        logger.info(`Customer Connect onboarding completed: ${customer.fullName} (${customer.id})`);
+        logger.info(`[Webhook] Customer Connect onboarding completed: ${customer.fullName} (${customer.id})`);
 
         try {
             const results = await paymentService.processPendingRefundsForCustomer(customer.id);
@@ -582,9 +433,7 @@ const handleCustomerAccountUpdated = async (account, customer) => {
                 logger.info(`[Webhook] Auto-transferred ${results.filter(r => r.status === "transferred").length} pending refunds for customer ${customer.id}`);
             }
         } catch (err) {
-            logger.error(`[Webhook] Failed to auto-transfer pending refunds for customer ${customer.id}`, {
-                error: err.message,
-            });
+            logger.error(`[Webhook] Failed to auto-transfer pending refunds for customer ${customer.id}`, { error: err.message });
         }
 
         return;
@@ -597,12 +446,15 @@ const handleCustomerAccountUpdated = async (account, customer) => {
                 data: { stripeOnboardingComplete: false },
             });
         });
-        logger.info(`Customer Connect onboarding status reverted: ${customer.fullName}`);
+        logger.info(`[Webhook] Customer Connect onboarding reverted: ${customer.fullName}`);
     }
 
-    // Proactive email when Stripe imposes new requirements on the customer's
-    // payout account — covers all three stages including volume-gated eventually_due
-    // requirements that don't yet affect payouts_enabled.
+    // Only alert when onboarding was previously completed. A brand-new account going
+    // through onboarding will have past_due fields simply because nothing has been
+    // submitted yet — alerting here would fire "Payout Account Restricted" the moment
+    // the customer selects their business type.
+    if (!account.details_submitted) return;
+
     const req = account.requirements ?? {};
     const futureReq = account.future_requirements ?? {};
     const pastDueCount = req.past_due?.length ?? 0;
@@ -627,89 +479,72 @@ const handleCustomerAccountUpdated = async (account, customer) => {
                 hasUpcomingRequirements: futureDueCount > 0,
                 futureDeadline: futureReq.current_deadline ?? null,
             }).catch((err) => {
-                logger.error('[Webhook] Failed to send customer Stripe requirements alert email', {
+                logger.error("[Webhook] Failed to send customer Stripe requirements alert email", {
                     customerId: customer.id,
                     error: err.message,
                 });
             });
         }
     }
-}
+};
 
 const handleExternalAccountCreated = async (externalAccount, accountId) => {
     try {
-        const therapist = await prisma.therapistProfile.findUnique({
-            where: { stripeAccountId: accountId },
-        });
-
+        const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
-            console.log(`External account added for therapist: ${therapist.fullName}`);
-            // TODO: Send confirmation notification
+            logger.info(`[Webhook] External account added for therapist: ${therapist.fullName}`);
+            // TODO: Send bank account confirmation notification to therapist
         }
     } catch (error) {
-        console.error(`Error: ${error.message}`);
+        logger.error("[Webhook] Error handling external_account.created", { error: error.message });
     }
-}
+};
 
 const handleExternalAccountDeleted = async (externalAccount, accountId) => {
     try {
-        const therapist = await prisma.therapistProfile.findUnique({
-            where: { stripeAccountId: accountId },
-        });
-
+        const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
-            console.log(`External account removed for therapist: ${therapist.fullName}`);
-            console.log(`Therapist ${therapist.fullName} cannot receive payouts until they add a bank account!`);
-            // TODO: Send urgent notification to therapist
+            logger.warn(`[Webhook] External account removed for therapist: ${therapist.fullName} — payouts paused until bank account is re-added`);
+            // TODO: Send urgent notification to therapist to re-add bank account
         }
     } catch (error) {
-        console.error(`Error: ${error.message}`);
+        logger.error("[Webhook] Error handling external_account.deleted", { error: error.message });
     }
-}
+};
 
 const handlePayoutPaid = async (payout, accountId) => {
     try {
-        console.log(`Payout delivered: ${accountId}`);
-        // Informational - payment already "released"
-
-        const therapist = await prisma.therapistProfile.findUnique({
-            where: { stripeAccountId: accountId },
-        });
-
+        const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
-            console.log(`Payout of $${payout.amount / 100} delivered to ${therapist.fullName}`);
+            logger.info(`[Webhook] Payout of $${payout.amount / 100} delivered to therapist: ${therapist.fullName}`);
         }
     } catch (error) {
-        console.error(`Error:`, error.message);
+        logger.error("[Webhook] Error handling payout.paid", { error: error.message });
     }
-}
+};
 
 const handlePayoutFailed = async (payout, accountId) => {
     try {
-        console.log(`Payout failed: ${accountId}`);
-        console.log(`Reason: ${payout.failure_message}`);
-
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId: accountId },
             include: { user: { select: { email: true } } },
         });
 
         if (therapist) {
-            console.log(`Payout failed for therapist: ${therapist.fullName}`);
+            logger.warn(`[Webhook] Payout failed for therapist: ${therapist.fullName}`, { reason: payout.failure_message });
 
-            // Notify therapist about failed payout (email)
             sendPayoutFailed({
                 therapist,
                 amount: payout.amount / 100,
                 reason: payout.failure_message,
             }).catch(() => { });
 
-            // NOTE: Payment status stays "released" - money is still in Stripe balance
-            // Stripe will retry the payout automatically
+            // NOTE: Payment status stays "released" — money remains in Stripe balance.
+            // Stripe will retry the payout automatically.
         }
     } catch (error) {
-        console.error(`Error handling payout failure:`, error.message);
+        logger.error("[Webhook] Error handling payout.failed", { error: error.message });
     }
-}
+};
 
 export { handleStripeWebhook };
