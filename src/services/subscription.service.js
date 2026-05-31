@@ -5,6 +5,8 @@ import { getOrCreateStripeCustomer } from "./payment.service.js";
 import {
     sendSubscriptionActivated,
     sendSubscriptionPaymentFailed,
+    sendSubscriptionCancelledByCustomer,
+    sendSubscriptionUpgraded,
     sendTrialExpired,
     sendSubscriptionDowngraded,
 } from "./email.service.js";
@@ -169,9 +171,14 @@ export const cancelSubscription = async (customerId) => {
         cancel_at_period_end: true,
     });
 
-    await prisma.subscription.update({
+    const updated = await prisma.subscription.update({
         where: { id: subscription.id },
         data: { cancelledAt: new Date() },
+        include: { customer: { include: { user: true } } },
+    });
+
+    sendSubscriptionCancelledByCustomer({ customer: updated.customer, subscription: updated }).catch((err) => {
+        logger.error("[Subscription] Failed to send cancellation email", { error: err.message });
     });
 
     return { message: "Subscription will be cancelled at the end of the current billing period" };
@@ -294,7 +301,9 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw new Error("Could not find subscription item in Stripe");
     }
 
-    // Update with error_if_incomplete — if payment fails, Stripe throws and reverts
+    // Update with error_if_incomplete so Stripe reverts on failure.
+    // Saved 3DS cards may throw payment_intent_action_required — we surface
+    // the client_secret so the frontend can complete the authentication challenge.
     let updated;
     try {
         updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -304,10 +313,19 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
             metadata: { planType, billingInterval },
         });
     } catch (stripeError) {
-        // Payment failed — Stripe reverted the subscription change
-        if (stripeError.code === "payment_intent_action_required" || stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
-            logger.warn("[Subscription] Upgrade payment failed", { customerId, planType, error: stripeError.message });
-            const error = new Error("Payment failed. Please update your payment method and try again.");
+        if (stripeError.code === "payment_intent_action_required") {
+            const pi = stripeError.payment_intent;
+            logger.info("[Subscription] Upgrade requires 3DS authentication", { customerId, planType, paymentIntentId: pi?.id });
+            return {
+                status: "requires_action",
+                clientSecret: pi?.client_secret,
+                paymentIntentId: pi?.id,
+                paymentMethodId: typeof pi?.payment_method === "string" ? pi.payment_method : pi?.payment_method?.id,
+            };
+        }
+        if (stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
+            logger.warn("[Subscription] Upgrade payment declined", { customerId, planType, error: stripeError.message });
+            const error = new Error(stripeError.message || "Payment failed. Please update your payment method and try again.");
             error.statusCode = 402;
             error.code = "PAYMENT_FAILED";
             throw error;
@@ -318,8 +336,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     const subscriptionItem = updated.items?.data?.[0];
     const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
 
-    // Payment succeeded — update local DB
-    await prisma.subscription.update({
+    const updatedSub = await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
             planType,
@@ -332,6 +349,11 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
             cancelledAt: null,
             cancelReason: null,
         },
+        include: { customer: { include: { user: true } } },
+    });
+
+    sendSubscriptionUpgraded({ customer: updatedSub.customer, subscription: updatedSub }).catch((err) => {
+        logger.error("[Subscription] Failed to send upgrade email", { error: err.message });
     });
 
     logSystemEvent({
@@ -343,7 +365,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
 
     logger.info("[Subscription] Plan upgraded", { customerId, from: subscription.planType, to: planType });
 
-    return { message: `Upgraded to ${planType}. Prorated charge applied.` };
+    return { status: "succeeded", message: `Upgraded to ${planType}. Prorated charge applied.` };
 };
 
 /**

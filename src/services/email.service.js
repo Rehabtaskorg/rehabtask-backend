@@ -44,6 +44,7 @@ import {
     trialExpired,
     subscriptionPaymentFailed,
     subscriptionCancelledByCustomer,
+    subscriptionUpgraded,
     subscriptionDowngraded,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
@@ -341,6 +342,10 @@ export const sendSubscriptionPaymentFailed = async ({ customer }) => {
 
 export const sendSubscriptionCancelledByCustomer = async ({ customer, subscription }) => {
     return dispatch(customer.user.email, subscriptionCancelledByCustomer, { customer, subscription });
+};
+
+export const sendSubscriptionUpgraded = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionUpgraded, { customer, subscription });
 };
 
 export const sendSubscriptionDowngraded = async ({ customer }) => {

@@ -74,9 +74,11 @@ export const upgradeSubscriptionController = async (req, res, next) => {
     try {
         const { planType, billingInterval } = req.body;
         const result = await upgradeSubscription(req.user.customerProfile.id, planType, billingInterval);
+        if (result.status === "requires_action") {
+            return res.json({ success: true, data: result });
+        }
         res.json({ success: true, data: result });
     } catch (error) {
-        // Return 402 for payment failures instead of 500
         if (error.statusCode === 402 || error.code === "PAYMENT_FAILED") {
             return res.status(402).json({
                 success: false,

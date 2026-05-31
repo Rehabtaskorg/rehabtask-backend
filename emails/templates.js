@@ -98,6 +98,20 @@ export const subscriptionActivated = ({ customer, subscription }) => ({
     `),
 });
 
+export const subscriptionUpgraded = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask plan has been upgraded',
+    html: layout(`
+        ${heading('Plan Upgraded')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your plan has been upgraded. The prorated charge for the remainder of your billing period has been applied.')}
+        ${hr()}
+        ${field('New Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Next Renewal', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'View Subscription')}
+    `),
+});
+
 // New Request Notification (to therapist)
 export const newRequestNotification = ({ therapist, request }) => {
     const truncatedDesc = request.description && request.description.length > 150
