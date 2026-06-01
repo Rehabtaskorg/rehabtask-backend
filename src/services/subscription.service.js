@@ -908,8 +908,8 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     const resumed = isNotScheduledToCancel && subscription.cancelledAt;
     const cancelledViaPortal = isScheduledToCancel && !subscription.cancelledAt;
 
-    // Detect plan change from Stripe price ID change (e.g., after upgrade/downgrade)
-    const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
+    const hasPendingScheduledDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
+    const planChanged = !hasPendingScheduledDowngrade && currentPriceId && currentPriceId !== subscription.stripePriceId;
     let planUpdate = {};
     if (planChanged) {
         const detected = getPlanFromPriceId(currentPriceId);
@@ -929,6 +929,15 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             });
         }
     }
+
+    logger.info("[Subscription:DEBUG] handleSubscriptionUpdated", {
+        subscriptionId: subscription.id,
+        hasPendingScheduledDowngrade,
+        planChanged,
+        currentPriceId,
+        dbPriceId: subscription.stripePriceId,
+        planUpdate,
+    });
 
     await prisma.subscription.update({
         where: { id: subscription.id },
