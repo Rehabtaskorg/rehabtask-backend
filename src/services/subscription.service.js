@@ -274,8 +274,18 @@ export const previewUpgrade = async (customerId, planType, billingInterval) => {
 
 /**
  * Upgrade a paid subscription to a higher plan.
- * Uses error_if_incomplete to prevent subscription change if payment fails.
- * The subscription only changes if the proration invoice is paid successfully.
+ *
+ * Uses `allow_incomplete` so Stripe updates the subscription even when the
+ * proration invoice requires 3DS authentication. With `error_if_incomplete`
+ * Stripe throws before returning a PaymentIntent, making it impossible to
+ * surface the client_secret needed for the authentication challenge.
+ *
+ * Flow:
+ *   - Payment succeeds immediately  → subscription active, DB updated, email sent
+ *   - Payment requires 3DS          → returns {status:"requires_action", clientSecret}
+ *                                     frontend calls confirmCardPayment(), then
+ *                                     invoice.paid webhook finalises the DB update
+ *   - Payment declined              → subscription reverts via Stripe, 402 thrown
  */
 export const upgradeSubscription = async (customerId, planType, billingInterval) => {
     const subscription = await prisma.subscription.findFirst({
@@ -294,35 +304,23 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
 
     const newPriceId = getStripePriceId(planType, billingInterval);
 
-    // Get the current subscription item ID from Stripe
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
     const subscriptionItemId = stripeSubscription.items.data[0]?.id;
-    if (!subscriptionItemId) {
-        throw new Error("Could not find subscription item in Stripe");
-    }
+    if (!subscriptionItemId) throw new Error("Could not find subscription item in Stripe");
 
-    // Update with error_if_incomplete so Stripe reverts on failure.
-    // Saved 3DS cards may throw payment_intent_action_required — we surface
-    // the client_secret so the frontend can complete the authentication challenge.
+    // allow_incomplete: Stripe updates the subscription and creates the invoice
+    // even when the PaymentIntent needs further action (3DS). The subscription
+    // status becomes `past_due` temporarily until the PI is confirmed.
     let updated;
     try {
         updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
             items: [{ id: subscriptionItemId, price: newPriceId }],
             proration_behavior: "always_invoice",
-            payment_behavior: "error_if_incomplete",
+            payment_behavior: "allow_incomplete",
             metadata: { planType, billingInterval },
+            expand: ["latest_invoice.payment_intent"],
         });
     } catch (stripeError) {
-        if (stripeError.code === "payment_intent_action_required") {
-            const pi = stripeError.payment_intent;
-            logger.info("[Subscription] Upgrade requires 3DS authentication", { customerId, planType, paymentIntentId: pi?.id });
-            return {
-                status: "requires_action",
-                clientSecret: pi?.client_secret,
-                paymentIntentId: pi?.id,
-                paymentMethodId: typeof pi?.payment_method === "string" ? pi.payment_method : pi?.payment_method?.id,
-            };
-        }
         if (stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
             logger.warn("[Subscription] Upgrade payment declined", { customerId, planType, error: stripeError.message });
             const error = new Error(stripeError.message || "Payment failed. Please update your payment method and try again.");
@@ -333,6 +331,29 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw stripeError;
     }
 
+    const pi = updated.latest_invoice?.payment_intent;
+
+    // 3DS required — return clientSecret so frontend can complete the challenge.
+    // The invoice.paid webhook will finalise the DB update once authentication succeeds.
+    if (pi?.status === "requires_action") {
+        logger.info("[Subscription] Upgrade requires 3DS authentication", { customerId, planType, paymentIntentId: pi.id });
+        return {
+            status: "requires_action",
+            clientSecret: pi.client_secret,
+            paymentIntentId: pi.id,
+            paymentMethodId: typeof pi.payment_method === "string" ? pi.payment_method : pi.payment_method?.id,
+        };
+    }
+
+    // Hard decline — card was rejected, no action possible
+    if (pi?.status === "requires_payment_method") {
+        const error = new Error("Your card was declined. Please update your payment method and try again.");
+        error.statusCode = 402;
+        error.code = "PAYMENT_FAILED";
+        throw error;
+    }
+
+    // Payment succeeded immediately — update DB now
     const subscriptionItem = updated.items?.data?.[0];
     const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
 
@@ -543,23 +564,51 @@ export const handleInvoicePaid = async (invoice) => {
         return;
     }
 
-    // Already active — idempotent (but always process if there's a pending downgrade)
     const periodEnd = parseStripeDate(invoice.lines?.data[0]?.period?.end);
     const hasPendingDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
-    if (!hasPendingDowngrade &&
+
+    // Fetch the Stripe subscription to detect plan changes (e.g. upgrade that
+    // required 3DS — the invoice.paid fires after authentication completes, but
+    // the period dates are unchanged so we must check the plan metadata too).
+    const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    const stripePlanType = stripeSub.metadata?.planType;
+    const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
+
+    // Skip if already fully up-to-date — idempotent renewal guard
+    if (!hasPendingDowngrade && !hasPlanChange &&
         subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
         return;
     }
 
-    // Check if there's a scheduled downgrade pending
     const updateData = {
         status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
         currentPeriodEnd: periodEnd,
         gracePeriodEndsAt: null,
     };
+
+    // Apply plan change from a 3DS-deferred upgrade — the metadata was written
+    // by upgradeSubscription before the PaymentIntent was confirmed.
+    if (hasPlanChange) {
+        const planConfig = PLAN_CONFIG[stripePlanType];
+        if (planConfig) {
+            updateData.planType = stripePlanType;
+            updateData.stripePriceId = stripeSub.items.data[0]?.price?.id;
+            updateData.billingInterval = stripeSub.metadata?.billingInterval || subscription.billingInterval;
+            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
+            updateData.requestLimit = planConfig.requestLimit ?? 999999;
+            updateData.cancelledAt = null;
+            updateData.cancelReason = null;
+
+            logger.info("[Subscription] 3DS-deferred upgrade applied via invoice.paid", {
+                subscriptionId: subscription.id,
+                from: subscription.planType,
+                to: stripePlanType,
+            });
+        }
+    }
 
     if (subscription.cancelReason?.startsWith("scheduled_downgrade:")) {
         const parts = subscription.cancelReason.split(":");
@@ -605,13 +654,22 @@ export const handleInvoicePaid = async (invoice) => {
         data: updateData,
     });
 
-    // Event: subscription.renewed
     logSystemEvent({
-        action: "subscription.renewed",
+        action: hasPlanChange ? "subscription.upgraded" : "subscription.renewed",
         entityType: "subscription",
         entityId: subscription.id,
-        changes: { stripeSubscriptionId, periodEnd: parseStripeDate(invoice.lines?.data[0]?.period?.end) },
+        changes: { stripeSubscriptionId, periodEnd, planType: updateData.planType ?? subscription.planType },
     });
+
+    // Send upgrade email when plan changed via 3DS-deferred path
+    if (hasPlanChange) {
+        prisma.customerProfile.findUnique({
+            where: { id: subscription.customerId },
+            include: { user: true },
+        }).then((customer) => {
+            if (customer) sendSubscriptionUpgraded({ customer, subscription: { ...subscription, ...updateData } }).catch(() => { });
+        }).catch(() => { });
+    }
 
     // Fire-and-forget analytics
     prisma.customerProfile.findUnique({
@@ -619,14 +677,14 @@ export const handleInvoicePaid = async (invoice) => {
         select: { user: { select: { id: true } } },
     }).then((customer) => {
         if (customer?.user?.id) {
-            trackServerEvent(customer.user.id, "subscription_renewed", {
+            trackServerEvent(customer.user.id, hasPlanChange ? "subscription_upgraded" : "subscription_renewed", {
                 plan_type: updateData.planType ?? subscription.planType,
                 billing_interval: updateData.billingInterval ?? subscription.billingInterval,
             });
         }
     }).catch(() => { });
 
-    logger.info("[Subscription] Invoice paid — period renewed", { subscriptionId: subscription.id });
+    logger.info("[Subscription] Invoice paid", { subscriptionId: subscription.id, planChange: hasPlanChange });
 };
 
 /**
