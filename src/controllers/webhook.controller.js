@@ -110,6 +110,14 @@ const handleStripeWebhook = async (req, res) => {
                 await subscriptionService.handleSubscriptionUpdated(event.data.object);
                 break;
 
+            case "subscription_schedule.released":
+                await subscriptionService.handleScheduleReleased(event.data.object);
+                break;
+
+            case "subscription_schedule.canceled":
+                await subscriptionService.handleScheduleCanceled(event.data.object);
+                break;
+
             default:
                 logger.debug(`[Webhook] Unhandled event type: ${event.type}`);
         }

@@ -156,21 +156,34 @@ export const createBillingPortalSession = async (userId) => {
 };
 
 /**
- * Customer-initiated cancellation. Sets cancel_at_period_end so subscription
+ * Release a pending Subscription Schedule and clear it from the DB.
+ * Call before any operation that would conflict with an active schedule
+ * (upgrade, cancel, or replace-downgrade).
+ * @param {object} subscription - DB subscription record
+ */
+const releaseScheduleIfPending = async (subscription) => {
+    if (!subscription.stripeScheduleId) return;
+    await stripe.subscriptionSchedules.release(subscription.stripeScheduleId);
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { stripeScheduleId: null },
+    });
+    logger.info("[Subscription] Released existing schedule", { subscriptionId: subscription.id, scheduleId: subscription.stripeScheduleId });
+};
+
+/**
+ * Customer-initiated cancellation. Sets cancel_at_period_end so the subscription
  * stays active until the current billing period ends.
+ * Releases any pending downgrade schedule first to avoid Stripe conflicts.
  */
 export const cancelSubscription = async (customerId) => {
     const subscription = await prisma.subscription.findFirst({
-        where: {
-            customerId,
-            status: { in: ["active"] },
-            stripeSubscriptionId: { not: null },
-        },
+        where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
 
-    if (!subscription) {
-        throw new Error("No active paid subscription found");
-    }
+    if (!subscription) throw new Error("No active paid subscription found");
+
+    await releaseScheduleIfPending(subscription);
 
     await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         cancel_at_period_end: true,
@@ -312,6 +325,8 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw new Error("Can only upgrade to a higher plan. Use downgrade for lower plans.");
     }
 
+    await releaseScheduleIfPending(subscription);
+
     const newPriceId = getStripePriceId(planType, billingInterval);
 
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
@@ -416,49 +431,46 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
 };
 
 /**
- * Downgrade a paid subscription to a lower paid plan.
- * Takes effect at the end of the current billing period — no proration, no immediate charge.
+ * Schedule a downgrade to a lower paid plan via Stripe Subscription Schedules.
+ * Stripe owns the phase transition — no magic strings, no race conditions.
+ * Takes effect at the end of the current billing period.
  */
 export const downgradeSubscription = async (customerId, planType, billingInterval) => {
     const subscription = await prisma.subscription.findFirst({
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
 
-    if (!subscription) {
-        throw new Error("No active paid subscription to downgrade");
-    }
+    if (!subscription) throw new Error("No active paid subscription to downgrade");
 
     const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
     const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
-    if (targetRank >= currentRank) {
-        throw new Error("Can only downgrade to a lower plan. Use upgrade for higher plans.");
-    }
+    if (targetRank >= currentRank) throw new Error("Can only downgrade to a lower plan. Use upgrade for higher plans.");
+    if (planType === "free") throw new Error("To move to Free, cancel your subscription instead.");
 
-    if (planType === "free") {
-        throw new Error("To move to Free, cancel your subscription instead.");
-    }
+    // Release any existing schedule (change-of-mind scenario)
+    await releaseScheduleIfPending(subscription);
 
     const newPriceId = getStripePriceId(planType, billingInterval);
+    const currentPeriodEnd = Math.floor(new Date(subscription.currentPeriodEnd).getTime() / 1000);
 
-    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
-    const subscriptionItemId = stripeSubscription.items.data[0]?.id;
-    if (!subscriptionItemId) {
-        throw new Error("Could not find subscription item in Stripe");
-    }
-
-    // Don't change the price in Stripe yet — just store the intent
-    // The price change will be applied when handleInvoicePaid fires at next renewal
-    // This keeps Premium active in Stripe until the billing period ends
-    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        metadata: { scheduledDowngrade: "true", downgradeToplan: planType, downgradeToBillingInterval: billingInterval },
+    const schedule = await stripe.subscriptionSchedules.create({
+        from_subscription: subscription.stripeSubscriptionId,
+        phases: [
+            {
+                items: [{ price: subscription.stripePriceId }],
+                end_date: currentPeriodEnd,
+            },
+            {
+                items: [{ price: newPriceId }],
+                iterations: 1,
+            },
+        ],
+        end_behavior: "release",
     });
 
-    // Store the downgrade intent in DB — customer keeps current plan until period ends
     await prisma.subscription.update({
         where: { id: subscription.id },
-        data: {
-            cancelReason: `scheduled_downgrade:${planType}:${billingInterval}`,
-        },
+        data: { stripeScheduleId: schedule.id, cancelReason: null },
     });
 
     logSystemEvent({
@@ -468,7 +480,9 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
         changes: { from: subscription.planType, to: planType, effectiveAt: subscription.currentPeriodEnd },
     });
 
-    logger.info("[Subscription] Downgrade scheduled", { customerId, from: subscription.planType, to: planType });
+    logger.info("[Subscription] Downgrade scheduled via Subscription Schedule", {
+        customerId, from: subscription.planType, to: planType, scheduleId: schedule.id,
+    });
 
     return {
         message: `Your plan will downgrade to ${planType} at the end of your current billing period.`,
@@ -625,33 +639,19 @@ export const handleInvoicePaid = async (invoice) => {
     }
 
     const periodEnd = parseStripeDate(invoice.lines?.data[0]?.period?.end);
-    const hasPendingDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
 
-    // Fetch the Stripe subscription to detect plan changes (e.g. upgrade that
-    // required 3DS — the invoice.paid fires after authentication completes, but
-    // the period dates are unchanged so we must check the plan metadata too).
+    // Fetch Stripe subscription to detect 3DS-deferred plan changes.
+    // The metadata (planType) is written by upgradeSubscription when 3DS is triggered.
     const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const stripePlanType = stripeSub.metadata?.planType;
     const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
 
-    logger.info("[Subscription:DEBUG] handleInvoicePaid — state check", {
-        subscriptionId: subscription.id,
-        dbPlanType: subscription.planType,
-        dbStatus: subscription.status,
-        dbPeriodEnd: subscription.currentPeriodEnd,
-        invoicePeriodEnd: periodEnd,
-        stripePlanType,
-        stripeMetadata: stripeSub.metadata,
-        hasPlanChange,
-        hasPendingDowngrade,
-    });
-
-    // Skip if already fully up-to-date — idempotent renewal guard
-    if (!hasPendingDowngrade && !hasPlanChange &&
+    // Skip if already up-to-date — idempotent guard
+    if (!hasPlanChange &&
         subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
-        logger.info("[Subscription:DEBUG] handleInvoicePaid — skipped (already up to date)");
+        logger.info("[Subscription] handleInvoicePaid — skipped (already up to date)", { subscriptionId: subscription.id });
         return;
     }
 
@@ -662,8 +662,7 @@ export const handleInvoicePaid = async (invoice) => {
         gracePeriodEndsAt: null,
     };
 
-    // Apply plan change from a 3DS-deferred upgrade — the metadata was written
-    // by upgradeSubscription before the PaymentIntent was confirmed.
+    // Apply plan change from a 3DS-deferred upgrade.
     if (hasPlanChange) {
         const planConfig = PLAN_CONFIG[stripePlanType];
         if (planConfig) {
@@ -679,63 +678,6 @@ export const handleInvoicePaid = async (invoice) => {
                 subscriptionId: subscription.id,
                 from: subscription.planType,
                 to: stripePlanType,
-            });
-        }
-    }
-
-    if (subscription.cancelReason?.startsWith("scheduled_downgrade:")) {
-        const parts = subscription.cancelReason.split(":");
-        const newPlanType = parts[1];
-        const newBillingInterval = parts[2] || subscription.billingInterval || "monthly";
-        const planConfig = PLAN_CONFIG[newPlanType];
-
-        logger.info("[Subscription:DEBUG] handleInvoicePaid — scheduled downgrade block entered", {
-            subscriptionId: subscription.id,
-            cancelReason: subscription.cancelReason,
-            newPlanType,
-            newBillingInterval,
-            planConfigFound: !!planConfig,
-        });
-
-        if (planConfig) {
-            try {
-                const newPriceId = getStripePriceId(newPlanType, newBillingInterval);
-                logger.info("[Subscription:DEBUG] handleInvoicePaid — applying Stripe price change", {
-                    from: subscription.stripePriceId,
-                    to: newPriceId,
-                    stripeSubscriptionId,
-                });
-                const itemId = stripeSub.items.data[0]?.id;
-                if (itemId) {
-                    await stripe.subscriptions.update(stripeSubscriptionId, {
-                        items: [{ id: itemId, price: newPriceId }],
-                        proration_behavior: "none",
-                        metadata: { planType: newPlanType, billingInterval: newBillingInterval, scheduledDowngrade: null },
-                    });
-                    updateData.stripePriceId = newPriceId;
-                    updateData.billingInterval = newBillingInterval;
-                    logger.info("[Subscription:DEBUG] handleInvoicePaid — Stripe price updated successfully");
-                } else {
-                    logger.warn("[Subscription:DEBUG] handleInvoicePaid — no subscription item ID found, skipping Stripe update");
-                }
-            } catch (stripeErr) {
-                logger.error("[Subscription] Failed to update Stripe price on downgrade", {
-                    subscriptionId: subscription.id,
-                    error: stripeErr.message,
-                    code: stripeErr.code,
-                    type: stripeErr.type,
-                });
-            }
-
-            updateData.planType = newPlanType;
-            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
-            updateData.requestLimit = planConfig.requestLimit ?? 999999;
-            updateData.cancelReason = null;
-
-            logger.info("[Subscription] Scheduled downgrade applied", {
-                subscriptionId: subscription.id,
-                from: subscription.planType,
-                to: newPlanType,
             });
         }
     }
@@ -908,8 +850,7 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
     const resumed = isNotScheduledToCancel && subscription.cancelledAt;
     const cancelledViaPortal = isScheduledToCancel && !subscription.cancelledAt;
 
-    const hasPendingScheduledDowngrade = subscription.cancelReason?.startsWith("scheduled_downgrade:");
-    const planChanged = !hasPendingScheduledDowngrade && currentPriceId && currentPriceId !== subscription.stripePriceId;
+    const planChanged = currentPriceId && currentPriceId !== subscription.stripePriceId;
     let planUpdate = {};
     if (planChanged) {
         const detected = getPlanFromPriceId(currentPriceId);
@@ -929,15 +870,6 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
             });
         }
     }
-
-    logger.info("[Subscription:DEBUG] handleSubscriptionUpdated", {
-        subscriptionId: subscription.id,
-        hasPendingScheduledDowngrade,
-        planChanged,
-        currentPriceId,
-        dbPriceId: subscription.stripePriceId,
-        planUpdate,
-    });
 
     await prisma.subscription.update({
         where: { id: subscription.id },
@@ -964,6 +896,47 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
         subscriptionId: subscription.id,
         stripeStatus: stripeSubscription.status,
         mappedStatus,
+    });
+};
+
+/**
+ * Handle subscription_schedule.released webhook.
+ * Clears stripeScheduleId — fires when Stripe releases the schedule after the
+ * final phase completes (end_behavior: "release").
+ */
+export const handleScheduleReleased = async (schedule) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { stripeScheduleId: schedule.id },
+    });
+    if (!subscription) return;
+
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { stripeScheduleId: null },
+    });
+
+    logger.info("[Subscription] Schedule released — stripeScheduleId cleared", {
+        subscriptionId: subscription.id, scheduleId: schedule.id,
+    });
+};
+
+/**
+ * Handle subscription_schedule.canceled webhook.
+ * Clears stripeScheduleId — fires when a schedule is explicitly canceled in Stripe.
+ */
+export const handleScheduleCanceled = async (schedule) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { stripeScheduleId: schedule.id },
+    });
+    if (!subscription) return;
+
+    await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { stripeScheduleId: null },
+    });
+
+    logger.warn("[Subscription] Schedule canceled", {
+        subscriptionId: subscription.id, scheduleId: schedule.id,
     });
 };
 
