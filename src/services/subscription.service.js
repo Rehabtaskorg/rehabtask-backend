@@ -688,12 +688,24 @@ export const handleInvoicePaid = async (invoice) => {
         const newPlanType = parts[1];
         const newBillingInterval = parts[2] || subscription.billingInterval || "monthly";
         const planConfig = PLAN_CONFIG[newPlanType];
+
+        logger.info("[Subscription:DEBUG] handleInvoicePaid — scheduled downgrade block entered", {
+            subscriptionId: subscription.id,
+            cancelReason: subscription.cancelReason,
+            newPlanType,
+            newBillingInterval,
+            planConfigFound: !!planConfig,
+        });
+
         if (planConfig) {
-            // Change the price in Stripe NOW (at renewal time)
             try {
                 const newPriceId = getStripePriceId(newPlanType, newBillingInterval);
-                const stripeSubObj = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-                const itemId = stripeSubObj.items.data[0]?.id;
+                logger.info("[Subscription:DEBUG] handleInvoicePaid — applying Stripe price change", {
+                    from: subscription.stripePriceId,
+                    to: newPriceId,
+                    stripeSubscriptionId,
+                });
+                const itemId = stripeSub.items.data[0]?.id;
                 if (itemId) {
                     await stripe.subscriptions.update(stripeSubscriptionId, {
                         items: [{ id: itemId, price: newPriceId }],
@@ -702,10 +714,16 @@ export const handleInvoicePaid = async (invoice) => {
                     });
                     updateData.stripePriceId = newPriceId;
                     updateData.billingInterval = newBillingInterval;
+                    logger.info("[Subscription:DEBUG] handleInvoicePaid — Stripe price updated successfully");
+                } else {
+                    logger.warn("[Subscription:DEBUG] handleInvoicePaid — no subscription item ID found, skipping Stripe update");
                 }
             } catch (stripeErr) {
                 logger.error("[Subscription] Failed to update Stripe price on downgrade", {
-                    subscriptionId: subscription.id, error: stripeErr.message,
+                    subscriptionId: subscription.id,
+                    error: stripeErr.message,
+                    code: stripeErr.code,
+                    type: stripeErr.type,
                 });
             }
 
