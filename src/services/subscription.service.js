@@ -35,7 +35,7 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
     const trialEndsAt = new Date(Date.now() + TRIAL_DURATION_DAYS * TIME_MS.TWENTY_FOUR_HOURS);
     const { requestLimit, therapistLimit } = PLAN_CONFIG.standard;
 
-    return tx.subscription.create({
+    const sub = await tx.subscription.create({
         data: {
             customerId,
             planType: "standard",
@@ -45,6 +45,8 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
             requestLimit,
         },
     });
+    logger.info("[Subscription:DEBUG] Trial created", { customerId, subscriptionId: sub.id, trialEndsAt });
+    return sub;
 };
 
 /**
@@ -113,13 +115,15 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
     const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
     const priceId = getStripePriceId(planType, billingInterval);
 
-    // Check if customer already has saved payment methods — if so, let Stripe
-    // pre-fill instead of creating a duplicate
+    logger.info("[Subscription:DEBUG] createCheckoutSession", { customerId, userId, planType, billingInterval, stripeCustomerId, priceId });
+
     const existingMethods = await stripe.paymentMethods.list({
         customer: stripeCustomerId,
         type: "card",
         limit: 1,
     });
+
+    logger.info("[Subscription:DEBUG] Existing payment methods count", { count: existingMethods.data.length });
 
     const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
@@ -133,6 +137,7 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
         cancel_url: `${process.env.FRONTEND_URL}/customer/subscription`,
     });
 
+    logger.info("[Subscription:DEBUG] Checkout session created", { sessionId: session.id, url: session.url });
     return { url: session.url };
 };
 
@@ -292,6 +297,11 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
 
+    logger.info("[Subscription:DEBUG] upgradeSubscription called", {
+        customerId, planType, billingInterval,
+        existingSubscription: subscription ? { id: subscription.id, planType: subscription.planType, status: subscription.status } : null,
+    });
+
     if (!subscription) {
         throw new Error("No active paid subscription to upgrade. Use checkout for first-time subscriptions.");
     }
@@ -308,9 +318,13 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     const subscriptionItemId = stripeSubscription.items.data[0]?.id;
     if (!subscriptionItemId) throw new Error("Could not find subscription item in Stripe");
 
-    // allow_incomplete: Stripe updates the subscription and creates the invoice
-    // even when the PaymentIntent needs further action (3DS). The subscription
-    // status becomes `past_due` temporarily until the PI is confirmed.
+    logger.info("[Subscription:DEBUG] upgradeSubscription — calling stripe.subscriptions.update", {
+        stripeSubscriptionId: subscription.stripeSubscriptionId,
+        subscriptionItemId,
+        newPriceId,
+        payment_behavior: "allow_incomplete",
+    });
+
     let updated;
     try {
         updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -321,6 +335,12 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
             expand: ["latest_invoice.payment_intent"],
         });
     } catch (stripeError) {
+        logger.error("[Subscription:DEBUG] upgradeSubscription — stripe.subscriptions.update threw", {
+            code: stripeError.code,
+            type: stripeError.type,
+            statusCode: stripeError.statusCode,
+            message: stripeError.message,
+        });
         if (stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
             logger.warn("[Subscription] Upgrade payment declined", { customerId, planType, error: stripeError.message });
             const error = new Error(stripeError.message || "Payment failed. Please update your payment method and try again.");
@@ -333,8 +353,14 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
 
     const pi = updated.latest_invoice?.payment_intent;
 
-    // 3DS required — return clientSecret so frontend can complete the challenge.
-    // The invoice.paid webhook will finalise the DB update once authentication succeeds.
+    logger.info("[Subscription:DEBUG] upgradeSubscription — stripe update result", {
+        updatedSubscriptionStatus: updated.status,
+        latestInvoiceId: updated.latest_invoice?.id,
+        paymentIntentId: pi?.id,
+        paymentIntentStatus: pi?.status,
+        paymentIntentClientSecretPresent: !!pi?.client_secret,
+    });
+
     if (pi?.status === "requires_action") {
         logger.info("[Subscription] Upgrade requires 3DS authentication", { customerId, planType, paymentIntentId: pi.id });
         return {
@@ -345,8 +371,8 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         };
     }
 
-    // Hard decline — card was rejected, no action possible
     if (pi?.status === "requires_payment_method") {
+        logger.warn("[Subscription:DEBUG] upgradeSubscription — card declined", { customerId, planType, paymentIntentId: pi?.id });
         const error = new Error("Your card was declined. Please update your payment method and try again.");
         error.statusCode = 402;
         error.code = "PAYMENT_FAILED";
@@ -457,22 +483,30 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
  * Finds existing trial/free subscription and upgrades it, or creates new.
  */
 export const handleCheckoutCompleted = async (session) => {
+    logger.info("[Subscription:DEBUG] handleCheckoutCompleted fired", {
+        sessionId: session.id,
+        mode: session.mode,
+        metadata: session.metadata,
+        subscription: session.subscription,
+        customer: session.customer,
+        paymentStatus: session.payment_status,
+    });
+
     if (session.mode !== "subscription") return;
 
     const { customerId, planType, billingInterval } = session.metadata;
     if (!customerId || !planType) {
-        logger.warn("[Subscription] checkout.session.completed missing metadata", { sessionId: session.id });
+        logger.warn("[Subscription] checkout.session.completed missing metadata", { sessionId: session.id, metadata: session.metadata });
         return;
     }
 
     const stripeSubscriptionId = session.subscription;
 
-    // Idempotency: if already processed, skip
     const alreadyProcessed = await prisma.subscription.findFirst({
         where: { stripeSubscriptionId },
     });
     if (alreadyProcessed) {
-        logger.info("[Subscription] checkout.session.completed already processed", { stripeSubscriptionId });
+        logger.info("[Subscription] checkout.session.completed already processed", { stripeSubscriptionId, existingId: alreadyProcessed.id });
         return;
     }
 
@@ -487,6 +521,19 @@ export const handleCheckoutCompleted = async (session) => {
     const existing = await prisma.subscription.findFirst({
         where: { customerId },
         orderBy: { createdAt: "desc" },
+    });
+
+    logger.info("[Subscription:DEBUG] handleCheckoutCompleted — existing subscription lookup", {
+        customerId,
+        existingId: existing?.id ?? null,
+        existingStatus: existing?.status ?? null,
+        existingPlan: existing?.planType ?? null,
+        subscriptionItem: {
+            id: subscriptionItem?.id,
+            priceId: subscriptionItem?.price?.id,
+            periodStart: subscriptionItem?.current_period_start,
+            periodEnd: subscriptionItem?.current_period_end,
+        },
     });
 
     const data = {
@@ -512,10 +559,12 @@ export const handleCheckoutCompleted = async (session) => {
             where: { id: existing.id },
             data,
         });
+        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — updated existing subscription", { subscriptionId: subscription.id, planType, status: subscription.status });
     } else {
         subscription = await prisma.subscription.create({
             data: { ...data, customerId },
         });
+        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — created new subscription", { subscriptionId: subscription.id, planType });
     }
 
     // Send activation email and fire analytics
@@ -524,8 +573,10 @@ export const handleCheckoutCompleted = async (session) => {
             where: { id: customerId },
             include: { user: true },
         });
+        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — customer lookup for email", { found: !!customer, email: customer?.user?.email ?? null });
         if (customer) {
             await sendSubscriptionActivated({ customer, subscription });
+            logger.info("[Subscription:DEBUG] handleCheckoutCompleted — activation email sent", { email: customer.user.email });
             if (customer.user?.id) {
                 trackServerEvent(customer.user.id, "subscription_activated", {
                     plan_type: planType,
@@ -552,6 +603,15 @@ export const handleCheckoutCompleted = async (session) => {
  * Handle invoice.paid webhook. Renews the subscription period.
  */
 export const handleInvoicePaid = async (invoice) => {
+    logger.info("[Subscription:DEBUG] handleInvoicePaid fired", {
+        invoiceId: invoice.id,
+        stripeSubscriptionId: invoice.subscription,
+        amountPaid: invoice.amount_paid,
+        status: invoice.status,
+        billingReason: invoice.billing_reason,
+        customerId: invoice.customer,
+    });
+
     const stripeSubscriptionId = invoice.subscription;
     if (!stripeSubscriptionId) return;
 
@@ -574,11 +634,24 @@ export const handleInvoicePaid = async (invoice) => {
     const stripePlanType = stripeSub.metadata?.planType;
     const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
 
+    logger.info("[Subscription:DEBUG] handleInvoicePaid — state check", {
+        subscriptionId: subscription.id,
+        dbPlanType: subscription.planType,
+        dbStatus: subscription.status,
+        dbPeriodEnd: subscription.currentPeriodEnd,
+        invoicePeriodEnd: periodEnd,
+        stripePlanType,
+        stripeMetadata: stripeSub.metadata,
+        hasPlanChange,
+        hasPendingDowngrade,
+    });
+
     // Skip if already fully up-to-date — idempotent renewal guard
     if (!hasPendingDowngrade && !hasPlanChange &&
         subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
+        logger.info("[Subscription:DEBUG] handleInvoicePaid — skipped (already up to date)");
         return;
     }
 

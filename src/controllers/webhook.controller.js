@@ -27,6 +27,13 @@ const handleStripeWebhook = async (req, res) => {
         }
     }
 
+    logger.info("[Webhook:DEBUG] Event received", {
+        type: event.type,
+        id: event.id,
+        livemode: event.livemode,
+        objectId: event.data?.object?.id,
+    });
+
     try {
         switch (event.type) {
             // Payment Flow
