@@ -46,6 +46,8 @@ import {
     subscriptionCancelledByCustomer,
     subscriptionUpgraded,
     subscriptionDowngraded,
+    subscriptionResumed,
+    subscriptionDowngradeScheduled,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
     customerRefundAvailable,
@@ -383,4 +385,23 @@ export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, s
 
 export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {
     return dispatch(customer.user.email, customerRefundReturnedToCard, { customer, refundAmount });
+};
+
+/**
+ * Customer resumed a cancelled subscription before period end.
+ * @param {object} opts.customer - CustomerProfile with nested user
+ * @param {object} opts.subscription - Subscription record
+ */
+export const sendSubscriptionResumed = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionResumed, { customer, subscription });
+};
+
+/**
+ * Customer scheduled a plan downgrade — confirms the scheduled change.
+ * @param {object} opts.customer - CustomerProfile with nested user
+ * @param {object} opts.subscription - Subscription record
+ * @param {string} opts.targetPlan - The plan the subscription will downgrade to
+ */
+export const sendSubscriptionDowngradeScheduled = async ({ customer, subscription, targetPlan }) => {
+    return dispatch(customer.user.email, subscriptionDowngradeScheduled, { customer, subscription, targetPlan });
 };

@@ -842,6 +842,36 @@ export const subscriptionDowngraded = ({ customer }) => ({
     `),
 });
 
+export const subscriptionResumed = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask subscription has been resumed',
+    html: layout(`
+        ${heading('Subscription Resumed')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription cancellation has been reversed. Your plan will continue as normal.')}
+        ${hr()}
+        ${field('Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Next Renewal', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'View Subscription')}
+    `),
+});
+
+export const subscriptionDowngradeScheduled = ({ customer, subscription, targetPlan }) => ({
+    subject: 'Your RehabTask plan downgrade has been scheduled',
+    html: layout(`
+        ${heading('Plan Downgrade Scheduled')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your plan downgrade has been scheduled. You\'ll keep full access to your current plan until the end of your billing period.')}
+        ${hr()}
+        ${field('Current Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Downgrading To', targetPlan ? targetPlan.charAt(0).toUpperCase() + targetPlan.slice(1) : 'N/A')}
+        ${field('Effective Date', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${text('Changed your mind? You can cancel the scheduled downgrade from your subscription page.')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Manage Subscription')}
+    `),
+});
+
 // Existing Account Notification (sent when someone tries to register with an email that already exists)
 export const existingAccountNotification = ({ email, resetLink }) => ({
     subject: 'Sign-in attempt for your RehabTask account',

@@ -6,6 +6,8 @@ import { getOrCreateStripeCustomer } from "./payment.service.js";
 import {
     sendSubscriptionCancelledByCustomer,
     sendSubscriptionUpgraded,
+    sendSubscriptionResumed,
+    sendSubscriptionDowngradeScheduled,
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, getStripePriceId, getPlanFromPriceId, TRIAL_DURATION_DAYS } from "../config/subscriptionPlans.js";
@@ -206,9 +208,14 @@ export const resumeSubscription = async (customerId) => {
         cancel_at_period_end: false,
     });
 
-    await prisma.subscription.update({
+    const updated = await prisma.subscription.update({
         where: { id: subscription.id },
         data: { cancelledAt: null },
+        include: { customer: { include: { user: true } } },
+    });
+
+    sendSubscriptionResumed({ customer: updated.customer, subscription: updated }).catch((err) => {
+        logger.error("[Subscription] Failed to send resume email", { error: err.message });
     });
 
     logSystemEvent({
@@ -438,9 +445,18 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
         ],
     });
 
-    await prisma.subscription.update({
+    const updatedSub = await prisma.subscription.update({
         where: { id: subscription.id },
         data: { stripeScheduleId: schedule.id, cancelReason: null },
+        include: { customer: { include: { user: true } } },
+    });
+
+    sendSubscriptionDowngradeScheduled({
+        customer: updatedSub.customer,
+        subscription: updatedSub,
+        targetPlan: planType,
+    }).catch((err) => {
+        logger.error("[Subscription] Failed to send downgrade scheduled email", { error: err.message });
     });
 
     logSystemEvent({
