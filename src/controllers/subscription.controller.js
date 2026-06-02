@@ -6,6 +6,7 @@ import {
     resumeSubscription,
     upgradeSubscription,
     downgradeSubscription,
+    cancelScheduledDowngrade,
     previewUpgrade,
 } from "../services/subscription.service.js";
 
@@ -94,6 +95,15 @@ export const downgradeSubscriptionController = async (req, res, next) => {
     try {
         const { planType, billingInterval } = req.body;
         const result = await downgradeSubscription(req.user.customerProfile.id, planType, billingInterval);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const cancelScheduledDowngradeController = async (req, res, next) => {
+    try {
+        const result = await cancelScheduledDowngrade(req.user.customerProfile.id);
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);

@@ -1,4 +1,5 @@
 import { SUBSCRIPTION_STATUS, BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
+import { BadRequestError, NotFoundError } from "../utils/errors.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { getOrCreateStripeCustomer } from "./payment.service.js";
@@ -496,6 +497,31 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
         message: `Your plan will downgrade to ${planType} at the end of your current billing period.`,
         effectiveAt: subscription.currentPeriodEnd,
     };
+};
+
+/**
+ * Cancel a pending scheduled downgrade by releasing the Stripe Subscription Schedule.
+ * @param {string} customerId
+ */
+export const cancelScheduledDowngrade = async (customerId) => {
+    const subscription = await prisma.subscription.findFirst({
+        where: { customerId, status: { in: ["active"] }, stripeScheduleId: { not: null } },
+    });
+
+    if (!subscription) throw new NotFoundError("No scheduled downgrade found to cancel.");
+
+    await releaseScheduleIfPending(subscription);
+
+    logSystemEvent({
+        action: "subscription.downgrade_cancelled",
+        entityType: "subscription",
+        entityId: subscription.id,
+        changes: { customerId },
+    });
+
+    logger.info("[Subscription] Scheduled downgrade cancelled", { subscriptionId: subscription.id, customerId });
+
+    return { message: "Scheduled downgrade has been cancelled. Your current plan will continue." };
 };
 
 //─── Webhook Handlers ────────────────────────────────────────────────────────
