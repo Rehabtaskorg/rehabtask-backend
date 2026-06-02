@@ -93,6 +93,27 @@ export * from "./[domain].cron.service.js";
 - Never import from a sibling sub-file (e.g. `webhooks` importing from `lifecycle`) — extract to `helpers` instead to avoid circular deps
 - Do not delay this split — if you are editing a file already over the limit, split it in the same PR before adding new code
 
+### When to use a folder instead of flat files
+
+When a domain produces **3 or more sub-files**, move the entire domain into a folder:
+
+```
+src/services/subscription/
+    index.js                      ← barrel re-export (replaces subscription.service.js)
+    subscription.lifecycle.js     ← drop the redundant .service suffix inside the folder
+    subscription.webhooks.js
+    subscription.cron.js
+    subscription.helpers.js
+```
+
+The barrel becomes `index.js` — Node.js resolves `import from "../services/subscription"` automatically without needing to reference the file directly. All existing imports stay unchanged.
+
+**When to make the move:**
+- On the next domain you split that will produce 3+ files — do it from the start, not retroactively
+- When migrating an existing flat split — only do it when there is a natural reason to touch those imports anyway (new feature, refactor PR), not as a standalone churn commit
+
+**Do not mix conventions** — if a domain uses the folder structure, all its sub-files go in the folder. Never have some files flat and some in a folder for the same domain.
+
 ---
 
 ## Naming Conventions
