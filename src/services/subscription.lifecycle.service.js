@@ -47,7 +47,7 @@ export const getActiveSubscription = async (customerId) => {
     const subscription = await prisma.subscription.findFirst({
         where: {
             customerId,
-            status: { in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.TRIALING, SUBSCRIPTION_STATUS.GRACE_PERIOD] },
+            status: { in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.TRIALING, SUBSCRIPTION_STATUS.GRACE_PERIOD, SUBSCRIPTION_STATUS.PAST_DUE] },
         },
         orderBy: { createdAt: "desc" },
     });
@@ -333,7 +333,16 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw stripeError;
     }
 
-    const pi = updated.latest_invoice?.payment_intent;
+    let pi = updated.latest_invoice?.payment_intent;
+
+    // When the subscription comes back past_due, Stripe may not have expanded the PI
+    // on the subscription update response. Fetch it directly from the invoice.
+    if (!pi && updated.latest_invoice?.id) {
+        const invoice = await stripe.invoices.retrieve(updated.latest_invoice.id, {
+            expand: ["payment_intent"],
+        });
+        pi = invoice.payment_intent;
+    }
 
     logger.info("[Subscription:DEBUG] upgradeSubscription — stripe update result", {
         updatedSubscriptionStatus: updated.status,

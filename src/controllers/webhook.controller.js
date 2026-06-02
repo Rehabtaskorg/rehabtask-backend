@@ -95,6 +95,12 @@ const handleStripeWebhook = async (req, res) => {
                 await subscriptionService.handleInvoicePaymentFailed(event.data.object);
                 break;
 
+            case "invoice.payment_action_required":
+                logger.info("[Webhook] invoice.payment_action_required — awaiting frontend 3DS completion", {
+                    invoiceId: event.data.object.id,
+                });
+                break;
+
             case "customer.subscription.deleted":
                 await subscriptionService.handleSubscriptionDeleted(event.data.object);
                 break;
