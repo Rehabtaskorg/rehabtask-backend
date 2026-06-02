@@ -474,12 +474,10 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
         phases: [
             {
                 items: [{ price: subscription.stripePriceId }],
-                start_date: "now",
                 end_date: currentPeriodEnd,
             },
             {
                 items: [{ price: newPriceId }],
-                start_date: currentPeriodEnd,
             },
         ],
     });
