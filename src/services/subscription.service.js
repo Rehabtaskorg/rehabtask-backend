@@ -894,6 +894,7 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
                 therapistLimit: planConfig.therapistLimit ?? 999999,
                 requestLimit: planConfig.requestLimit ?? 999999,
                 cancelReason: null,
+                stripeScheduleId: null,
             };
             logger.info("[Subscription] Plan change detected from Stripe", {
                 subscriptionId: subscription.id,
