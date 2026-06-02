@@ -333,14 +333,11 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw stripeError;
     }
 
-    // Stripe's expand on subscriptions.update returns a truncated PI without client_secret.
-    // Always fetch the full PI directly from the invoice to get the complete object.
     let pi = null;
-    if (updated.latest_invoice?.id) {
-        const invoice = await stripe.invoices.retrieve(updated.latest_invoice.id, {
-            expand: ["payment_intent"],
-        });
-        pi = invoice.payment_intent;
+    const expandedPi = updated.latest_invoice?.payment_intent;
+    const piId = typeof expandedPi === "string" ? expandedPi : expandedPi?.id;
+    if (piId) {
+        pi = await stripe.paymentIntents.retrieve(piId);
     }
 
     logger.info("[Subscription:DEBUG] upgradeSubscription — stripe update result", {
