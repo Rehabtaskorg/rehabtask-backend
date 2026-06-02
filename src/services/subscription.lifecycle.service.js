@@ -333,11 +333,10 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw stripeError;
     }
 
-    let pi = updated.latest_invoice?.payment_intent;
-
-    // When the subscription comes back past_due, Stripe may not have expanded the PI
-    // on the subscription update response. Fetch it directly from the invoice.
-    if (!pi && updated.latest_invoice?.id) {
+    // Stripe's expand on subscriptions.update returns a truncated PI without client_secret.
+    // Always fetch the full PI directly from the invoice to get the complete object.
+    let pi = null;
+    if (updated.latest_invoice?.id) {
         const invoice = await stripe.invoices.retrieve(updated.latest_invoice.id, {
             expand: ["payment_intent"],
         });
@@ -368,6 +367,16 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         error.statusCode = 402;
         error.code = "PAYMENT_FAILED";
         throw error;
+    }
+
+    // Payment succeeded immediately — update DB and send email.
+    // If pi status is anything other than succeeded/null at this point, the webhook
+    // (invoice.paid) will handle the DB update once payment completes.
+    if (pi && pi.status !== "succeeded") {
+        logger.info("[Subscription] Upgrade payment pending — DB update deferred to webhook", {
+            customerId, planType, paymentIntentId: pi.id, piStatus: pi.status,
+        });
+        return { status: "pending", message: "Payment is being processed. Your plan will update automatically." };
     }
 
     const subscriptionItem = updated.items?.data?.[0];
