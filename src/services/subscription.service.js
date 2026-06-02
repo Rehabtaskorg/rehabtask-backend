@@ -79,16 +79,15 @@ export const getActiveSubscription = async (customerId) => {
 
 /**
  * Get subscription with current usage counts for the frontend.
+ * When a downgrade schedule is pending, resolves the target plan from Stripe
+ * and includes it as `scheduledDowngradePlan` on the subscription object.
  */
 export const getSubscriptionWithUsage = async (customerId) => {
     const subscription = await getActiveSubscription(customerId);
 
     const [activeRequestCount, activeTherapistBookings] = await Promise.all([
         prisma.therapyRequest.count({
-            where: {
-                customerId,
-                status: { in: ["created", "offers_received"] },
-            },
+            where: { customerId, status: { in: ["created", "offers_received"] } },
         }),
         prisma.booking.groupBy({
             by: ["therapistId"],
@@ -99,8 +98,22 @@ export const getSubscriptionWithUsage = async (customerId) => {
         }),
     ]);
 
+    let scheduledDowngradePlan = null;
+    if (subscription.stripeScheduleId) {
+        try {
+            const schedule = await stripe.subscriptionSchedules.retrieve(subscription.stripeScheduleId);
+            const phase2PriceId = schedule.phases?.[1]?.items?.[0]?.price;
+            if (phase2PriceId) {
+                const detected = getPlanFromPriceId(typeof phase2PriceId === "string" ? phase2PriceId : phase2PriceId.id);
+                scheduledDowngradePlan = detected?.planType ?? null;
+            }
+        } catch {
+            // Non-fatal — UI degrades gracefully without the plan name
+        }
+    }
+
     return {
-        subscription,
+        subscription: { ...subscription, scheduledDowngradePlan },
         usage: {
             activeRequests: activeRequestCount,
             activeTherapists: activeTherapistBookings.length,
