@@ -67,27 +67,31 @@ These are hard limits. When a file exceeds them, split it — do not keep adding
 
 ### How to split a service file
 
-When a service file grows beyond 300 lines, break it into focused sub-files using dot-notation:
+When a service file grows beyond 300 lines, break it into focused sub-files using dot-notation.
 
-```
-subscription.service.js         ← thin barrel: re-exports everything
-subscription.lifecycle.service.js   ← create, cancel, resume, upgrade, downgrade
-subscription.webhooks.service.js    ← all webhook handlers
-subscription.cron.service.js        ← trial expiry, grace period expiry
-```
+**Pattern — identify the concerns in the file, then give each its own file:**
 
-The barrel file re-exports all public functions so existing imports don't break:
+| Concern | File name |
+|---|---|
+| Core business operations (create, update, cancel, resume) | `[domain].lifecycle.service.js` |
+| Webhook event handlers | `[domain].webhooks.service.js` |
+| Scheduled/cron jobs | `[domain].cron.service.js` |
+| Pure data queries with no side effects | `[domain].queries.service.js` |
+
+**Private helpers** (functions not exported — parsers, formatters, internal utilities) live in the file that uses them most. Do not create a separate helpers file unless two or more sub-files share the same helper, in which case extract it to `[domain].helpers.js`.
+
+**The barrel file** (`[domain].service.js`) becomes a thin re-export so all existing imports continue to work without change:
 ```js
-export * from "./subscription.lifecycle.service.js";
-export * from "./subscription.webhooks.service.js";
-export * from "./subscription.cron.service.js";
+export * from "./[domain].lifecycle.service.js";
+export * from "./[domain].webhooks.service.js";
+export * from "./[domain].cron.service.js";
 ```
 
-Apply the same pattern to any domain that grows: `payment.service.js` →
-`payment.lifecycle.service.js`, `payment.webhooks.service.js`, etc.
-
-**Do not delay this split.** If you are editing a file and it is already over the limit,
-split it in the same PR before adding new code.
+**Rules:**
+- Every sub-file must have a single, clearly named responsibility — if you cannot describe it in 4 words, split further
+- Sub-files follow the same 300-line limit — if a sub-file grows past it, split again
+- Never import from a sibling sub-file (e.g. `webhooks` importing from `lifecycle`) — extract to `helpers` instead to avoid circular deps
+- Do not delay this split — if you are editing a file already over the limit, split it in the same PR before adding new code
 
 ---
 
