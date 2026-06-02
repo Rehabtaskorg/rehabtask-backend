@@ -453,8 +453,14 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
     const newPriceId = getStripePriceId(planType, billingInterval);
     const currentPeriodEnd = Math.floor(new Date(subscription.currentPeriodEnd).getTime() / 1000);
 
+    // Stripe does not allow phases + from_subscription in the same create call.
+    // Convert the subscription to a schedule first, then update with both phases.
     const schedule = await stripe.subscriptionSchedules.create({
         from_subscription: subscription.stripeSubscriptionId,
+    });
+
+    await stripe.subscriptionSchedules.update(schedule.id, {
+        end_behavior: "release",
         phases: [
             {
                 items: [{ price: subscription.stripePriceId }],
@@ -462,10 +468,8 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
             },
             {
                 items: [{ price: newPriceId }],
-                iterations: 1,
             },
         ],
-        end_behavior: "release",
     });
 
     await prisma.subscription.update({
