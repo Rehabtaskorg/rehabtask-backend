@@ -464,16 +464,21 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
     const currentPeriodEnd = Math.floor(new Date(subscription.currentPeriodEnd).getTime() / 1000);
 
     // Stripe does not allow phases + from_subscription in the same create call.
-    // Convert the subscription to a schedule first, then update with both phases.
+    // Create first (auto-populates Phase 1), then update to append the downgrade phase.
+    // Phase 1 start_date must be echoed back from the create response — it is locked
+    // to when the subscription started and cannot be modified, only re-stated.
     const schedule = await stripe.subscriptionSchedules.create({
         from_subscription: subscription.stripeSubscriptionId,
     });
+
+    const phase1StartDate = schedule.phases[0].start_date;
 
     await stripe.subscriptionSchedules.update(schedule.id, {
         end_behavior: "release",
         phases: [
             {
                 items: [{ price: subscription.stripePriceId }],
+                start_date: phase1StartDate,
                 end_date: currentPeriodEnd,
             },
             {
