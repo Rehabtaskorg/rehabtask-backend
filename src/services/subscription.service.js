@@ -162,13 +162,23 @@ export const createBillingPortalSession = async (userId) => {
  * @param {object} subscription - DB subscription record
  */
 const releaseScheduleIfPending = async (subscription) => {
-    if (!subscription.stripeScheduleId) return;
-    await stripe.subscriptionSchedules.release(subscription.stripeScheduleId);
+    // Check DB first, then fall back to Stripe in case a previous attempt
+    // created a schedule that was never saved to DB (e.g. the update call failed).
+    let scheduleId = subscription.stripeScheduleId;
+
+    if (!scheduleId) {
+        const stripeSub = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+        scheduleId = stripeSub.schedule ?? null;
+    }
+
+    if (!scheduleId) return;
+
+    await stripe.subscriptionSchedules.release(scheduleId);
     await prisma.subscription.update({
         where: { id: subscription.id },
         data: { stripeScheduleId: null },
     });
-    logger.info("[Subscription] Released existing schedule", { subscriptionId: subscription.id, scheduleId: subscription.stripeScheduleId });
+    logger.info("[Subscription] Released existing schedule", { subscriptionId: subscription.id, scheduleId });
 };
 
 /**
