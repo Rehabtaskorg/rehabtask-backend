@@ -45,7 +45,6 @@ export const createTrialSubscription = async (customerId, tx = prisma) => {
             requestLimit,
         },
     });
-    logger.info("[Subscription:DEBUG] Trial created", { customerId, subscriptionId: sub.id, trialEndsAt });
     return sub;
 };
 
@@ -128,15 +127,11 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
     const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
     const priceId = getStripePriceId(planType, billingInterval);
 
-    logger.info("[Subscription:DEBUG] createCheckoutSession", { customerId, userId, planType, billingInterval, stripeCustomerId, priceId });
-
     const existingMethods = await stripe.paymentMethods.list({
         customer: stripeCustomerId,
         type: "card",
         limit: 1,
     });
-
-    logger.info("[Subscription:DEBUG] Existing payment methods count", { count: existingMethods.data.length });
 
     const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
@@ -150,7 +145,6 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
         cancel_url: `${process.env.FRONTEND_URL}/customer/subscription`,
     });
 
-    logger.info("[Subscription:DEBUG] Checkout session created", { sessionId: session.id, url: session.url });
     return { url: session.url };
 };
 
@@ -333,11 +327,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
 
-    logger.info("[Subscription:DEBUG] upgradeSubscription called", {
-        customerId, planType, billingInterval,
-        existingSubscription: subscription ? { id: subscription.id, planType: subscription.planType, status: subscription.status } : null,
-    });
-
     if (!subscription) {
         throw new Error("No active paid subscription to upgrade. Use checkout for first-time subscriptions.");
     }
@@ -356,13 +345,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     const subscriptionItemId = stripeSubscription.items.data[0]?.id;
     if (!subscriptionItemId) throw new Error("Could not find subscription item in Stripe");
 
-    logger.info("[Subscription:DEBUG] upgradeSubscription — calling stripe.subscriptions.update", {
-        stripeSubscriptionId: subscription.stripeSubscriptionId,
-        subscriptionItemId,
-        newPriceId,
-        payment_behavior: "allow_incomplete",
-    });
-
     let updated;
     try {
         updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -373,12 +355,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
             expand: ["latest_invoice.payment_intent"],
         });
     } catch (stripeError) {
-        logger.error("[Subscription:DEBUG] upgradeSubscription — stripe.subscriptions.update threw", {
-            code: stripeError.code,
-            type: stripeError.type,
-            statusCode: stripeError.statusCode,
-            message: stripeError.message,
-        });
         if (stripeError.type === "StripeCardError" || stripeError.statusCode === 402) {
             logger.warn("[Subscription] Upgrade payment declined", { customerId, planType, error: stripeError.message });
             const error = new Error(stripeError.message || "Payment failed. Please update your payment method and try again.");
@@ -529,15 +505,6 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
  * Finds existing trial/free subscription and upgrades it, or creates new.
  */
 export const handleCheckoutCompleted = async (session) => {
-    logger.info("[Subscription:DEBUG] handleCheckoutCompleted fired", {
-        sessionId: session.id,
-        mode: session.mode,
-        metadata: session.metadata,
-        subscription: session.subscription,
-        customer: session.customer,
-        paymentStatus: session.payment_status,
-    });
-
     if (session.mode !== "subscription") return;
 
     const { customerId, planType, billingInterval } = session.metadata;
@@ -569,19 +536,6 @@ export const handleCheckoutCompleted = async (session) => {
         orderBy: { createdAt: "desc" },
     });
 
-    logger.info("[Subscription:DEBUG] handleCheckoutCompleted — existing subscription lookup", {
-        customerId,
-        existingId: existing?.id ?? null,
-        existingStatus: existing?.status ?? null,
-        existingPlan: existing?.planType ?? null,
-        subscriptionItem: {
-            id: subscriptionItem?.id,
-            priceId: subscriptionItem?.price?.id,
-            periodStart: subscriptionItem?.current_period_start,
-            periodEnd: subscriptionItem?.current_period_end,
-        },
-    });
-
     const data = {
         stripeSubscriptionId,
         stripeCustomerId: session.customer,
@@ -605,12 +559,10 @@ export const handleCheckoutCompleted = async (session) => {
             where: { id: existing.id },
             data,
         });
-        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — updated existing subscription", { subscriptionId: subscription.id, planType, status: subscription.status });
     } else {
         subscription = await prisma.subscription.create({
             data: { ...data, customerId },
         });
-        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — created new subscription", { subscriptionId: subscription.id, planType });
     }
 
     // Send activation email and fire analytics
@@ -619,10 +571,8 @@ export const handleCheckoutCompleted = async (session) => {
             where: { id: customerId },
             include: { user: true },
         });
-        logger.info("[Subscription:DEBUG] handleCheckoutCompleted — customer lookup for email", { found: !!customer, email: customer?.user?.email ?? null });
         if (customer) {
             await sendSubscriptionActivated({ customer, subscription });
-            logger.info("[Subscription:DEBUG] handleCheckoutCompleted — activation email sent", { email: customer.user.email });
             if (customer.user?.id) {
                 trackServerEvent(customer.user.id, "subscription_activated", {
                     plan_type: planType,
@@ -649,15 +599,6 @@ export const handleCheckoutCompleted = async (session) => {
  * Handle invoice.paid webhook. Renews the subscription period.
  */
 export const handleInvoicePaid = async (invoice) => {
-    logger.info("[Subscription:DEBUG] handleInvoicePaid fired", {
-        invoiceId: invoice.id,
-        stripeSubscriptionId: invoice.subscription,
-        amountPaid: invoice.amount_paid,
-        status: invoice.status,
-        billingReason: invoice.billing_reason,
-        customerId: invoice.customer,
-    });
-
     const stripeSubscriptionId = invoice.subscription;
     if (!stripeSubscriptionId) return;
 
