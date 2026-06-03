@@ -333,20 +333,37 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         throw stripeError;
     }
 
+    // Nested expand on subscriptions.update is unreliable in SDK v20.
+    // Fetch the invoice separately with payment_intent expanded explicitly.
     let pi = null;
-    const expandedPi = updated.latest_invoice?.payment_intent;
-    const piId = typeof expandedPi === "string" ? expandedPi : expandedPi?.id;
+    if (updated.latest_invoice?.id) {
+        const invoice = await stripe.invoices.retrieve(updated.latest_invoice.id, {
+            expand: ["payment_intent"],
+        });
 
-    logger.info("[Subscription:DEBUG] upgradeSubscription — PI resolution", {
-        latestInvoiceId: updated.latest_invoice?.id,
-        latestInvoiceType: typeof updated.latest_invoice,
-        expandedPiType: typeof expandedPi,
-        expandedPiValue: typeof expandedPi === "string" ? expandedPi : JSON.stringify(expandedPi)?.slice(0, 100),
-        piId,
-    });
+        logger.info("[Subscription:DEBUG] upgradeSubscription — invoice PI check", {
+            invoiceId: invoice.id,
+            invoiceStatus: invoice.status,
+            paymentIntentType: typeof invoice.payment_intent,
+            paymentIntentId: typeof invoice.payment_intent === "string"
+                ? invoice.payment_intent
+                : invoice.payment_intent?.id,
+            paymentIntentStatus: typeof invoice.payment_intent === "object"
+                ? invoice.payment_intent?.status
+                : "not expanded",
+            clientSecretPresent: typeof invoice.payment_intent === "object"
+                ? !!invoice.payment_intent?.client_secret
+                : false,
+        });
 
-    if (piId) {
-        pi = await stripe.paymentIntents.retrieve(piId);
+        if (invoice.payment_intent) {
+            const piId = typeof invoice.payment_intent === "string"
+                ? invoice.payment_intent
+                : invoice.payment_intent.id;
+            pi = typeof invoice.payment_intent === "object" && invoice.payment_intent.client_secret
+                ? invoice.payment_intent
+                : await stripe.paymentIntents.retrieve(piId);
+        }
     }
 
     logger.info("[Subscription:DEBUG] upgradeSubscription — stripe update result", {
