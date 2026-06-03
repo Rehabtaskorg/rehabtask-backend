@@ -4,7 +4,6 @@ import { stripe } from "../config/stripe.js";
 import { NotFoundError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
-import { createPerSessionRefund } from "./payment.service.js";
 import {
     sendCancellationRequestedToTherapist,
     sendCancellationApprovedToCustomer,
@@ -125,16 +124,42 @@ const executeCancellationApproval = async (bookingId, { isAuto = false, actorId 
     let refundResult = null;
 
     if (payment.status === "escrowed") {
-        // Reuse createPerSessionRefund for consistent Connect transfer + pending_connect logic.
-        // We pass a synthetic "session" with just an id since booking-level refunds have no session.
-        refundResult = await createPerSessionRefund({
-            session: { id: bookingId, bookingId },
-            payment,
-            customer,
-            booking,
-            reason: "booking_cancelled",
-            amount: refundAmount,
+        // Booking-level cancellation has no session. Cannot use createPerSessionRefund
+        // because customer_refunds.session_id is a FK to sessions. Inline the same
+        // Connect-transfer + pending_connect logic with sessionId omitted (nullable).
+        let stripeTransfer = null;
+        if (customer.stripeAccountId && customer.stripeOnboardingComplete) {
+            try {
+                stripeTransfer = await stripe.transfers.create({
+                    amount: Math.round(refundAmount * 100),
+                    currency: "usd",
+                    destination: customer.stripeAccountId,
+                    metadata: {
+                        type: "customer_refund",
+                        reason: "booking_cancelled",
+                        bookingId: booking.id,
+                        paymentId: payment.id,
+                    },
+                }, { idempotencyKey: `cancellation-refund-${booking.id}` });
+            } catch (err) {
+                logger.error("[CancellationService] Connect transfer failed — creating pending_connect record", { bookingId, error: err.message });
+            }
+        }
+
+        const customerRefund = await prisma.customerRefund.create({
+            data: {
+                customerId: customer.id,
+                paymentId: payment.id,
+                bookingId: booking.id,
+                amount: refundAmount,
+                reason: "booking_cancelled",
+                status: stripeTransfer ? "transferred" : "pending_connect",
+                stripeTransferId: stripeTransfer?.id ?? null,
+                transferredAt: stripeTransfer ? new Date() : null,
+            },
         });
+
+        refundResult = { customerRefund, transfer: stripeTransfer };
     }
 
     await prisma.$transaction(async (tx) => {
