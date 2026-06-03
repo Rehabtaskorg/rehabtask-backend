@@ -346,13 +346,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         const piRef = invoicePayment?.payment?.payment_intent;
         const piId = typeof piRef === "string" ? piRef : piRef?.id;
 
-        logger.info("[Subscription:DEBUG] upgradeSubscription — invoice PI check", {
-            invoiceId: updated.latest_invoice.id,
-            invoicePaymentId: invoicePayment?.id,
-            piId,
-            piRefType: typeof piRef,
-        });
-
         if (piId) {
             pi = await stripe.paymentIntents.retrieve(piId);
         }

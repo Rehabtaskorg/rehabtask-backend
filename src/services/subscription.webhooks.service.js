@@ -108,8 +108,9 @@ export const handleInvoicePaid = async (invoice) => {
     const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const stripePlanType = stripeSub.metadata?.planType;
     const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
+    const isRecoveringFromPastDue = subscription.status === SUBSCRIPTION_STATUS.PAST_DUE;
 
-    if (!hasPlanChange &&
+    if (!hasPlanChange && !isRecoveringFromPastDue &&
         subscription.status === "active" &&
         subscription.currentPeriodEnd && periodEnd &&
         periodEnd <= subscription.currentPeriodEnd) {
@@ -152,7 +153,7 @@ export const handleInvoicePaid = async (invoice) => {
         changes: { stripeSubscriptionId, periodEnd, planType: updateData.planType ?? subscription.planType },
     });
 
-    if (hasPlanChange) {
+    if (hasPlanChange || isRecoveringFromPastDue) {
         prisma.customerProfile.findUnique({
             where: { id: subscription.customerId },
             include: { user: true },
