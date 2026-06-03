@@ -336,6 +336,15 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     let pi = null;
     const expandedPi = updated.latest_invoice?.payment_intent;
     const piId = typeof expandedPi === "string" ? expandedPi : expandedPi?.id;
+
+    logger.info("[Subscription:DEBUG] upgradeSubscription — PI resolution", {
+        latestInvoiceId: updated.latest_invoice?.id,
+        latestInvoiceType: typeof updated.latest_invoice,
+        expandedPiType: typeof expandedPi,
+        expandedPiValue: typeof expandedPi === "string" ? expandedPi : JSON.stringify(expandedPi)?.slice(0, 100),
+        piId,
+    });
+
     if (piId) {
         pi = await stripe.paymentIntents.retrieve(piId);
     }
