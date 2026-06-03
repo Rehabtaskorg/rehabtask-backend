@@ -57,7 +57,7 @@ import {
     adminApproveRescheduleController,
     adminDenyRescheduleController,
 } from "../controllers/admin.booking.controller.js";
-import { adminOverrideCancellationController } from "../controllers/booking.cancellation.controller.js";
+import { adminApproveCancellationController, adminRejectCancellationController } from "../controllers/booking.cancellation.controller.js";
 
 import {
     adminListSubscriptionsController,
@@ -146,8 +146,8 @@ router.get("/bookings/:bookingId", ...adminOrSubAdmin, requirePermission("bookin
 router.put("/bookings/:bookingId/cancel", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminCancelBookingSchema }), adminCancelBookingController);
 router.put("/bookings/:bookingId/approve-reschedule", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminApproveRescheduleController);
 router.put("/bookings/:bookingId/deny-reschedule", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminDenyRescheduleSchema }), adminDenyRescheduleController);
-router.post("/bookings/:bookingId/cancellation/approve", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminOverrideCancellationController);
-router.post("/bookings/:bookingId/cancellation/reject", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminCancelBookingSchema }), adminOverrideCancellationController);
+router.post("/bookings/:bookingId/cancellation/approve", ...adminOrSubAdmin, requirePermission("bookings"), validate(bookingIdParamSchema, "params"), adminApproveCancellationController);
+router.post("/bookings/:bookingId/cancellation/reject", ...adminOrSubAdmin, requirePermission("bookings"), validateMultiple({ params: bookingIdParamSchema, body: adminCancelBookingSchema }), adminRejectCancellationController);
 
 // Subscription Management
 router.get("/subscriptions/stats", ...adminOrSubAdmin, requirePermission("subscriptions"), adminGetSubscriptionStatsController);

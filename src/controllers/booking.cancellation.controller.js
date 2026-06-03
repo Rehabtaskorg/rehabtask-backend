@@ -45,14 +45,25 @@ export const rejectCancellationController = async (req, res, next) => {
 };
 
 /**
- * POST /admin/bookings/:id/cancellation/approve
- * POST /admin/bookings/:id/cancellation/reject
- * Admin override — bypasses the 24h window and therapist-actor check.
+ * POST /admin/bookings/:bookingId/cancellation/approve
+ * Admin override — approve without 24h restriction.
  */
-export const adminOverrideCancellationController = async (req, res, next) => {
+export const adminApproveCancellationController = async (req, res, next) => {
     try {
-        const action = req.path.endsWith("/approve") ? "approve" : "reject";
-        const result = await adminOverrideCancellation(req.params.bookingId, action, req.user.id, req.body.reason);
+        const result = await adminOverrideCancellation(req.params.bookingId, "approve", req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * POST /admin/bookings/:bookingId/cancellation/reject
+ * Admin override — reject without 24h restriction.
+ */
+export const adminRejectCancellationController = async (req, res, next) => {
+    try {
+        const result = await adminOverrideCancellation(req.params.bookingId, "reject", req.user.id, req.body.reason);
         res.status(200).json({ success: true, data: result });
     } catch (err) {
         next(err);
