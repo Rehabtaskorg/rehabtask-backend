@@ -197,13 +197,5 @@ router.post("/visit-types", ...adminOnly, adminCreateVisitTypeController);
 router.put("/visit-types/:id", ...adminOnly, adminUpdateVisitTypeController);
 router.post("/visit-types/seed", ...adminOnly, adminSeedVisitTypesController);
 
-// TEMPORARY — staging test only, remove after Step 3.6 cron test
-import { runCancellationExpiry } from "../jobs/cancellationExpiry.js";
-router.post("/crons/cancellation-expiry", ...adminOnly, async (req, res, next) => {
-    try {
-        const result = await runCancellationExpiry();
-        res.json({ success: true, data: result });
-    } catch (err) { next(err); }
-});
 
 export default router;
