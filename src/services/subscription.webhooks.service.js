@@ -183,6 +183,9 @@ export const handleInvoicePaid = async (invoice) => {
  * @param {object} invoice - Stripe Invoice object
  */
 export const handleInvoicePaymentFailed = async (invoice) => {
+
+
+
     const stripeSubscriptionId = invoice.subscription
         ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
@@ -195,19 +198,27 @@ export const handleInvoicePaymentFailed = async (invoice) => {
         data: { status: SUBSCRIPTION_STATUS.PAST_DUE },
     });
 
-    try {
-        const customer = await prisma.customerProfile.findUnique({
-            where: { id: subscription.customerId },
-            include: { user: true },
-        });
-        if (customer) {
-            await sendSubscriptionPaymentFailed({ customer });
-            if (customer.user?.id) {
-                trackServerEvent(customer.user.id, "subscription_payment_failed", { plan_type: subscription.planType });
+    const requires3DS = invoice.next_payment_attempt === null && invoice.attempt_count === 1;
+
+    if (!requires3DS) {
+        try {
+            const customer = await prisma.customerProfile.findUnique({
+                where: { id: subscription.customerId },
+                include: { user: true },
+            });
+            if (customer) {
+                await sendSubscriptionPaymentFailed({ customer });
+                if (customer.user?.id) {
+                    trackServerEvent(customer.user.id, "subscription_payment_failed", { plan_type: subscription.planType });
+                }
             }
+        } catch (err) {
+            logger.error("[Subscription] Failed to send payment failed email", { error: err.message });
         }
-    } catch (err) {
-        logger.error("[Subscription] Failed to send payment failed email", { error: err.message });
+    } else {
+        logger.info("[Subscription] Payment failed due to 3DS — skipping payment failed email", {
+            subscriptionId: subscription.id, invoiceId: invoice.id,
+        });
     }
 
     logSystemEvent({
