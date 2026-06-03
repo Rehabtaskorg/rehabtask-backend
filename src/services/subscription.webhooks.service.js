@@ -1,7 +1,7 @@
 import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
-import { sendSubscriptionActivated, sendSubscriptionPaymentFailed, sendSubscriptionUpgraded } from "./email.service.js";
+import { sendSubscriptionActivated, sendSubscriptionPaymentFailed, sendSubscriptionUpgraded, sendSubscriptionPaymentActionRequired } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { PLAN_CONFIG, GRACE_PERIOD_DAYS, getPlanFromPriceId } from "../config/subscriptionPlans.js";
 import { logSystemEvent } from "./audit.service.js";
@@ -216,6 +216,41 @@ export const handleInvoicePaymentFailed = async (invoice) => {
     });
 
     logger.warn("[Subscription] Invoice payment failed", { subscriptionId: subscription.id });
+};
+
+/**
+ * Handle invoice.payment_action_required webhook.
+ * Fires when an off-session renewal requires 3DS authentication.
+ * Sends the customer a branded email with the hosted invoice URL to complete verification.
+ * @param {object} invoice - Stripe Invoice object
+ */
+export const handleInvoicePaymentActionRequired = async (invoice) => {
+    const stripeSubscriptionId = invoice.subscription;
+    if (!stripeSubscriptionId) return;
+
+    const subscription = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
+    if (!subscription) return;
+
+    const hostedInvoiceUrl = invoice.hosted_invoice_url;
+    if (!hostedInvoiceUrl) {
+        logger.warn("[Subscription] invoice.payment_action_required — no hosted_invoice_url", { invoiceId: invoice.id });
+        return;
+    }
+
+    try {
+        const customer = await prisma.customerProfile.findUnique({
+            where: { id: subscription.customerId },
+            include: { user: true },
+        });
+        if (customer) {
+            await sendSubscriptionPaymentActionRequired({ customer, hostedInvoiceUrl });
+            logger.info("[Subscription] Payment action required email sent", {
+                subscriptionId: subscription.id, invoiceId: invoice.id,
+            });
+        }
+    } catch (err) {
+        logger.error("[Subscription] Failed to send payment action required email", { error: err.message });
+    }
 };
 
 /**

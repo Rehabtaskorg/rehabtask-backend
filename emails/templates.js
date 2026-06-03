@@ -797,6 +797,19 @@ export const trialExpired = ({ customer }) => ({
 });
 
 // Subscription payment failed
+export const subscriptionPaymentActionRequired = ({ customer, hostedInvoiceUrl }) => ({
+    subject: 'Action required — verify your payment to continue your RehabTask subscription',
+    html: layout(`
+        ${heading('Payment Verification Required')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription renewal requires a one-time verification step from your bank. Your card has not been declined — this is a security check required by your bank.')}
+        ${text('Please complete the verification to keep your plan active. This only takes a moment.')}
+        ${button(hostedInvoiceUrl, 'Complete Verification')}
+        ${hr()}
+        ${muted('If you did not initiate this, please contact our support team. Your subscription will remain active while we await verification.')}
+    `),
+});
+
 export const subscriptionPaymentFailed = ({ customer }) => ({
     subject: 'Action needed — your RehabTask payment failed',
     html: layout(`
