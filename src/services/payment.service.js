@@ -1176,102 +1176,6 @@ const finalizeBooking = async (bookingId, therapistId) => {
 /**
  * Process refund
  */
-const processRefund = async (bookingId, userId, reason) => {
-    const booking = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        include: {
-            payment: true,
-            sessions: { orderBy: { sessionNumber: "asc" } },
-            customer: { select: { userId: true } },
-        },
-    });
-
-    if (!booking || !booking.payment) {
-        throw new Error("Booking or payment not found");
-    }
-
-    // Ownership check: only the customer who owns this booking can request a refund
-    if (booking.customer.userId !== userId) {
-        throw new Error("Unauthorized: you can only refund your own bookings");
-    }
-
-    const payment = booking.payment;
-
-    if (!["escrowed", "intent_created"].includes(payment.status)) {
-        throw new Error("Payment cannot be refunded");
-    }
-
-    // Defense-in-depth: block refund if funds were already transferred to therapist.
-    // Without this, customer gets full refund while therapist keeps the transfer — net loss.
-    if (payment.stripeTransferId) {
-        throw new Error(
-            "Payment cannot be refunded because funds have already been transferred to the therapist. Please contact support."
-        );
-    }
-
-    let refund = null;
-
-    if (payment.status === "intent_created") {
-        // Payment was never charged — cancel the PaymentIntent instead of refunding
-        try {
-            await stripe.paymentIntents.cancel(payment.stripePaymentIntentId, {
-                cancellation_reason: "requested_by_customer",
-            });
-        } catch (cancelErr) {
-            logger.warn("[PaymentService] Failed to cancel intent during refund", {
-                intentId: payment.stripePaymentIntentId,
-                error: cancelErr.message,
-            });
-        }
-    } else {
-        // Payment was charged (escrowed) — issue a Stripe refund
-        refund = await stripe.refunds.create({
-            payment_intent: payment.stripePaymentIntentId,
-            reason: "requested_by_customer",
-            metadata: {
-                bookingId: booking.id,
-                refundReason: reason,
-            },
-        });
-    }
-
-    await prisma.$transaction(async (tx) => {
-        await tx.payment.update({
-            where: { id: payment.id },
-            data: payment.status === "intent_created"
-                ? { status: REFUND_STATUS.FAILED }
-                : { status: "refunded", refundedAt: new Date() },
-        });
-
-        await tx.booking.update({
-            where: { id: bookingId },
-            data: { status: BOOKING_STATUS.CANCELLED },
-        });
-
-        // Cancel all sessions in one batch — updateMany is a single DB round trip
-        // regardless of session count, avoiding transaction timeouts on large bookings.
-        if (booking.sessions?.length > 0) {
-            await tx.session.updateMany({
-                where: { bookingId },
-                data: {
-                    status: BOOKING_STATUS.CANCELLED,
-                    cancellationReason: reason,
-                },
-            });
-        }
-    }, { timeout: 15000 });
-
-    // Event: payment.refunded
-    logAction({
-        actorId: userId,
-        action: "payment.refunded",
-        entityType: "payment",
-        entityId: payment.id,
-        changes: { bookingId, amount: parseFloat(payment.amount), reason, previousStatus: payment.status },
-    });
-
-    return { refund, paymentId: payment.id, amount: parseFloat(payment.amount) };
-}
 
 /**
  * Get customer payment history
@@ -1356,7 +1260,7 @@ const getTherapistPayoutHistory = async (therapistId) => {
         const sessions = p.booking?.sessions || [];
         const total = sessions.length;
         if (total <= 1) return parseFloat(p.therapistPayout);
-        const missedOrCancelled = sessions.filter((s) => s.status === SESSION_STATUS.MISSED || s.status === BOOKING_STATUS.CANCELLED).length;
+        const missedOrCancelled = sessions.filter((s) => s.status === SESSION_STATUS.MISSED || s.status === SESSION_STATUS.CANCELLED).length;
         if (missedOrCancelled === 0) return parseFloat(p.therapistPayout);
         const deliverable = Math.max(0, total - missedOrCancelled);
         return parseFloat(((parseFloat(p.therapistPayout) / total) * deliverable).toFixed(2));
@@ -2310,7 +2214,6 @@ export {
     releaseSessionPayout,
     releasePartialSessionPayout,
     finalizeBooking,
-    processRefund,
     getCustomerPaymentHistory,
     getTherapistPayoutHistory,
     createOrGetConnectAccount,

@@ -28,14 +28,15 @@ export const APPROVAL_STATUS = {
 
 // ─── Booking Status ───────────────────────────────────────────────────────────
 export const BOOKING_STATUS = {
-    PENDING:              "pending",
-    ACCEPTED:             "accepted",
-    CONFIRMED:            "confirmed",
-    IN_PROGRESS:          "in_progress",
-    RESCHEDULE_REQUESTED: "reschedule_requested",
-    FINALIZED:            "finalized",
-    COMPLETED:            "completed",
-    CANCELLED:            "cancelled",
+    PENDING:                 "pending",
+    ACCEPTED:                "accepted",
+    CONFIRMED:               "confirmed",
+    IN_PROGRESS:             "in_progress",
+    RESCHEDULE_REQUESTED:    "reschedule_requested",
+    FINALIZED:               "finalized",
+    COMPLETED:               "completed",
+    CANCELLED:               "cancelled",
+    CANCELLATION_REQUESTED:  "cancellation_requested",
 };
 
 // ─── Session Status ───────────────────────────────────────────────────────────

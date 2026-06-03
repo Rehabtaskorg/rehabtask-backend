@@ -708,7 +708,7 @@ export const cancelSession = async (sessionId, userId, reason) => {
         const updated = await tx.session.update({
             where: { id: sessionId },
             data: {
-                status: BOOKING_STATUS.CANCELLED,
+                status: SESSION_STATUS.CANCELLED,
                 cancellationReason: reason,
             },
         });

@@ -342,10 +342,13 @@ model Booking {
   patient                  Patient?         @relation("PatientBookings", fields: [patientId], references: [id])
   therapist                TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   visitTypeRef             VisitType?       @relation(fields: [visitTypeId], references: [id])
-  earlyCompletionRequested Boolean?         @default(false) @map("early_completion_requested")
-  earlyCompletionReason    String?          @map("early_completion_reason")
-  earlyCompletionBy        String?          @map("early_completion_by") @db.VarChar(20)
-  payment                  Payment?
+  earlyCompletionRequested  Boolean?         @default(false) @map("early_completion_requested")
+  earlyCompletionReason     String?          @map("early_completion_reason")
+  earlyCompletionBy         String?          @map("early_completion_by") @db.VarChar(20)
+  cancellationReason        String?          @map("cancellation_reason")
+  cancellationRequestedAt   DateTime?        @map("cancellation_requested_at") @db.Timestamptz(3)
+  preCancellationStatus     String?          @map("pre_cancellation_status") @db.VarChar(50)
+  payment                   Payment?
   sessions                 Session[]
   messages                 Message[]
   review                   Review?
@@ -792,6 +795,7 @@ enum BookingStatus {
   in_progress
   completed
   cancelled
+  cancellation_requested
   reschedule_requested
   finalized
 }
