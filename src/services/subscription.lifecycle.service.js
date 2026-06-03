@@ -351,14 +351,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         }
     }
 
-    logger.info("[Subscription:DEBUG] upgradeSubscription — stripe update result", {
-        updatedSubscriptionStatus: updated.status,
-        latestInvoiceId: updated.latest_invoice?.id,
-        paymentIntentId: pi?.id,
-        paymentIntentStatus: pi?.status,
-        paymentIntentClientSecretPresent: !!pi?.client_secret,
-    });
-
     if (pi?.status === "requires_action") {
         logger.info("[Subscription] Upgrade requires 3DS authentication", { customerId, planType, paymentIntentId: pi.id });
         return {
@@ -370,7 +362,6 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     }
 
     if (pi?.status === "requires_payment_method") {
-        logger.warn("[Subscription:DEBUG] upgradeSubscription — card declined", { customerId, planType, paymentIntentId: pi?.id });
         const error = new Error("Your card was declined. Please update your payment method and try again.");
         error.statusCode = 402;
         error.code = "PAYMENT_FAILED";
