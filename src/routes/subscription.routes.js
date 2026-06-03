@@ -9,6 +9,7 @@ import {
     previewUpgradeController,
     upgradeSubscriptionController,
     downgradeSubscriptionController,
+    cancelScheduledDowngradeController,
 } from "../controllers/subscription.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -25,5 +26,6 @@ router.post("/resume", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitive
 router.post("/preview-upgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(createCheckoutSchema), previewUpgradeController);
 router.post("/upgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), upgradeSubscriptionController);
 router.post("/downgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createCheckoutSchema), downgradeSubscriptionController);
+router.delete("/downgrade", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, cancelScheduledDowngradeController);
 
 export default router;

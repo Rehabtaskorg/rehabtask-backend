@@ -95,12 +95,24 @@ const handleStripeWebhook = async (req, res) => {
                 await subscriptionService.handleInvoicePaymentFailed(event.data.object);
                 break;
 
+            case "invoice.payment_action_required":
+                await subscriptionService.handleInvoicePaymentActionRequired(event.data.object);
+                break;
+
             case "customer.subscription.deleted":
                 await subscriptionService.handleSubscriptionDeleted(event.data.object);
                 break;
 
             case "customer.subscription.updated":
                 await subscriptionService.handleSubscriptionUpdated(event.data.object);
+                break;
+
+            case "subscription_schedule.released":
+                await subscriptionService.handleScheduleReleased(event.data.object);
+                break;
+
+            case "subscription_schedule.canceled":
+                await subscriptionService.handleScheduleCanceled(event.data.object);
                 break;
 
             default:
