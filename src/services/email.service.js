@@ -44,7 +44,11 @@ import {
     trialExpired,
     subscriptionPaymentFailed,
     subscriptionCancelledByCustomer,
+    subscriptionUpgraded,
     subscriptionDowngraded,
+    subscriptionResumed,
+    subscriptionDowngradeScheduled,
+    subscriptionPaymentActionRequired,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
     customerRefundAvailable,
@@ -343,6 +347,10 @@ export const sendSubscriptionCancelledByCustomer = async ({ customer, subscripti
     return dispatch(customer.user.email, subscriptionCancelledByCustomer, { customer, subscription });
 };
 
+export const sendSubscriptionUpgraded = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionUpgraded, { customer, subscription });
+};
+
 export const sendSubscriptionDowngraded = async ({ customer }) => {
     return dispatch(customer.user.email, subscriptionDowngraded, { customer });
 };
@@ -378,4 +386,33 @@ export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, s
 
 export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {
     return dispatch(customer.user.email, customerRefundReturnedToCard, { customer, refundAmount });
+};
+
+/**
+ * Customer resumed a cancelled subscription before period end.
+ * @param {object} opts.customer - CustomerProfile with nested user
+ * @param {object} opts.subscription - Subscription record
+ */
+export const sendSubscriptionResumed = async ({ customer, subscription }) => {
+    return dispatch(customer.user.email, subscriptionResumed, { customer, subscription });
+};
+
+/**
+ * Customer scheduled a plan downgrade — confirms the scheduled change.
+ * @param {object} opts.customer - CustomerProfile with nested user
+ * @param {object} opts.subscription - Subscription record
+ * @param {string} opts.targetPlan - The plan the subscription will downgrade to
+ */
+export const sendSubscriptionDowngradeScheduled = async ({ customer, subscription, targetPlan }) => {
+    return dispatch(customer.user.email, subscriptionDowngradeScheduled, { customer, subscription, targetPlan });
+};
+
+/**
+ * Customer's subscription renewal requires 3DS verification (off-session).
+ * Sends a hosted invoice URL so the customer can complete authentication.
+ * @param {object} opts.customer - CustomerProfile with nested user
+ * @param {string} opts.hostedInvoiceUrl - Stripe-hosted invoice URL for completing 3DS
+ */
+export const sendSubscriptionPaymentActionRequired = async ({ customer, hostedInvoiceUrl }) => {
+    return dispatch(customer.user.email, subscriptionPaymentActionRequired, { customer, hostedInvoiceUrl });
 };

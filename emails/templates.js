@@ -98,6 +98,20 @@ export const subscriptionActivated = ({ customer, subscription }) => ({
     `),
 });
 
+export const subscriptionUpgraded = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask plan has been upgraded',
+    html: layout(`
+        ${heading('Plan Upgraded')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your plan has been upgraded. The prorated charge for the remainder of your billing period has been applied.')}
+        ${hr()}
+        ${field('New Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Next Renewal', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'View Subscription')}
+    `),
+});
+
 // New Request Notification (to therapist)
 export const newRequestNotification = ({ therapist, request }) => {
     const truncatedDesc = request.description && request.description.length > 150
@@ -783,6 +797,19 @@ export const trialExpired = ({ customer }) => ({
 });
 
 // Subscription payment failed
+export const subscriptionPaymentActionRequired = ({ customer, hostedInvoiceUrl }) => ({
+    subject: 'Action required — verify your payment to continue your RehabTask subscription',
+    html: layout(`
+        ${heading('Payment Verification Required')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription renewal requires a one-time verification step from your bank. Your card has not been declined — this is a security check required by your bank.')}
+        ${text('Please complete the verification to keep your plan active. This only takes a moment.')}
+        ${button(hostedInvoiceUrl, 'Complete Verification')}
+        ${hr()}
+        ${muted('If you did not initiate this, please contact our support team. Your subscription will remain active while we await verification.')}
+    `),
+});
+
 export const subscriptionPaymentFailed = ({ customer }) => ({
     subject: 'Action needed — your RehabTask payment failed',
     html: layout(`
@@ -825,6 +852,36 @@ export const subscriptionDowngraded = ({ customer }) => ({
         ${hr()}
         ${text('Your existing requests and bookings are not affected, but you won\'t be able to create new ones beyond the Free plan limits.')}
         ${button(`${FRONTEND_URL}/customer/subscription`, 'Upgrade Your Plan')}
+    `),
+});
+
+export const subscriptionResumed = ({ customer, subscription }) => ({
+    subject: 'Your RehabTask subscription has been resumed',
+    html: layout(`
+        ${heading('Subscription Resumed')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your subscription cancellation has been reversed. Your plan will continue as normal.')}
+        ${hr()}
+        ${field('Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Next Renewal', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'View Subscription')}
+    `),
+});
+
+export const subscriptionDowngradeScheduled = ({ customer, subscription, targetPlan }) => ({
+    subject: 'Your RehabTask plan downgrade has been scheduled',
+    html: layout(`
+        ${heading('Plan Downgrade Scheduled')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text('Your plan downgrade has been scheduled. You\'ll keep full access to your current plan until the end of your billing period.')}
+        ${hr()}
+        ${field('Current Plan', subscription.planType ? subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1) : 'N/A')}
+        ${field('Downgrading To', targetPlan ? targetPlan.charAt(0).toUpperCase() + targetPlan.slice(1) : 'N/A')}
+        ${field('Effective Date', formatDate(subscription.currentPeriodEnd))}
+        ${hr()}
+        ${text('Changed your mind? You can cancel the scheduled downgrade from your subscription page.')}
+        ${button(`${FRONTEND_URL}/customer/subscription`, 'Manage Subscription')}
     `),
 });
 

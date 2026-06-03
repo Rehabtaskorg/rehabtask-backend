@@ -54,12 +54,74 @@ If you see a DB call in a controller → move it to the service.
 
 ---
 
+## File Size Limits — Mandatory Splitting Rules
+
+These are hard limits. When a file exceeds them, split it — do not keep adding to it.
+
+| File type | Hard limit | Split strategy |
+|---|---|---|
+| Service file | 300 lines | Split by responsibility (see below) |
+| Controller file | 150 lines | One controller per domain; split admin vs customer |
+| Route file | 80 lines | One route file per domain |
+| Utility / helper | 100 lines | Split by concern |
+
+### How to split a service file
+
+When a service file grows beyond 300 lines, break it into focused sub-files using dot-notation.
+
+**Pattern — identify the concerns in the file, then give each its own file:**
+
+| Concern | File name |
+|---|---|
+| Core business operations (create, update, cancel, resume) | `[domain].lifecycle.service.js` |
+| Webhook event handlers | `[domain].webhooks.service.js` |
+| Scheduled/cron jobs | `[domain].cron.service.js` |
+| Pure data queries with no side effects | `[domain].queries.service.js` |
+
+**Private helpers** (functions not exported — parsers, formatters, internal utilities) live in the file that uses them most. Do not create a separate helpers file unless two or more sub-files share the same helper, in which case extract it to `[domain].helpers.js`.
+
+**The barrel file** (`[domain].service.js`) becomes a thin re-export so all existing imports continue to work without change:
+```js
+export * from "./[domain].lifecycle.service.js";
+export * from "./[domain].webhooks.service.js";
+export * from "./[domain].cron.service.js";
+```
+
+**Rules:**
+- Every sub-file must have a single, clearly named responsibility — if you cannot describe it in 4 words, split further
+- Sub-files follow the same 300-line limit — if a sub-file grows past it, split again
+- Never import from a sibling sub-file (e.g. `webhooks` importing from `lifecycle`) — extract to `helpers` instead to avoid circular deps
+- Do not delay this split — if you are editing a file already over the limit, split it in the same PR before adding new code
+
+### When to use a folder instead of flat files
+
+When a domain produces **3 or more sub-files**, move the entire domain into a folder:
+
+```
+src/services/subscription/
+    index.js                      ← barrel re-export (replaces subscription.service.js)
+    subscription.lifecycle.js     ← drop the redundant .service suffix inside the folder
+    subscription.webhooks.js
+    subscription.cron.js
+    subscription.helpers.js
+```
+
+The barrel becomes `index.js` — Node.js resolves `import from "../services/subscription"` automatically without needing to reference the file directly. All existing imports stay unchanged.
+
+**When to make the move:**
+- On the next domain you split that will produce 3+ files — do it from the start, not retroactively
+- When migrating an existing flat split — only do it when there is a natural reason to touch those imports anyway (new feature, refactor PR), not as a standalone churn commit
+
+**Do not mix conventions** — if a domain uses the folder structure, all its sub-files go in the folder. Never have some files flat and some in a folder for the same domain.
+
+---
+
 ## Naming Conventions
 
 | Thing | Convention |
 |---|---|
 | Controllers | `[domain].controller.js` or `admin.[domain].controller.js` |
-| Services | `[domain].service.js` |
+| Services | `[domain].service.js` or `[domain].[concern].service.js` |
 | Routes | `[domain].routes.js` |
 | Validators | `[domain].schema.js` |
 | Constants | `UPPER_SNAKE_CASE` |
@@ -82,7 +144,7 @@ All of the following must live there, never hardcoded inline:
 
 - Always use typed error classes from `src/utils/errors.js`. Never `throw new Error('plain string')`.
 - Every async controller must use `try/catch` + `next(err)`. Never send error responses directly from a controller.
-- Fire-and-forget email calls must have `.catch(logger.error)` and a comment explaining they are intentionally non-blocking.
+- Fire-and-forget email calls must have `.catch(logger.error)` — intentionally non-blocking.
 
 ---
 
@@ -106,13 +168,11 @@ Never return a raw array at the top level. Always `{ success: true, data: [...] 
 - Avoid N+1 queries — use `include` or `select` to fetch related data in one query.
 - Always handle `P2002` (unique constraint) and `P2025` (record not found) Prisma errors.
 
----
-
-## Dead Code — Flag and Remove
-
-- `jsonwebtoken` and `bcryptjs` are installed but unused → flag for removal from `package.json`
-- Sentry DSN is validated in `env.js` but never initialized → either wire it up or remove it
-- If you encounter any empty stub, unused import, or dead variable, remove it
+### Schema migrations
+- Never run `prisma migrate dev` against a shared environment (dev, staging, prod).
+- To add a column: edit `schema.prisma`, hand-craft the SQL in `prisma/migrations/<timestamp>_<name>/migration.sql`, commit both.
+- Every migration must be safe on a live table: new columns must be nullable or have a default; never `DROP COLUMN` or change a type without verifying nothing reads it first.
+- `prisma migrate deploy` runs automatically on container startup via `entrypoint.sh` — do not run it manually in CI.
 
 ---
 
@@ -120,6 +180,15 @@ Never return a raw array at the top level. Always `{ success: true, data: [...] 
 
 - Use Winston logger from `src/config/logger.js`. Never `console.log` in production code.
 - Never log: passwords, tokens, card numbers, PII.
+- Debug-only log lines must be prefixed `[Domain:DEBUG]` and removed before merging to `main`.
+
+---
+
+## Dead Code — Flag and Remove
+
+- `jsonwebtoken` and `bcryptjs` are installed but unused → flag for removal from `package.json`
+- Sentry DSN is validated in `env.js` but never initialized → either wire it up or remove it
+- If you encounter any empty stub, unused import, or dead variable, remove it
 
 ---
 
@@ -131,6 +200,8 @@ Never return a raw array at the top level. Always `{ success: true, data: [...] 
 - [ ] Are all async controllers using `try/catch` + `next(err)`?
 - [ ] Are magic strings/numbers extracted to `constants.js`?
 - [ ] Any `console.log`? Replace with `logger`.
+- [ ] Any `[Domain:DEBUG]` log lines left in? Remove before merging to `main`.
 - [ ] Is input validated with Zod before reaching the controller?
 - [ ] Any N+1 query risks?
 - [ ] Are unused imports removed?
+- [ ] Is this file over its line limit? Split it before adding more code.

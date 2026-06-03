@@ -230,6 +230,7 @@ model Subscription {
   gracePeriodEndsAt    DateTime?          @map("grace_period_ends_at") @db.Timestamptz(3)
   cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
   cancelReason         String?            @map("cancel_reason")
+  stripeScheduleId     String?            @map("stripe_schedule_id") @db.VarChar(255)
   therapistLimit       Int                @map("therapist_limit")
   requestLimit         Int                @map("request_limit")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
