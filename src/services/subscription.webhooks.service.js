@@ -95,7 +95,8 @@ export const handleCheckoutCompleted = async (session) => {
  * @param {object} invoice - Stripe Invoice object
  */
 export const handleInvoicePaid = async (invoice) => {
-    const stripeSubscriptionId = invoice.subscription;
+    const stripeSubscriptionId = invoice.subscription
+        ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
 
     const subscription = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
@@ -182,7 +183,8 @@ export const handleInvoicePaid = async (invoice) => {
  * @param {object} invoice - Stripe Invoice object
  */
 export const handleInvoicePaymentFailed = async (invoice) => {
-    const stripeSubscriptionId = invoice.subscription;
+    const stripeSubscriptionId = invoice.subscription
+        ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
 
     const subscription = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
@@ -225,7 +227,9 @@ export const handleInvoicePaymentFailed = async (invoice) => {
  * @param {object} invoice - Stripe Invoice object
  */
 export const handleInvoicePaymentActionRequired = async (invoice) => {
-    const stripeSubscriptionId = invoice.subscription;
+    // In Stripe API 2025-12-15.clover, subscription ID moved to parent.subscription_details.
+    const stripeSubscriptionId = invoice.subscription
+        ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
 
     const subscription = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
