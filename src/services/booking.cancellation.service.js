@@ -163,7 +163,7 @@ const executeCancellationApproval = async (bookingId, { isAuto = false, actorId 
     }
 
     await prisma.$transaction(async (tx) => {
-        await tx.payment.update({ where: { id: payment.id }, data: { status: "refunded", refundedAt: new Date() } });
+        await tx.payment.update({ where: { id: payment.id }, data: { status: "refunded", refundedAt: new Date(), refundedAmount: refundAmount } });
         await tx.booking.update({
             where: { id: bookingId },
             data: {
