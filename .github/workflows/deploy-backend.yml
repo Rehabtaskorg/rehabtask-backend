@@ -185,8 +185,8 @@ jobs:
               --port 8080 \
               --min-instances 1 \
               --max-instances 10 \
-              --memory 1Gi \
-              --cpu 2 \
+              --memory 512Mi \
+              --cpu 1 \
               --service-account ${{ env.RUNTIME_SA }} \
               --allow-unauthenticated \
               $NO_TRAFFIC_FLAG \
@@ -201,7 +201,7 @@ jobs:
               --region ${{ env.REGION }} \
               --port 8080 \
               --min-instances 0 \
-              --max-instances 5 \
+              --max-instances 10 \
               --memory 512Mi \
               --cpu 1 \
               --service-account ${{ env.RUNTIME_SA }} \
