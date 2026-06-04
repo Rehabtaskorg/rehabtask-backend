@@ -8,6 +8,8 @@ import {
     respondToRevisionController, resubmitSessionController, extendRevisionController,
     markMissedByTherapistController, markMissedByCustomerController,
     markAttemptedByTherapistController,
+    approveSessionCancellationController,
+    rejectSessionCancellationController,
 } from "../controllers/session.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 
@@ -18,7 +20,9 @@ router.get("/therapist", authenticate, authorize([USER_ROLES.THERAPIST]), getThe
 router.get("/:sessionId", authenticate, getSessionController);
 router.post("/:sessionId/complete", authenticate, authorize([USER_ROLES.THERAPIST]), completeTherapistController);
 router.post("/:sessionId/confirm", authenticate, authorize([USER_ROLES.CUSTOMER]), confirmByCustomerController);
-router.post("/:sessionId/cancel", authenticate, cancelSessionController);
+router.post("/:sessionId/cancellation/request", authenticate, cancelSessionController);
+router.post("/:sessionId/cancellation/approve", authenticate, approveSessionCancellationController);
+router.post("/:sessionId/cancellation/reject", authenticate, rejectSessionCancellationController);
 router.post("/:sessionId/schedule", authenticate, authorize([USER_ROLES.THERAPIST]), scheduleSessionController);
 router.post("/:sessionId/request-revision", authenticate, authorize([USER_ROLES.CUSTOMER]), requestRevisionController);
 // Legacy endpoint — kept for backward compat. Calls respondToRevision + resubmitSession in sequence.

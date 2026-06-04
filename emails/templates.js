@@ -1077,3 +1077,119 @@ export const attemptedVisitTherapistPayout = ({ therapist, customer, session, bo
         ${muted('Commission is applied at payout time. Net amount will reflect on your earnings page.')}
     `),
 });
+
+// ─── Cancellation Flow ────────────────────────────────────────────────────────
+
+export const cancellationRequestedToTherapist = ({ therapist, customer, booking, reason }) => ({
+    subject: `Action required: ${customer.fullName} has requested to cancel their booking`,
+    html: layout(`
+        ${heading('Cancellation Request')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> has requested to cancel their booking. You have <strong>24 hours</strong> to approve or reject this request. If you don't respond, the cancellation will be approved automatically.`)}
+        ${hr()}
+        ${field('Customer', customer.fullName)}
+        ${field('Reason', reason || 'No reason provided')}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'Review Request')}
+        ${muted('If you take no action within 24 hours, the booking will be cancelled and the customer will receive a full refund.')}
+    `),
+});
+
+export const cancellationApprovedToCustomer = ({ customer, therapist, booking, refundAmount, refundMethod }) => ({
+    subject: 'Your cancellation has been approved',
+    html: layout(`
+        ${heading('Cancellation Approved')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`Your cancellation request for your booking with <strong>${therapist.fullName}</strong> has been approved.`)}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#059669;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">Full Refund</p>
+        ${hr()}
+        ${refundMethod === 'transferred'
+            ? text('Your refund has been sent to your linked bank account and should arrive within 2–3 business days.')
+            : `${text('To receive your refund, set up your payout account. It only takes a few minutes.')}${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}`
+        }
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
+    `),
+});
+
+export const cancellationRejectedToCustomer = ({ customer, therapist, booking, rejectionReason }) => ({
+    subject: 'Your cancellation request was not approved',
+    html: layout(`
+        ${heading('Cancellation Request Declined')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`Your therapist <strong>${therapist.fullName}</strong> has declined your cancellation request. Your booking remains active.`)}
+        ${hr()}
+        ${field('Reason', rejectionReason || 'No reason provided')}
+        ${hr()}
+        ${text('If you have further questions, please contact your therapist directly through the platform.')}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
+        ${muted('If you believe this decision is incorrect, please contact our support team.')}
+    `),
+});
+
+// ─── Session Cancellation Flow ────────────────────────────────────────────────
+
+export const sessionCancellationRequestedToOtherParty = ({ recipient, requester, session, booking, reason, deadlineStr }) => ({
+    subject: `Action required: ${requester.fullName} wants to cancel Session ${session.sessionNumber}`,
+    html: layout(`
+        ${heading('Session Cancellation Request')}
+        ${text(`Hi ${recipient.fullName},`)}
+        ${text(`<strong>${requester.fullName}</strong> has requested to cancel <strong>Session ${session.sessionNumber}</strong>. You have <strong>24 hours</strong> to approve or reject. If you don't respond, the cancellation will be approved automatically.`)}
+        ${hr()}
+        ${field('Reason', reason || 'No reason provided')}
+        ${field('Response deadline', deadlineStr)}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'Review Request')}
+        ${muted('If you take no action within 24 hours, the session will be cancelled and the customer will receive a full refund for that session.')}
+    `),
+});
+
+export const sessionCancellationApprovedToRequester = ({ requester, session, refundAmount, refundMethod }) => ({
+    subject: `Session ${session.sessionNumber} cancellation approved`,
+    html: layout(`
+        ${heading('Session Cancellation Approved')}
+        ${text(`Hi ${requester.fullName},`)}
+        ${text(`Session ${session.sessionNumber} has been cancelled and a refund is on its way.`)}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#059669;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">Refund for Session ${session.sessionNumber}</p>
+        ${hr()}
+        ${refundMethod === 'transferred'
+            ? text('Your refund has been sent to your linked bank account and should arrive within 2–3 business days.')
+            : `${text('To receive your refund, set up your payout account.')}${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}`
+        }
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
+    `),
+});
+
+export const sessionCancellationRejectedToRequester = ({ requester, session, rejectionReason }) => ({
+    subject: `Session ${session.sessionNumber} cancellation request declined`,
+    html: layout(`
+        ${heading('Session Cancellation Declined')}
+        ${text(`Hi ${requester.fullName},`)}
+        ${text(`Your request to cancel Session ${session.sessionNumber} was declined. The session remains active.`)}
+        ${hr()}
+        ${field('Reason', rejectionReason || 'No reason provided')}
+        ${hr()}
+        ${muted('If you have further questions, please contact the other party directly through the platform.')}
+    `),
+});
+
+export const cancellationAutoApprovedToCustomer = ({ customer, therapist, booking, refundAmount, refundMethod }) => ({
+    subject: 'Your cancellation has been automatically approved',
+    html: layout(`
+        ${heading('Cancellation Auto-Approved')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`Your therapist did not respond to your cancellation request within 24 hours. Your booking with <strong>${therapist.fullName}</strong> has been automatically cancelled.`)}
+        ${hr()}
+        <p style="color:#059669;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#059669;font-size:13px;font-weight:600;text-align:center;margin:4px 0 0;">Full Refund</p>
+        ${hr()}
+        ${refundMethod === 'transferred'
+            ? text('Your refund has been sent to your linked bank account and should arrive within 2–3 business days.')
+            : `${text('To receive your refund, set up your payout account.')}${button(`${FRONTEND_URL}/customer/payout-setup`, 'Set Up Payout Account')}`
+        }
+        ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
+    `),
+});

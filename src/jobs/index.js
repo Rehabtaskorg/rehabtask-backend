@@ -6,6 +6,8 @@ import { runPaymentReminders } from "./paymentReminders.js";
 import { runSubscriptionCron } from "./subscriptionCron.js";
 import { runExpiredRefunds } from "./expiredRefunds.js";
 import { runRetryPendingRefunds } from "./retryPendingRefunds.js";
+import { runCancellationExpiry } from "./cancellationExpiry.js";
+import { runSessionCancellationExpiry } from "./sessionCancellationExpiry.js";
 import { logger } from "../config/logger.js";
 
 export const startScheduledJobs = () => {
@@ -46,6 +48,16 @@ export const startScheduledJobs = () => {
         catch (error) { logger.error('[Jobs] Retry pending refunds failed', { error: error.message }); }
     }, TIME_MS.TEN_MIN);
 
+    setInterval(async () => {
+        try { await runCancellationExpiry(); }
+        catch (error) { logger.error('[Jobs] Cancellation expiry cron failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
+
+    setInterval(async () => {
+        try { await runSessionCancellationExpiry(); }
+        catch (error) { logger.error('[Jobs] Session cancellation expiry cron failed', { error: error.message }); }
+    }, TIME_MS.ONE_HOUR);
+
     setTimeout(async () => {
         try { await runSessionReminders(); } catch (e) { logger.error('[Jobs] Startup sessionReminders failed', { error: e.message }); }
         try { await runExpireOffers(); } catch (e) { logger.error('[Jobs] Startup expireOffers failed', { error: e.message }); }
@@ -54,7 +66,9 @@ export const startScheduledJobs = () => {
         try { await runSubscriptionCron(); } catch (e) { logger.error('[Jobs] Startup subscriptionCron failed', { error: e.message }); }
         try { await runExpiredRefunds(); } catch (e) { logger.error('[Jobs] Startup expiredRefunds failed', { error: e.message }); }
         try { await runRetryPendingRefunds(); } catch (e) { logger.error('[Jobs] Startup retryPendingRefunds failed', { error: e.message }); }
+        try { await runCancellationExpiry(); } catch (e) { logger.error('[Jobs] Startup cancellationExpiry failed', { error: e.message }); }
+        try { await runSessionCancellationExpiry(); } catch (e) { logger.error('[Jobs] Startup sessionCancellationExpiry failed', { error: e.message }); }
     }, 10_000);
 
-    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h), retryPendingRefunds (10m)');
+    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h), retryPendingRefunds (10m), cancellationExpiry (1h)');
 }
