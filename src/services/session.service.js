@@ -676,61 +676,9 @@ export const extendRevision = async (sessionId, therapistId) => {
 /**
  * Cancel session
  */
-export const cancelSession = async (sessionId, userId, reason) => {
-    const session = await prisma.session.findUnique({
-        where: { id: sessionId },
-        include: {
-            booking: {
-                include: {
-                    customer: true,
-                    therapist: true,
-                },
-            },
-        },
-    });
-
-    if (!session) {
-        throw new Error("Session not found");
-    }
-
-    const isCustomer = session.booking.customer.userId === userId;
-    const isTherapist = session.booking.therapist.userId === userId;
-
-    if (!isCustomer && !isTherapist) {
-        throw new Error("Unauthorized");
-    }
-
-    if (session.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER) {
-        throw new Error("Cannot cancel confirmed session");
-    }
-
-    const updatedSession = await prisma.$transaction(async (tx) => {
-        const updated = await tx.session.update({
-            where: { id: sessionId },
-            data: {
-                status: BOOKING_STATUS.CANCELLED,
-                cancellationReason: reason,
-            },
-        });
-
-        await tx.booking.update({
-            where: { id: session.bookingId },
-            data: { status: BOOKING_STATUS.CANCELLED },
-        });
-
-        return updated;
-    }, { timeout: 10000 });
-
-    // Event: session.cancelled
-    logAction({
-        actorId: userId,
-        action: isCustomer ? "session.cancelled_by_customer" : "session.cancelled_by_therapist",
-        entityType: "session",
-        entityId: sessionId,
-        changes: { bookingId: session.bookingId, reason, cancelledBy: isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST },
-    });
-
-    return updatedSession;
+export const cancelSession = async (sessionId, userId, actorRole, reason) => {
+    const { requestSessionCancellation } = await import("./session.cancellation.service.js");
+    return requestSessionCancellation(sessionId, userId, actorRole, reason);
 }
 
 /**

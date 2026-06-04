@@ -4,7 +4,6 @@ import {
     createPaymentIntentController,
     getPaymentHistoryController,
     getPayoutHistoryController,
-    processRefundController,
     createConnectAccountController,
     createAccountSessionController,
     getConnectAccountStatusController,
@@ -21,15 +20,13 @@ import {
 import { authenticate, authorize } from "../middleware/auth.js";
 import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
-import { createPaymentIntentSchema, refundSchema, paymentMethodIdParamSchema } from "../validators/payment.schema.js";
+import { createPaymentIntentSchema, paymentMethodIdParamSchema } from "../validators/payment.schema.js";
 
 const router = express.Router();
 
 // Customer routes
 router.post("/create-intent", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
 router.get("/history", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentHistoryController);
-router.post("/refund", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(refundSchema), processRefundController);
-
 // Saved payment methods
 router.get("/methods", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentMethodsController);
 router.post("/methods/setup", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createSetupIntentController);

@@ -58,6 +58,13 @@ import {
     attemptedVisitTherapistPayout,
     stripeRequirementsAlert,
     customerStripeRequirementsAlert,
+    cancellationRequestedToTherapist,
+    cancellationApprovedToCustomer,
+    cancellationRejectedToCustomer,
+    cancellationAutoApprovedToCustomer,
+    sessionCancellationRequestedToOtherParty,
+    sessionCancellationApprovedToRequester,
+    sessionCancellationRejectedToRequester,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -416,3 +423,24 @@ export const sendSubscriptionDowngradeScheduled = async ({ customer, subscriptio
 export const sendSubscriptionPaymentActionRequired = async ({ customer, hostedInvoiceUrl }) => {
     return dispatch(customer.user.email, subscriptionPaymentActionRequired, { customer, hostedInvoiceUrl });
 };
+
+export const sendCancellationRequestedToTherapist = async ({ therapist, customer, booking, reason }) =>
+    dispatch(therapist.user.email, cancellationRequestedToTherapist, { therapist, customer, booking, reason });
+
+export const sendCancellationApprovedToCustomer = async ({ customer, therapist, booking, refundAmount, refundMethod }) =>
+    dispatch(customer.user.email, cancellationApprovedToCustomer, { customer, therapist, booking, refundAmount, refundMethod });
+
+export const sendCancellationRejectedToCustomer = async ({ customer, therapist, booking, rejectionReason }) =>
+    dispatch(customer.user.email, cancellationRejectedToCustomer, { customer, therapist, booking, rejectionReason });
+
+export const sendCancellationAutoApprovedToCustomer = async ({ customer, therapist, booking, refundAmount, refundMethod }) =>
+    dispatch(customer.user.email, cancellationAutoApprovedToCustomer, { customer, therapist, booking, refundAmount, refundMethod });
+
+export const sendSessionCancellationRequestedToOtherParty = async ({ recipient, requester, session, booking, reason, deadlineStr }) =>
+    dispatch(recipient.user.email, sessionCancellationRequestedToOtherParty, { recipient, requester, session, booking, reason, deadlineStr });
+
+export const sendSessionCancellationApprovedToRequester = async ({ requester, session, refundAmount, refundMethod }) =>
+    dispatch(requester.user.email, sessionCancellationApprovedToRequester, { requester, session, refundAmount, refundMethod });
+
+export const sendSessionCancellationRejectedToRequester = async ({ requester, session, rejectionReason }) =>
+    dispatch(requester.user.email, sessionCancellationRejectedToRequester, { requester, session, rejectionReason });

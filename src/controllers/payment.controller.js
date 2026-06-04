@@ -5,7 +5,6 @@ import {
     createOrGetConnectAccount,
     createAccountSession,
     getConnectAccountStatus,
-    processRefund,
     getPaymentMethods,
     createSetupIntent,
     removePaymentMethod,
@@ -111,35 +110,6 @@ const getConnectAccountStatusController = async (req, res, next) => {
         const status = await getConnectAccountStatus(therapistId);
 
         res.status(200).json({ success: true, data: status });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Process refund
- */
-const processRefundController = async (req, res, next) => {
-    try {
-        const { bookingId, reason } = req.body;
-        const { refund, paymentId, amount } = await processRefund(bookingId, req.user.id, reason);
-
-        // Audit: customer-initiated refund
-        logAction({
-            actorId: req.user.id,
-            action: "payment.refunded",
-            entityType: "payment",
-            entityId: paymentId,
-            changes: {
-                trigger: "customer_request",
-                bookingId,
-                amount,
-                reason,
-                stripeRefundId: refund?.id || null,
-            },
-        });
-
-        res.status(200).json({ success: true, data: refund });
     } catch (error) {
         next(error);
     }
@@ -258,7 +228,6 @@ export {
     createConnectAccountController,
     createAccountSessionController,
     getConnectAccountStatusController,
-    processRefundController,
     getPaymentMethodsController,
     createSetupIntentController,
     removePaymentMethodController,
