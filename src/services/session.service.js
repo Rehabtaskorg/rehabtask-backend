@@ -676,94 +676,9 @@ export const extendRevision = async (sessionId, therapistId) => {
 /**
  * Cancel session
  */
-export const cancelSession = async (sessionId, userId, reason) => {
-    const session = await prisma.session.findUnique({
-        where: { id: sessionId },
-        include: {
-            booking: {
-                include: {
-                    customer: { include: { user: { select: { email: true } } } },
-                    therapist: true,
-                    payment: true,
-                },
-            },
-        },
-    });
-
-    if (!session) throw new BadRequestError("Session not found");
-
-    const isCustomer = session.booking.customer.userId === userId;
-    const isTherapist = session.booking.therapist.userId === userId;
-
-    if (!isCustomer && !isTherapist) throw new BadRequestError("Unauthorized");
-
-    if (session.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER) {
-        throw new BadRequestError("Cannot cancel a session that has already been confirmed");
-    }
-
-    if ([SESSION_STATUS.CANCELLED, SESSION_STATUS.MISSED, SESSION_STATUS.ATTEMPTED].includes(session.status)) {
-        throw new BadRequestError(`Session is already in '${session.status}' status`);
-    }
-
-    const payment = session.booking.payment;
-    if (!payment || !["escrowed", "partially_released"].includes(payment.status)) {
-        throw new BadRequestError("Cannot refund a cancelled session — payment is not in a refundable state");
-    }
-
-    // Cancel the session
-    const updatedSession = await prisma.session.update({
-        where: { id: sessionId },
-        data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason },
-    });
-
-    // Refund this session's rate via Connect transfer (or pending_connect if no account)
-    const { customerRefund } = await createPerSessionRefund({
-        session: { id: session.id, bookingId: session.bookingId },
-        payment: { id: payment.id, stripePaymentIntentId: payment.stripePaymentIntentId },
-        customer: session.booking.customer,
-        booking: {
-            id: session.booking.id,
-            rate: session.booking.rate,
-            therapist: session.booking.therapist,
-        },
-        reason: "session_cancelled",
-    });
-
-    // Check if all sessions are now terminal — finalize booking if so
-    const allSessions = await prisma.session.findMany({
-        where: { bookingId: session.bookingId },
-        select: { id: true, status: true },
-    });
-    const anyOpenSession = allSessions.some((s) =>
-        ![SESSION_STATUS.CONFIRMED_BY_CUSTOMER, SESSION_STATUS.CANCELLED, SESSION_STATUS.MISSED, SESSION_STATUS.ATTEMPTED].includes(s.status)
-    );
-
-    let bookingFinalized = false;
-    if (!anyOpenSession && [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS, BOOKING_STATUS.ACCEPTED].includes(session.booking.status)) {
-        await prisma.booking.update({
-            where: { id: session.bookingId },
-            data: { status: BOOKING_STATUS.FINALIZED },
-        });
-        bookingFinalized = true;
-    }
-
-    logAction({
-        actorId: userId,
-        action: isCustomer ? "session.cancelled_by_customer" : "session.cancelled_by_therapist",
-        entityType: "session",
-        entityId: sessionId,
-        changes: {
-            bookingId: session.bookingId,
-            reason,
-            cancelledBy: isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST,
-            refundAmount: parseFloat(session.booking.rate),
-            refundStatus: customerRefund.status,
-            customerRefundId: customerRefund.id,
-            bookingFinalized,
-        },
-    });
-
-    return { session: updatedSession, customerRefund, bookingFinalized };
+export const cancelSession = async (sessionId, userId, actorRole, reason) => {
+    const { requestSessionCancellation } = await import("./session.cancellation.service.js");
+    return requestSessionCancellation(sessionId, userId, actorRole, reason);
 }
 
 /**

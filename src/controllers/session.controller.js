@@ -6,6 +6,10 @@ import {
     markSessionMissed,
     markSessionAttempted,
 } from "../services/session.service.js";
+import {
+    approveSessionCancellation,
+    rejectSessionCancellation,
+} from "../services/session.cancellation.service.js";
 
 /**
  * Complete session by therapist
@@ -43,15 +47,30 @@ const confirmByCustomerController = async (req, res, next) => {
  */
 const cancelSessionController = async (req, res, next) => {
     try {
-        const { sessionId } = req.params;
-        const { reason } = req.body;
-        const userId = req.user.id;
-        const session = await cancelSession(sessionId, userId, reason);
-        res.status(200).json({ success: true, data: session });
+        const result = await cancelSession(req.params.sessionId, req.user.id, req.user.role, req.body.reason);
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
-}
+};
+
+const approveSessionCancellationController = async (req, res, next) => {
+    try {
+        const result = await approveSessionCancellation(req.params.sessionId, req.user.id, req.user.role);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const rejectSessionCancellationController = async (req, res, next) => {
+    try {
+        const result = await rejectSessionCancellation(req.params.sessionId, req.user.id, req.user.role, req.body.reason);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
  * Get session by ID
@@ -244,4 +263,6 @@ export {
     markMissedByTherapistController,
     markMissedByCustomerController,
     markAttemptedByTherapistController,
+    approveSessionCancellationController,
+    rejectSessionCancellationController,
 };
