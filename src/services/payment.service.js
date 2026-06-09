@@ -59,8 +59,14 @@ const getOrCreateStripeCustomer = async (userId) => {
 /**
  * Create payment intent and escrow funds.
  * If paymentMethodId is provided, charges the saved card immediately.
+ * idempotencyKey (frontend-generated UUID) prevents duplicate intents on network retry.
+ *
+ * @param {string} bookingId
+ * @param {string} userId
+ * @param {string|null} paymentMethodId
+ * @param {string|null} idempotencyKey
  */
-const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) => {
+const createPaymentIntent = async (bookingId, userId, paymentMethodId = null, idempotencyKey = null) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
@@ -116,6 +122,15 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
 
     const platformFee = amount * feePercent;
     const therapistPayout = amount - platformFee;
+
+    // Idempotency check: return cached payment if this exact client request was already processed
+    if (idempotencyKey) {
+        const cached = await prisma.payment.findUnique({ where: { idempotencyKey } });
+        if (cached) {
+            const cachedIntent = await stripe.paymentIntents.retrieve(cached.stripePaymentIntentId);
+            return { clientSecret: cachedIntent.client_secret, payment: cached };
+        }
+    }
 
     // Check if payment already exists for this booking
     const existingPayment = await prisma.payment.findUnique({
@@ -229,7 +244,8 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
                     amount,
                     platformFee,
                     therapistPayout,
-                    status: "intent_created"
+                    status: "intent_created",
+                    ...(idempotencyKey && { idempotencyKey }),
                 },
             });
         } catch (err) {
@@ -277,9 +293,12 @@ const createPaymentIntent = async (bookingId, userId, paymentMethodId = null) =>
 }
 
 /**
- * Handle successful payment (webhook handler)
+ * Handle successful payment (webhook handler).
+ *
+ * @param {string} paymentIntentId
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-const handlePaymentSuccess = async (paymentIntentId) => {
+const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
     const payment = await prisma.payment.findUnique({
         where: { stripePaymentIntentId: paymentIntentId },
         include: {
@@ -324,6 +343,8 @@ const handlePaymentSuccess = async (paymentIntentId) => {
     }
 
     await prisma.$transaction(async (tx) => {
+        await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "payment_intent.succeeded" } });
+
         await tx.payment.update({
             where: { id: payment.id },
             data: {
@@ -339,8 +360,7 @@ const handlePaymentSuccess = async (paymentIntentId) => {
             data: { status: BOOKING_STATUS.CONFIRMED },
         });
 
-
-        // Idempotency: skip session creation if sessions already exist (webhook retry)
+        // Skip session creation if sessions already exist (webhook retry)
         if (payment.booking.sessions?.length === 0) {
             // Build all session rows up front and insert in a single round trip.
             // Sequential tx.session.create() in a loop caused transaction timeouts
@@ -932,6 +952,8 @@ const finalizeBooking = async (bookingId, therapistId) => {
 
     if (!booking) throw new Error("Booking not found");
     if (booking.therapistId !== therapistId) throw new Error("Unauthorized");
+
+    if (booking.status === BOOKING_STATUS.FINALIZED) return booking;
 
     if (![BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS].includes(booking.status)) {
         throw new Error(`Booking cannot be finalized in '${booking.status}' status`);
@@ -2173,18 +2195,10 @@ const createPerSessionRefund = async ({ session, payment, customer, booking, rea
         });
     }
 
-    // Update payment.refundedAmount cumulatively (not replaced).
-    // Prisma `increment` on a NULL column yields NULL (NULL + n = NULL in SQL),
-    // so we manually compute the new total to handle the first-refund case.
-    const currentPayment = await prisma.payment.findUnique({
-        where: { id: payment.id },
-        select: { refundedAmount: true },
-    });
-    const currentRefunded = currentPayment?.refundedAmount ? parseFloat(currentPayment.refundedAmount) : 0;
     await prisma.payment.update({
         where: { id: payment.id },
         data: {
-            refundedAmount: currentRefunded + refundAmount,
+            refundedAmount: { increment: refundAmount },
             refundedAt: new Date(),
         },
     });

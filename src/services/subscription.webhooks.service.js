@@ -1,3 +1,4 @@
+// TODO: [BUG] This file is 425 lines — exceeds the 300-line service limit. Split in follow-up PR.
 import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
@@ -12,9 +13,11 @@ import { parseStripeDate } from "./subscription.helpers.js";
 /**
  * Handle checkout.session.completed webhook.
  * Finds existing trial/free subscription and upgrades it, or creates new.
+ *
  * @param {object} session - Stripe CheckoutSession object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleCheckoutCompleted = async (session) => {
+export const handleCheckoutCompleted = async (session, stripeEventId) => {
     if (session.mode !== "subscription") return;
 
     const { customerId, planType, billingInterval } = session.metadata;
@@ -24,12 +27,6 @@ export const handleCheckoutCompleted = async (session) => {
     }
 
     const stripeSubscriptionId = session.subscription;
-
-    const alreadyProcessed = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
-    if (alreadyProcessed) {
-        logger.info("[Subscription] checkout.session.completed already processed", { stripeSubscriptionId, existingId: alreadyProcessed.id });
-        return;
-    }
 
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const subscriptionItem = stripeSubscription.items?.data?.[0];
@@ -57,9 +54,26 @@ export const handleCheckoutCompleted = async (session) => {
         requestLimit: requestLimit ?? 999999,
     };
 
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "checkout.session.completed" } });
+            if (existing) {
+                await tx.subscription.update({ where: { id: existing.id }, data });
+            } else {
+                await tx.subscription.create({ data: { ...data, customerId } });
+            }
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate checkout.session.completed — already processed", { stripeSubscriptionId });
+            return;
+        }
+        throw error;
+    }
+
     const subscription = existing
-        ? await prisma.subscription.update({ where: { id: existing.id }, data })
-        : await prisma.subscription.create({ data: { ...data, customerId } });
+        ? await prisma.subscription.findUnique({ where: { id: existing.id } })
+        : await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
 
     try {
         const customer = await prisma.customerProfile.findUnique({
@@ -82,7 +96,7 @@ export const handleCheckoutCompleted = async (session) => {
     logSystemEvent({
         action: "subscription.created",
         entityType: "subscription",
-        entityId: subscription.id,
+        entityId: subscription?.id,
         changes: { customerId, planType, billingInterval, stripeSubscriptionId },
     });
 
@@ -92,9 +106,11 @@ export const handleCheckoutCompleted = async (session) => {
 /**
  * Handle invoice.paid webhook. Renews the subscription period.
  * Also applies 3DS-deferred plan upgrades via metadata detection.
+ *
  * @param {object} invoice - Stripe Invoice object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleInvoicePaid = async (invoice) => {
+export const handleInvoicePaid = async (invoice, stripeEventId) => {
     const stripeSubscriptionId = invoice.subscription
         ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
@@ -145,7 +161,18 @@ export const handleInvoicePaid = async (invoice) => {
         }
     }
 
-    await prisma.subscription.update({ where: { id: subscription.id }, data: updateData });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "invoice.paid" } });
+            await tx.subscription.update({ where: { id: subscription.id }, data: updateData });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate invoice.paid — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     logSystemEvent({
         action: hasPlanChange ? "subscription.upgraded" : "subscription.renewed",
@@ -180,12 +207,11 @@ export const handleInvoicePaid = async (invoice) => {
 
 /**
  * Handle invoice.payment_failed webhook.
+ *
  * @param {object} invoice - Stripe Invoice object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleInvoicePaymentFailed = async (invoice) => {
-
-
-
+export const handleInvoicePaymentFailed = async (invoice, stripeEventId) => {
     const stripeSubscriptionId = invoice.subscription
         ?? invoice.parent?.subscription_details?.subscription;
     if (!stripeSubscriptionId) return;
@@ -193,10 +219,21 @@ export const handleInvoicePaymentFailed = async (invoice) => {
     const subscription = await prisma.subscription.findFirst({ where: { stripeSubscriptionId } });
     if (!subscription) return;
 
-    await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: { status: SUBSCRIPTION_STATUS.PAST_DUE },
-    });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "invoice.payment_failed" } });
+            await tx.subscription.update({
+                where: { id: subscription.id },
+                data: { status: SUBSCRIPTION_STATUS.PAST_DUE },
+            });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate invoice.payment_failed — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     const requires3DS = invoice.next_payment_attempt === null && invoice.attempt_count === 1;
 
@@ -235,9 +272,11 @@ export const handleInvoicePaymentFailed = async (invoice) => {
  * Handle invoice.payment_action_required webhook.
  * Fires when an off-session renewal requires 3DS authentication.
  * Sends the customer a branded email with the hosted invoice URL to complete verification.
+ *
  * @param {object} invoice - Stripe Invoice object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleInvoicePaymentActionRequired = async (invoice) => {
+export const handleInvoicePaymentActionRequired = async (invoice, stripeEventId) => {
     // In Stripe API 2025-12-15.clover, subscription ID moved to parent.subscription_details.
     const stripeSubscriptionId = invoice.subscription
         ?? invoice.parent?.subscription_details?.subscription;
@@ -250,6 +289,16 @@ export const handleInvoicePaymentActionRequired = async (invoice) => {
     if (!hostedInvoiceUrl) {
         logger.warn("[Subscription] invoice.payment_action_required — no hosted_invoice_url", { invoiceId: invoice.id });
         return;
+    }
+
+    try {
+        await prisma.processedWebhookEvent.create({ data: { stripeEventId, eventType: "invoice.payment_action_required" } });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate invoice.payment_action_required — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
     }
 
     try {
@@ -272,9 +321,11 @@ export const handleInvoicePaymentActionRequired = async (invoice) => {
  * Handle customer.subscription.deleted webhook.
  * Stripe fires this after exhausting retries or on immediate cancel.
  * Starts a grace period before downgrading to free.
+ *
  * @param {object} stripeSubscription - Stripe Subscription object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleSubscriptionDeleted = async (stripeSubscription) => {
+export const handleSubscriptionDeleted = async (stripeSubscription, stripeEventId) => {
     const subscription = await prisma.subscription.findFirst({
         where: { stripeSubscriptionId: stripeSubscription.id },
     });
@@ -282,14 +333,25 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
 
     const gracePeriodEndsAt = new Date(Date.now() + GRACE_PERIOD_DAYS * TIME_MS.TWENTY_FOUR_HOURS);
 
-    await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: {
-            status: SUBSCRIPTION_STATUS.GRACE_PERIOD,
-            gracePeriodEndsAt,
-            cancelledAt: subscription.cancelledAt || new Date(),
-        },
-    });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "customer.subscription.deleted" } });
+            await tx.subscription.update({
+                where: { id: subscription.id },
+                data: {
+                    status: SUBSCRIPTION_STATUS.GRACE_PERIOD,
+                    gracePeriodEndsAt,
+                    cancelledAt: subscription.cancelledAt || new Date(),
+                },
+            });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate customer.subscription.deleted — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     logSystemEvent({
         action: "subscription.canceled",
@@ -313,9 +375,11 @@ export const handleSubscriptionDeleted = async (stripeSubscription) => {
 /**
  * Handle customer.subscription.updated webhook.
  * Syncs status, period dates, and detects external plan changes from Stripe.
+ *
  * @param {object} stripeSubscription - Stripe Subscription object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleSubscriptionUpdated = async (stripeSubscription) => {
+export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventId) => {
     const subscription = await prisma.subscription.findFirst({
         where: { stripeSubscriptionId: stripeSubscription.id },
     });
@@ -363,18 +427,29 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
         }
     }
 
-    await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: {
-            status: mappedStatus,
-            currentPeriodStart: parseStripeDate(subItem?.current_period_start),
-            currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
-            stripePriceId: currentPriceId || subscription.stripePriceId,
-            ...(resumed && { cancelledAt: null, cancelReason: null }),
-            ...(cancelledViaPortal && { cancelledAt: new Date() }),
-            ...planUpdate,
-        },
-    });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "customer.subscription.updated" } });
+            await tx.subscription.update({
+                where: { id: subscription.id },
+                data: {
+                    status: mappedStatus,
+                    currentPeriodStart: parseStripeDate(subItem?.current_period_start),
+                    currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
+                    stripePriceId: currentPriceId || subscription.stripePriceId,
+                    ...(resumed && { cancelledAt: null, cancelReason: null }),
+                    ...(cancelledViaPortal && { cancelledAt: new Date() }),
+                    ...planUpdate,
+                },
+            });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate customer.subscription.updated — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     if (resumed) logger.info("[Subscription] Customer resumed subscription", { subscriptionId: subscription.id });
     if (cancelledViaPortal) logger.info("[Subscription] Customer cancelled via Stripe portal", { subscriptionId: subscription.id });
@@ -389,16 +464,29 @@ export const handleSubscriptionUpdated = async (stripeSubscription) => {
 /**
  * Handle subscription_schedule.released webhook.
  * Clears stripeScheduleId when Stripe releases the schedule after the final phase completes.
+ *
  * @param {object} schedule - Stripe SubscriptionSchedule object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleScheduleReleased = async (schedule) => {
+export const handleScheduleReleased = async (schedule, stripeEventId) => {
     const subscription = await prisma.subscription.findFirst({ where: { stripeScheduleId: schedule.id } });
     if (!subscription) return;
 
-    await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: { stripeScheduleId: null },
-    });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "subscription_schedule.released" } });
+            await tx.subscription.update({
+                where: { id: subscription.id },
+                data: { stripeScheduleId: null },
+            });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate subscription_schedule.released — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     logger.info("[Subscription] Schedule released — stripeScheduleId cleared", {
         subscriptionId: subscription.id, scheduleId: schedule.id,
@@ -408,16 +496,29 @@ export const handleScheduleReleased = async (schedule) => {
 /**
  * Handle subscription_schedule.canceled webhook.
  * Clears stripeScheduleId when a schedule is explicitly canceled in Stripe.
+ *
  * @param {object} schedule - Stripe SubscriptionSchedule object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-export const handleScheduleCanceled = async (schedule) => {
+export const handleScheduleCanceled = async (schedule, stripeEventId) => {
     const subscription = await prisma.subscription.findFirst({ where: { stripeScheduleId: schedule.id } });
     if (!subscription) return;
 
-    await prisma.subscription.update({
-        where: { id: subscription.id },
-        data: { stripeScheduleId: null },
-    });
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.processedWebhookEvent.create({ data: { stripeEventId, eventType: "subscription_schedule.canceled" } });
+            await tx.subscription.update({
+                where: { id: subscription.id },
+                data: { stripeScheduleId: null },
+            });
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Subscription] Duplicate subscription_schedule.canceled — already processed", { subscriptionId: subscription.id });
+            return;
+        }
+        throw error;
+    }
 
     logger.warn("[Subscription] Schedule canceled", {
         subscriptionId: subscription.id, scheduleId: schedule.id,
