@@ -415,13 +415,14 @@ model Payment {
   amount                Decimal          @db.Decimal(10, 2)
   platformFee           Decimal          @map("platform_fee") @db.Decimal(10, 2)
   therapistPayout       Decimal          @map("therapist_payout") @db.Decimal(10, 2)
-  releasedAmount        Decimal?         @map("released_amount") @db.Decimal(10, 2)
+  releasedAmount        Decimal          @default(0) @map("released_amount") @db.Decimal(10, 2)
   status                PaymentStatus
   escrowedAt            DateTime?        @map("escrowed_at") @db.Timestamptz(3)
   releasedAt            DateTime?        @map("released_at") @db.Timestamptz(3)
   refundedAt            DateTime?        @map("refunded_at") @db.Timestamptz(3)
   stripeRefundId        String?          @unique @map("stripe_refund_id") @db.VarChar(255)
-  refundedAmount        Decimal?         @map("refunded_amount") @db.Decimal(10, 2)
+  refundedAmount        Decimal          @default(0) @map("refunded_amount") @db.Decimal(10, 2)
+  idempotencyKey        String?          @unique @map("idempotency_key") @db.VarChar(255)
   threeDSecureResult    String?          @map("three_d_secure_result") @db.VarChar(30)
   threeDSecureVersion   String?          @map("three_d_secure_version") @db.VarChar(10)
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -487,6 +488,15 @@ model CustomerRefund {
   @@index([bookingId])
   @@index([sessionId])
   @@map("customer_refunds")
+}
+
+model ProcessedWebhookEvent {
+  stripeEventId String   @id @map("stripe_event_id") @db.VarChar(255)
+  eventType     String   @map("event_type") @db.VarChar(100)
+  processedAt   DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@index([processedAt])
+  @@map("processed_webhook_events")
 }
 
 model DirectConversation {

@@ -88,6 +88,7 @@ export const TIME_MS = {
     TWENTY_FIVE_HOURS: 25 * 60 * 60 * 1000,
     FORTY_EIGHT_HOURS: 48 * 60 * 60 * 1000,
     SEVEN_DAYS: 7 * 24 * 60 * 60 * 1000,
+    NINETY_DAYS: 90 * 24 * 60 * 60 * 1000,
 };
 
 // Number of days added to the revision deadline on each therapist "Extend" action.

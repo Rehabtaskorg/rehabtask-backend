@@ -1,3 +1,6 @@
+// TODO: [BUG] This file is 562 lines — exceeds the 150-line controller limit.
+// Split into webhook.payment.controller.js, webhook.subscription.controller.js,
+// webhook.connect.controller.js in a follow-up PR.
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
@@ -6,6 +9,21 @@ import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendC
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
+
+/**
+ * Atomically marks a Stripe event as processed inside an existing transaction.
+ * Throws P2002 (unique constraint) if the event was already handled — the caller's
+ * transaction rolls back, making the entire handler a no-op on duplicate delivery.
+ *
+ * @param {object} tx - Prisma transaction client
+ * @param {string} stripeEventId - Stripe event ID (evt_...)
+ * @param {string} eventType - Stripe event type string
+ */
+async function markEventProcessed(tx, stripeEventId, eventType) {
+    await tx.processedWebhookEvent.create({
+        data: { stripeEventId, eventType },
+    });
+}
 
 /**
  * Main Stripe webhook handler.
@@ -29,90 +47,84 @@ const handleStripeWebhook = async (req, res) => {
 
     try {
         switch (event.type) {
-            // Payment Flow
             case "payment_intent.succeeded":
-                await handlePaymentIntentSucceeded(event.data.object);
+                await handlePaymentIntentSucceeded(event.data.object, event.id);
                 break;
 
             case "payment_intent.payment_failed":
-                await handlePaymentIntentFailed(event.data.object);
+                await handlePaymentIntentFailed(event.data.object, event.id);
                 break;
 
             case "payment_intent.canceled":
-                await handlePaymentIntentCanceled(event.data.object);
+                await handlePaymentIntentCanceled(event.data.object, event.id);
                 break;
 
-            // Transfer Flow (with recovery)
             case "transfer.created":
-                await handleTransferCreatedWithRecovery(event.data.object);
+                await handleTransferCreatedWithRecovery(event.data.object, event.id);
                 break;
 
             case "transfer.reversed":
-                await handleTransferReversed(event.data.object);
+                await handleTransferReversed(event.data.object, event.id);
                 break;
 
             case "transfer.updated":
-                await handleTransferUpdated(event.data.object);
+                await handleTransferUpdated(event.data.object, event.id);
                 break;
 
-            // Connected Account events
             case "account.updated":
-                await handleAccountUpdated(event.data.object, event.account);
+                await handleAccountUpdated(event.data.object, event.account, event.id);
                 break;
 
             case "capability.updated":
-                // Informational — capability state changes are reflected on the account
-                // and picked up by account.updated. No action needed here.
                 logger.debug(`[Webhook] capability.updated: ${event.data.object.id} → ${event.data.object.status}`);
                 break;
 
             case "account.external_account.created":
-                await handleExternalAccountCreated(event.data.object, event.account);
+                await handleExternalAccountCreated(event.data.object, event.account, event.id);
                 break;
 
             case "account.external_account.deleted":
-                await handleExternalAccountDeleted(event.data.object, event.account);
+                await handleExternalAccountDeleted(event.data.object, event.account, event.id);
                 break;
 
             case "payout.paid":
-                await handlePayoutPaid(event.data.object, event.account);
+                await handlePayoutPaid(event.data.object, event.account, event.id);
                 break;
 
             case "payout.failed":
-                await handlePayoutFailed(event.data.object, event.account);
+                await handlePayoutFailed(event.data.object, event.account, event.id);
                 break;
 
-            // Subscription Flow
             case "checkout.session.completed":
-                await subscriptionService.handleCheckoutCompleted(event.data.object);
+                await subscriptionService.handleCheckoutCompleted(event.data.object, event.id);
                 break;
 
             case "invoice.paid":
-                await subscriptionService.handleInvoicePaid(event.data.object);
+                await subscriptionService.handleInvoicePaid(event.data.object, event.id);
                 break;
 
             case "invoice.payment_failed":
-                await subscriptionService.handleInvoicePaymentFailed(event.data.object);
+                await subscriptionService.handleInvoicePaymentFailed(event.data.object, event.id);
                 break;
 
             case "invoice.payment_action_required":
-                await subscriptionService.handleInvoicePaymentActionRequired(event.data.object);
+                await subscriptionService.handleInvoicePaymentActionRequired(event.data.object, event.id);
                 break;
 
             case "customer.subscription.deleted":
-                await subscriptionService.handleSubscriptionDeleted(event.data.object);
+                await subscriptionService.handleSubscriptionDeleted(event.data.object, event.id);
                 break;
 
             case "customer.subscription.updated":
-                await subscriptionService.handleSubscriptionUpdated(event.data.object);
+                await subscriptionService.handleSubscriptionUpdated(event.data.object, event.id);
                 break;
 
             case "subscription_schedule.released":
-                await subscriptionService.handleScheduleReleased(event.data.object);
+                await subscriptionService.handleScheduleReleased(event.data.object, event.id);
                 break;
 
             case "subscription_schedule.canceled":
-                await subscriptionService.handleScheduleCanceled(event.data.object);
+                await subscriptionService.handleScheduleCanceled(event.data.object, event.id);
                 break;
 
             default:
@@ -128,16 +140,18 @@ const handleStripeWebhook = async (req, res) => {
 
 /**
  * Handle successful payment intent — moves booking payment to escrow.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-const handlePaymentIntentSucceeded = async (paymentIntent) => {
+const handlePaymentIntentSucceeded = async (paymentIntent, stripeEventId) => {
     try {
-        // Skip subscription PaymentIntents — handled by invoice.paid and checkout.session.completed.
         if (paymentIntent.invoice) {
             logger.debug(`[Webhook] Skipping subscription payment_intent.succeeded (invoice: ${paymentIntent.invoice})`);
             return;
         }
 
-        const payment = await paymentService.handlePaymentSuccess(paymentIntent.id);
+        const payment = await paymentService.handlePaymentSuccess(paymentIntent.id, stripeEventId);
         logger.info("[Webhook] Payment moved to escrow", { paymentIntentId: paymentIntent.id });
 
         if (payment?.bookingId) {
@@ -157,6 +171,10 @@ const handlePaymentIntentSucceeded = async (paymentIntent) => {
             }).catch(() => { });
         }
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate payment_intent.succeeded — already processed", { paymentIntentId: paymentIntent.id });
+            return;
+        }
         logger.error("[Webhook] Error handling payment success", { error: error.message });
         throw error;
     }
@@ -164,8 +182,11 @@ const handlePaymentIntentSucceeded = async (paymentIntent) => {
 
 /**
  * Handle failed payment intent — marks payment failed, preserves booking for retry.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-const handlePaymentIntentFailed = async (paymentIntent) => {
+const handlePaymentIntentFailed = async (paymentIntent, stripeEventId) => {
     try {
         const payment = await prisma.payment.findUnique({
             where: { stripePaymentIntentId: paymentIntent.id },
@@ -179,11 +200,13 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
 
         const isActivePayment = payment.booking.payment?.id === payment.id;
 
-        // Mark failed but never cancel the booking — a failed payment is recoverable.
-        // createPaymentIntent will detect the failed status and issue a new intent.
-        await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: "failed" },
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "payment_intent.payment_failed");
+
+            await tx.payment.update({
+                where: { id: payment.id },
+                data: { status: "failed" },
+            });
         });
 
         if (isActivePayment) {
@@ -223,6 +246,10 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
             isActivePayment,
         });
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate payment_intent.payment_failed — already processed", { paymentIntentId: paymentIntent.id });
+            return;
+        }
         logger.error("[Webhook] Error handling payment failure", { error: error.message });
         throw error;
     }
@@ -230,8 +257,11 @@ const handlePaymentIntentFailed = async (paymentIntent) => {
 
 /**
  * Handle canceled payment intent — marks payment failed, preserves booking for retry.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-const handlePaymentIntentCanceled = async (paymentIntent) => {
+const handlePaymentIntentCanceled = async (paymentIntent, stripeEventId) => {
     try {
         const payment = await prisma.payment.findUnique({
             where: { stripePaymentIntentId: paymentIntent.id },
@@ -239,9 +269,12 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
 
         if (!payment || payment.status !== "intent_created") return;
 
-        await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: "failed" },
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "payment_intent.canceled");
+            await tx.payment.update({
+                where: { id: payment.id },
+                data: { status: "failed" },
+            });
         });
 
         logger.info("[Webhook] PaymentIntent canceled — booking preserved for retry", {
@@ -249,35 +282,66 @@ const handlePaymentIntentCanceled = async (paymentIntent) => {
             bookingId: payment.bookingId,
         });
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate payment_intent.canceled — already processed", { paymentIntentId: paymentIntent.id });
+            return;
+        }
         logger.error("[Webhook] Error handling payment cancellation", { error: error.message });
     }
 };
 
-const handleTransferReversed = async (transfer) => {
+/**
+ * @param {object} transfer - Stripe Transfer object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleTransferReversed = async (transfer, stripeEventId) => {
     try {
         const paymentId = transfer.metadata?.paymentId;
-        if (paymentId) {
-            await prisma.payment.update({
+        if (!paymentId) return;
+
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "transfer.reversed");
+            await tx.payment.update({
                 where: { id: paymentId },
                 data: { status: "escrowed", stripeTransferId: null, releasedAt: null },
             });
-            logger.info("[Webhook] Transfer reversed — payment reverted to escrowed", { transferId: transfer.id, paymentId });
-        }
+        });
+
+        logger.info("[Webhook] Transfer reversed — payment reverted to escrowed", { transferId: transfer.id, paymentId });
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate transfer.reversed — already processed", { transferId: transfer.id });
+            return;
+        }
         logger.error("[Webhook] Error handling transfer reversal", { error: error.message });
     }
 };
 
-const handleTransferUpdated = async (transfer) => {
-    logger.debug(`[Webhook] transfer.updated: ${transfer.id}`);
+/**
+ * @param {object} transfer - Stripe Transfer object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleTransferUpdated = async (transfer, stripeEventId) => {
+    try {
+        await prisma.processedWebhookEvent.create({
+            data: { stripeEventId, eventType: "transfer.updated" },
+        });
+        logger.debug(`[Webhook] transfer.updated: ${transfer.id}`);
+    } catch (error) {
+        if (error.code === "P2002") return;
+        logger.error("[Webhook] Error handling transfer.updated", { error: error.message });
+    }
 };
 
 /**
  * Handle transfer.created with recovery logic.
  * Primary purpose: confirm transfer succeeded.
  * Secondary purpose: recover if the DB update failed after the transfer went through.
+ *
+ * @param {object} transfer - Stripe Transfer object
+ * @param {string} stripeEventId - Stripe event ID for deduplication
  */
-const handleTransferCreatedWithRecovery = async (transfer) => {
+const handleTransferCreatedWithRecovery = async (transfer, stripeEventId) => {
     try {
         const paymentId = transfer.metadata?.paymentId;
 
@@ -296,15 +360,9 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
             return;
         }
 
-        // RECOVERY: transfer succeeded but DB wasn't updated.
         if (payment.status === "escrowed" && !payment.stripeTransferId) {
-            // Admin-initiated transfers handle their own DB updates.
             if (transfer.metadata?.releasedByAdmin) return;
-
-            // Per-session payouts are handled by releaseSessionPayout.
             if (transfer.metadata?.isPerSession === "true") return;
-
-            // Customer refund transfers should never flip the payment to "released".
             if (transfer.metadata?.type === "customer_refund") return;
 
             try {
@@ -313,13 +371,20 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
                 if (verifiedTransfer.reversed) return;
                 if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) return;
 
-                await prisma.payment.update({
-                    where: { id: payment.id },
-                    data: { status: "released", stripeTransferId: transfer.id, releasedAt: new Date() },
+                await prisma.$transaction(async (tx) => {
+                    await markEventProcessed(tx, stripeEventId, "transfer.created");
+                    await tx.payment.update({
+                        where: { id: payment.id },
+                        data: { status: "released", stripeTransferId: transfer.id, releasedAt: new Date() },
+                    });
                 });
 
                 logger.info("[Webhook] Payment recovered and marked as released", { paymentId: payment.id, transferId: transfer.id });
             } catch (recoveryError) {
+                if (recoveryError.code === "P2002") {
+                    logger.info("[Webhook] Duplicate transfer.created recovery — already processed", { transferId: transfer.id });
+                    return;
+                }
                 logger.error("[Webhook] Recovery failed — MANUAL INTERVENTION REQUIRED", {
                     paymentId: payment.id,
                     transferId: transfer.id,
@@ -330,7 +395,6 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
             return;
         }
 
-        // Per-session transfers when payment is already partially_released are expected.
         if (payment.status === "partially_released" && transfer.metadata?.isPerSession === "true") return;
 
         if (payment.status !== "escrowed" && payment.status !== "released") {
@@ -341,55 +405,64 @@ const handleTransferCreatedWithRecovery = async (transfer) => {
             });
         }
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate transfer.created — already processed", { transferId: transfer.id });
+            return;
+        }
         logger.error("[Webhook] Error handling transfer.created", { error: error.message });
     }
 };
 
-/** Dispatch to therapist or customer handler based on which profile owns the account. */
-const handleAccountUpdated = async (account, accountId) => {
+/**
+ * Dispatch to therapist or customer handler based on which profile owns the account.
+ *
+ * @param {object} account - Stripe Account object
+ * @param {string} accountId - Connected account ID
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleAccountUpdated = async (account, accountId, stripeEventId) => {
     try {
         const stripeAccountId = accountId || account.id;
 
         const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId } });
-        if (therapist) return handleTherapistAccountUpdated(account, therapist);
+        if (therapist) return handleTherapistAccountUpdated(account, therapist, stripeEventId);
 
         const customer = await prisma.customerProfile.findUnique({ where: { stripeAccountId } });
-        if (customer) return handleCustomerAccountUpdated(account, customer);
+        if (customer) return handleCustomerAccountUpdated(account, customer, stripeEventId);
 
         logger.debug(`[Webhook] No profile found for Stripe account: ${stripeAccountId}`);
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate account.updated — already processed", { accountId });
+            return;
+        }
         logger.error("[Webhook] Error handling account.updated", { error: error.message });
     }
 };
 
-const handleTherapistAccountUpdated = async (account, therapist) => {
+/**
+ * @param {object} account - Stripe Account object
+ * @param {object} therapist - TherapistProfile row
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleTherapistAccountUpdated = async (account, therapist, stripeEventId) => {
     const isOnboardingComplete = account.details_submitted === true && account.charges_enabled === true;
 
-    if (isOnboardingComplete && !therapist.stripeOnboardingComplete) {
+    if (isOnboardingComplete !== therapist.stripeOnboardingComplete) {
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "account.updated");
+        });
+
         await withAdminAccess(async (db) => {
             await db.therapistProfile.update({
                 where: { stripeAccountId: account.id },
-                data: { stripeOnboardingComplete: true },
+                data: { stripeOnboardingComplete: isOnboardingComplete },
             });
         });
-        logger.info(`[Webhook] Stripe onboarding completed for therapist: ${therapist.fullName}`);
-        return;
+
+        logger.info(`[Webhook] Stripe onboarding ${isOnboardingComplete ? "completed" : "reverted"} for therapist: ${therapist.fullName}`);
     }
 
-    if (!isOnboardingComplete && therapist.stripeOnboardingComplete) {
-        await withAdminAccess(async (db) => {
-            await db.therapistProfile.update({
-                where: { stripeAccountId: account.id },
-                data: { stripeOnboardingComplete: false },
-            });
-        });
-        logger.info(`[Webhook] Stripe onboarding reverted for therapist: ${therapist.fullName}`);
-    }
-
-    // Only alert when onboarding was previously completed. A brand-new account going
-    // through onboarding for the first time will have past_due fields simply because
-    // nothing has been submitted yet — that is not a restriction. Alerting here would
-    // fire "Payout Account Restricted" the moment the therapist selects business type.
     if (!account.details_submitted) return;
 
     const req = account.requirements ?? {};
@@ -425,11 +498,19 @@ const handleTherapistAccountUpdated = async (account, therapist) => {
     }
 };
 
-const handleCustomerAccountUpdated = async (account, customer) => {
-    // Customer Connect accounts only need transfers capability (no charges).
+/**
+ * @param {object} account - Stripe Account object
+ * @param {object} customer - CustomerProfile row
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleCustomerAccountUpdated = async (account, customer, stripeEventId) => {
     const isOnboardingComplete = account.details_submitted === true && account.payouts_enabled === true;
 
     if (isOnboardingComplete && !customer.stripeOnboardingComplete) {
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "account.updated");
+        });
+
         await withAdminAccess(async (db) => {
             await db.customerProfile.update({
                 where: { stripeAccountId: account.id },
@@ -461,10 +542,6 @@ const handleCustomerAccountUpdated = async (account, customer) => {
         logger.info(`[Webhook] Customer Connect onboarding reverted: ${customer.fullName}`);
     }
 
-    // Only alert when onboarding was previously completed. A brand-new account going
-    // through onboarding will have past_due fields simply because nothing has been
-    // submitted yet — alerting here would fire "Payout Account Restricted" the moment
-    // the customer selects their business type.
     if (!account.details_submitted) return;
 
     const req = account.requirements ?? {};
@@ -500,43 +577,73 @@ const handleCustomerAccountUpdated = async (account, customer) => {
     }
 };
 
-const handleExternalAccountCreated = async (externalAccount, accountId) => {
+/**
+ * @param {object} externalAccount - Stripe ExternalAccount object
+ * @param {string} accountId - Connected account ID
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleExternalAccountCreated = async (externalAccount, accountId, stripeEventId) => {
     try {
+        await prisma.processedWebhookEvent.create({ data: { stripeEventId, eventType: "account.external_account.created" } });
         const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
             logger.info(`[Webhook] External account added for therapist: ${therapist.fullName}`);
             // TODO: Send bank account confirmation notification to therapist
         }
     } catch (error) {
+        if (error.code === "P2002") return;
         logger.error("[Webhook] Error handling external_account.created", { error: error.message });
     }
 };
 
-const handleExternalAccountDeleted = async (externalAccount, accountId) => {
+/**
+ * @param {object} externalAccount - Stripe ExternalAccount object
+ * @param {string} accountId - Connected account ID
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handleExternalAccountDeleted = async (externalAccount, accountId, stripeEventId) => {
     try {
+        await prisma.processedWebhookEvent.create({ data: { stripeEventId, eventType: "account.external_account.deleted" } });
         const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
             logger.warn(`[Webhook] External account removed for therapist: ${therapist.fullName} — payouts paused until bank account is re-added`);
             // TODO: Send urgent notification to therapist to re-add bank account
         }
     } catch (error) {
+        if (error.code === "P2002") return;
         logger.error("[Webhook] Error handling external_account.deleted", { error: error.message });
     }
 };
 
-const handlePayoutPaid = async (payout, accountId) => {
+/**
+ * @param {object} payout - Stripe Payout object
+ * @param {string} accountId - Connected account ID
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handlePayoutPaid = async (payout, accountId, stripeEventId) => {
     try {
+        await prisma.processedWebhookEvent.create({ data: { stripeEventId, eventType: "payout.paid" } });
         const therapist = await prisma.therapistProfile.findUnique({ where: { stripeAccountId: accountId } });
         if (therapist) {
             logger.info(`[Webhook] Payout of $${payout.amount / 100} delivered to therapist: ${therapist.fullName}`);
         }
     } catch (error) {
+        if (error.code === "P2002") return;
         logger.error("[Webhook] Error handling payout.paid", { error: error.message });
     }
 };
 
-const handlePayoutFailed = async (payout, accountId) => {
+/**
+ * @param {object} payout - Stripe Payout object
+ * @param {string} accountId - Connected account ID
+ * @param {string} stripeEventId - Stripe event ID for deduplication
+ */
+const handlePayoutFailed = async (payout, accountId, stripeEventId) => {
     try {
+        await prisma.$transaction(async (tx) => {
+            await markEventProcessed(tx, stripeEventId, "payout.failed");
+        });
+
         const therapist = await prisma.therapistProfile.findUnique({
             where: { stripeAccountId: accountId },
             include: { user: { select: { email: true } } },
@@ -550,11 +657,12 @@ const handlePayoutFailed = async (payout, accountId) => {
                 amount: payout.amount / 100,
                 reason: payout.failure_message,
             }).catch(() => { });
-
-            // NOTE: Payment status stays "released" — money remains in Stripe balance.
-            // Stripe will retry the payout automatically.
         }
     } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate payout.failed — already processed", { accountId });
+            return;
+        }
         logger.error("[Webhook] Error handling payout.failed", { error: error.message });
     }
 };
