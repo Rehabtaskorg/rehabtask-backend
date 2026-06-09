@@ -8,8 +8,13 @@ import { runExpiredRefunds } from "./expiredRefunds.js";
 import { runRetryPendingRefunds } from "./retryPendingRefunds.js";
 import { runCancellationExpiry } from "./cancellationExpiry.js";
 import { runSessionCancellationExpiry } from "./sessionCancellationExpiry.js";
+import { runPurgeWebhookEvents } from "./purgeWebhookEvents.js";
 import { logger } from "../config/logger.js";
 
+/**
+ * Register and start all background scheduled jobs.
+ * Jobs fire on their respective intervals after an initial 10-second startup delay.
+ */
 export const startScheduledJobs = () => {
     logger.info('[Jobs] Starting scheduled jobs');
 
@@ -58,6 +63,11 @@ export const startScheduledJobs = () => {
         catch (error) { logger.error('[Jobs] Session cancellation expiry cron failed', { error: error.message }); }
     }, TIME_MS.ONE_HOUR);
 
+    setInterval(async () => {
+        try { await runPurgeWebhookEvents(); }
+        catch (error) { logger.error('[Jobs] Purge webhook events failed', { error: error.message }); }
+    }, TIME_MS.TWENTY_FOUR_HOURS);
+
     setTimeout(async () => {
         try { await runSessionReminders(); } catch (e) { logger.error('[Jobs] Startup sessionReminders failed', { error: e.message }); }
         try { await runExpireOffers(); } catch (e) { logger.error('[Jobs] Startup expireOffers failed', { error: e.message }); }
@@ -70,5 +80,5 @@ export const startScheduledJobs = () => {
         try { await runSessionCancellationExpiry(); } catch (e) { logger.error('[Jobs] Startup sessionCancellationExpiry failed', { error: e.message }); }
     }, 10_000);
 
-    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h), retryPendingRefunds (10m), cancellationExpiry (1h)');
+    logger.info('[Jobs] Scheduled: sessionReminders (1h), expireOffers (15m), autoConfirm (1h), paymentReminders (1h), subscriptionCron (1h), expiredRefunds (6h), retryPendingRefunds (10m), cancellationExpiry (1h), purgeWebhookEvents (24h)');
 }

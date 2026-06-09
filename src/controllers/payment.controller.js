@@ -24,7 +24,8 @@ const createPaymentIntentController = async (req, res, next) => {
     try {
         const { bookingId, paymentMethodId } = req.body;
         const userId = req.user.id;
-        const result = await createPaymentIntent(bookingId, userId, paymentMethodId || null);
+        const idempotencyKey = req.headers["idempotency-key"] || null;
+        const result = await createPaymentIntent(bookingId, userId, paymentMethodId || null, idempotencyKey);
 
         res.status(200).json({ success: true, data: result });
     } catch (error) {
