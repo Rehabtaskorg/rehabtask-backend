@@ -343,6 +343,19 @@ const handleTransferUpdated = async (transfer, stripeEventId) => {
  */
 const handleTransferCreatedWithRecovery = async (transfer, stripeEventId) => {
     try {
+        await prisma.processedWebhookEvent.create({
+            data: { stripeEventId, eventType: "transfer.created" },
+        });
+    } catch (error) {
+        if (error.code === "P2002") {
+            logger.info("[Webhook] Duplicate transfer.created — already processed", { transferId: transfer.id });
+            return;
+        }
+        logger.error("[Webhook] Error handling transfer.created", { error: error.message });
+        return;
+    }
+
+    try {
         const paymentId = transfer.metadata?.paymentId;
 
         if (!paymentId) {
@@ -371,20 +384,13 @@ const handleTransferCreatedWithRecovery = async (transfer, stripeEventId) => {
                 if (verifiedTransfer.reversed) return;
                 if (!verifiedTransfer.amount || verifiedTransfer.amount <= 0) return;
 
-                await prisma.$transaction(async (tx) => {
-                    await markEventProcessed(tx, stripeEventId, "transfer.created");
-                    await tx.payment.update({
-                        where: { id: payment.id },
-                        data: { status: "released", stripeTransferId: transfer.id, releasedAt: new Date() },
-                    });
+                await prisma.payment.update({
+                    where: { id: payment.id },
+                    data: { status: "released", stripeTransferId: transfer.id, releasedAt: new Date() },
                 });
 
                 logger.info("[Webhook] Payment recovered and marked as released", { paymentId: payment.id, transferId: transfer.id });
             } catch (recoveryError) {
-                if (recoveryError.code === "P2002") {
-                    logger.info("[Webhook] Duplicate transfer.created recovery — already processed", { transferId: transfer.id });
-                    return;
-                }
                 logger.error("[Webhook] Recovery failed — MANUAL INTERVENTION REQUIRED", {
                     paymentId: payment.id,
                     transferId: transfer.id,
@@ -405,10 +411,6 @@ const handleTransferCreatedWithRecovery = async (transfer, stripeEventId) => {
             });
         }
     } catch (error) {
-        if (error.code === "P2002") {
-            logger.info("[Webhook] Duplicate transfer.created — already processed", { transferId: transfer.id });
-            return;
-        }
         logger.error("[Webhook] Error handling transfer.created", { error: error.message });
     }
 };
