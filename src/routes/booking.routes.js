@@ -29,9 +29,9 @@ router.post("/:bookingId/reschedule/respond", authenticate, authorize([USER_ROLE
 router.post("/:bookingId/finalize", authenticate, authorize([USER_ROLES.THERAPIST]), finalizeBookingController);
 router.get("/:bookingId/conversation", authenticate, getBookingConversationController);
 
-// Cancellation flow
-router.post("/:bookingId/cancellation/request", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(cancellationRequestSchema), requestCancellationController);
-router.post("/:bookingId/cancellation/approve", authenticate, authorize([USER_ROLES.THERAPIST]), approveCancellationController);
-router.post("/:bookingId/cancellation/reject", authenticate, authorize([USER_ROLES.THERAPIST]), validate(cancellationRejectSchema), rejectCancellationController);
+// Cancellation flow — either party may request, the other party approves/rejects
+router.post("/:bookingId/cancellation/request", authenticate, authorize([USER_ROLES.CUSTOMER, USER_ROLES.THERAPIST]), sensitiveOperationRateLimiter, validate(cancellationRequestSchema), requestCancellationController);
+router.post("/:bookingId/cancellation/approve", authenticate, authorize([USER_ROLES.CUSTOMER, USER_ROLES.THERAPIST]), approveCancellationController);
+router.post("/:bookingId/cancellation/reject", authenticate, authorize([USER_ROLES.CUSTOMER, USER_ROLES.THERAPIST]), validate(cancellationRejectSchema), rejectCancellationController);
 
 export default router;

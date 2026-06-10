@@ -2,12 +2,12 @@ import {
     requestCancellation,
     approveCancellation,
     rejectCancellation,
-    adminOverrideCancellation,
 } from "../services/booking.cancellation.service.js";
+import { adminOverrideCancellation } from "../services/booking.adminCancellation.service.js";
 
 /**
  * POST /bookings/:id/cancellation/request
- * Customer requests cancellation of a booking.
+ * Either the customer or therapist requests cancellation of a booking.
  */
 export const requestCancellationController = async (req, res, next) => {
     try {
@@ -20,7 +20,7 @@ export const requestCancellationController = async (req, res, next) => {
 
 /**
  * POST /bookings/:id/cancellation/approve
- * Therapist approves a pending cancellation request.
+ * The other party (customer or therapist) approves a pending cancellation request.
  */
 export const approveCancellationController = async (req, res, next) => {
     try {
@@ -33,7 +33,7 @@ export const approveCancellationController = async (req, res, next) => {
 
 /**
  * POST /bookings/:id/cancellation/reject
- * Therapist rejects a pending cancellation request.
+ * The other party (customer or therapist) rejects a pending cancellation request.
  */
 export const rejectCancellationController = async (req, res, next) => {
     try {
