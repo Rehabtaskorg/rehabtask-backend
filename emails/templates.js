@@ -1128,6 +1128,58 @@ export const cancellationRejectedToCustomer = ({ customer, therapist, booking, r
     `),
 });
 
+export const cancellationRequestedToCustomer = ({ therapist, customer, booking, reason }) => ({
+    subject: `Action required: ${therapist.fullName} has requested to cancel your booking`,
+    html: layout(`
+        ${heading('Cancellation Request')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${therapist.fullName}</strong> has requested to cancel your booking. You have <strong>24 hours</strong> to approve or reject this request. If you don't respond, the request will be automatically declined and your booking will remain active.`)}
+        ${hr()}
+        ${field('Therapist', therapist.fullName)}
+        ${field('Reason', reason || 'No reason provided')}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Review Request')}
+        ${muted("If you approve, you'll receive a full refund. If you take no action within 24 hours, the request will be declined and your booking remains active.")}
+    `),
+});
+
+export const cancellationApprovedToTherapist = ({ customer, therapist, booking, refundAmount }) => ({
+    subject: 'Your cancellation request was approved',
+    html: layout(`
+        ${heading('Cancellation Approved')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> approved your request to cancel this booking. The customer has been refunded ${formatCurrency(refundAmount)}.`)}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
+    `),
+});
+
+export const cancellationRejectedToTherapist = ({ customer, therapist, booking, rejectionReason }) => ({
+    subject: 'Your cancellation request was not approved',
+    html: layout(`
+        ${heading('Cancellation Request Declined')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> has declined your cancellation request. The booking remains active.`)}
+        ${hr()}
+        ${field('Reason', rejectionReason || 'No reason provided')}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
+        ${muted('If you have further questions, please contact the customer directly through the platform.')}
+    `),
+});
+
+export const cancellationAutoDeclinedToTherapist = ({ customer, therapist, booking }) => ({
+    subject: 'Your cancellation request expired',
+    html: layout(`
+        ${heading('Cancellation Request Expired')}
+        ${text(`Hi ${therapist.fullName},`)}
+        ${text(`<strong>${customer.fullName}</strong> did not respond to your cancellation request within 24 hours. The request has been automatically declined and the booking remains active.`)}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
+        ${muted('If you still wish to cancel this booking, you can submit a new request.')}
+    `),
+});
+
 // ─── Session Cancellation Flow ────────────────────────────────────────────────
 
 export const sessionCancellationRequestedToOtherParty = ({ recipient, requester, session, booking, reason, deadlineStr }) => ({

@@ -59,9 +59,13 @@ import {
     stripeRequirementsAlert,
     customerStripeRequirementsAlert,
     cancellationRequestedToTherapist,
+    cancellationRequestedToCustomer,
     cancellationApprovedToCustomer,
+    cancellationApprovedToTherapist,
     cancellationRejectedToCustomer,
+    cancellationRejectedToTherapist,
     cancellationAutoApprovedToCustomer,
+    cancellationAutoDeclinedToTherapist,
     sessionCancellationRequestedToOtherParty,
     sessionCancellationApprovedToRequester,
     sessionCancellationRejectedToRequester,
@@ -427,14 +431,26 @@ export const sendSubscriptionPaymentActionRequired = async ({ customer, hostedIn
 export const sendCancellationRequestedToTherapist = async ({ therapist, customer, booking, reason }) =>
     dispatch(therapist.user.email, cancellationRequestedToTherapist, { therapist, customer, booking, reason });
 
+export const sendCancellationRequestedToCustomer = async ({ therapist, customer, booking, reason }) =>
+    dispatch(customer.user.email, cancellationRequestedToCustomer, { therapist, customer, booking, reason });
+
 export const sendCancellationApprovedToCustomer = async ({ customer, therapist, booking, refundAmount, refundMethod }) =>
     dispatch(customer.user.email, cancellationApprovedToCustomer, { customer, therapist, booking, refundAmount, refundMethod });
+
+export const sendCancellationApprovedToTherapist = async ({ customer, therapist, booking, refundAmount }) =>
+    dispatch(therapist.user.email, cancellationApprovedToTherapist, { customer, therapist, booking, refundAmount });
 
 export const sendCancellationRejectedToCustomer = async ({ customer, therapist, booking, rejectionReason }) =>
     dispatch(customer.user.email, cancellationRejectedToCustomer, { customer, therapist, booking, rejectionReason });
 
+export const sendCancellationRejectedToTherapist = async ({ customer, therapist, booking, rejectionReason }) =>
+    dispatch(therapist.user.email, cancellationRejectedToTherapist, { customer, therapist, booking, rejectionReason });
+
 export const sendCancellationAutoApprovedToCustomer = async ({ customer, therapist, booking, refundAmount, refundMethod }) =>
     dispatch(customer.user.email, cancellationAutoApprovedToCustomer, { customer, therapist, booking, refundAmount, refundMethod });
+
+export const sendCancellationAutoDeclinedToTherapist = async ({ customer, therapist, booking }) =>
+    dispatch(therapist.user.email, cancellationAutoDeclinedToTherapist, { customer, therapist, booking });
 
 export const sendSessionCancellationRequestedToOtherParty = async ({ recipient, requester, session, booking, reason, deadlineStr }) =>
     dispatch(recipient.user.email, sessionCancellationRequestedToOtherParty, { recipient, requester, session, booking, reason, deadlineStr });
