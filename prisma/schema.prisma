@@ -347,6 +347,7 @@ model Booking {
   earlyCompletionBy         String?          @map("early_completion_by") @db.VarChar(20)
   cancellationReason        String?          @map("cancellation_reason")
   cancellationRequestedAt   DateTime?        @map("cancellation_requested_at") @db.Timestamptz(3)
+  cancellationRequestedBy   String?          @map("cancellation_requested_by") @db.VarChar(20)
   preCancellationStatus     String?          @map("pre_cancellation_status") @db.VarChar(50)
   payment                   Payment?
   sessions                 Session[]

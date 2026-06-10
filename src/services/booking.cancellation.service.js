@@ -6,8 +6,11 @@ import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import {
     sendCancellationRequestedToTherapist,
+    sendCancellationRequestedToCustomer,
     sendCancellationApprovedToCustomer,
+    sendCancellationApprovedToTherapist,
     sendCancellationRejectedToCustomer,
+    sendCancellationRejectedToTherapist,
     sendCancellationAutoApprovedToCustomer,
 } from "./email.service.js";
 
@@ -42,21 +45,24 @@ const getBookingForCancellation = async (bookingId) =>
     });
 
 /**
- * Customer requests cancellation of a booking.
- * If payment is intent_created (not yet captured), cancels immediately — no therapist gate needed.
- * If payment is escrowed, sets booking to CANCELLATION_REQUESTED and notifies the therapist.
+ * Either party requests cancellation of a booking.
+ * If payment is intent_created (not yet captured), cancels immediately — no approval gate needed.
+ * If payment is escrowed, sets booking to CANCELLATION_REQUESTED and notifies the other party,
+ * who has 24 hours to approve or reject.
  *
  * @param {string} bookingId
- * @param {string} userId - must be the customer's userId
+ * @param {string} userId - the requesting user's id
  * @param {string} reason
  */
 export const requestCancellation = async (bookingId, userId, reason) => {
     const booking = await getBookingForCancellation(bookingId);
 
     if (!booking?.payment) throw new NotFoundError("Booking or payment not found");
-    if (booking.customer.userId !== userId) throw new AuthorizationError("You can only cancel your own bookings");
 
     const { payment, customer, therapist } = booking;
+    const isCustomer = customer.userId === userId;
+    const isTherapist = therapist.userId === userId;
+    if (!isCustomer && !isTherapist) throw new AuthorizationError("You can only cancel your own bookings");
 
     if (!CANCELLABLE_PAYMENT_STATUSES.includes(payment.status)) {
         throw new ConflictError("This booking cannot be cancelled in its current state");
@@ -68,7 +74,7 @@ export const requestCancellation = async (bookingId, userId, reason) => {
         throw new ConflictError("A cancellation request is already pending for this booking");
     }
 
-    // intent_created: no money captured — cancel immediately, skip therapist gate
+    // intent_created: no money captured — cancel immediately, skip approval gate
     if (payment.status === "intent_created") {
         try {
             await stripe.paymentIntents.cancel(payment.stripePaymentIntentId, {
@@ -90,30 +96,39 @@ export const requestCancellation = async (bookingId, userId, reason) => {
         return { status: "cancelled", method: "intent_cancelled" };
     }
 
-    // escrowed: set CANCELLATION_REQUESTED and notify therapist
+    // escrowed: set CANCELLATION_REQUESTED and notify the other party
+    const requestedBy = isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST;
+
     await prisma.booking.update({
         where: { id: bookingId },
         data: {
             status: BOOKING_STATUS.CANCELLATION_REQUESTED,
             cancellationReason: reason,
             cancellationRequestedAt: new Date(),
+            cancellationRequestedBy: requestedBy,
             preCancellationStatus: booking.status,
         },
     });
 
-    sendCancellationRequestedToTherapist({ therapist, customer, booking, reason }).catch(logger.error);
-    logAction({ actorId: userId, action: "booking.cancellation_requested", entityType: "booking", entityId: bookingId, changes: { reason, preCancellationStatus: booking.status } });
+    if (requestedBy === USER_ROLES.CUSTOMER) {
+        sendCancellationRequestedToTherapist({ therapist, customer, booking, reason }).catch(logger.error);
+    } else {
+        sendCancellationRequestedToCustomer({ therapist, customer, booking, reason }).catch(logger.error);
+    }
+
+    logAction({ actorId: userId, action: "booking.cancellation_requested", entityType: "booking", entityId: bookingId, changes: { reason, requestedBy, preCancellationStatus: booking.status } });
 
     return { status: "cancellation_requested" };
 };
 
 /**
- * Shared approval logic — used by both therapist approval and cron auto-approval.
+ * Shared approval logic — used by manual approval and cron auto-approval.
+ * Exported for use by bookingCancellationExpiry.service.js.
  *
  * @param {string} bookingId
  * @param {{ isAuto?: boolean, actorId?: string }} opts
  */
-const executeCancellationApproval = async (bookingId, { isAuto = false, actorId } = {}) => {
+export const executeCancellationApproval = async (bookingId, { isAuto = false, actorId } = {}) => {
     const booking = await getBookingForCancellation(bookingId);
     if (!booking?.payment) throw new NotFoundError("Booking not found");
     if (booking.status !== BOOKING_STATUS.CANCELLATION_REQUESTED) throw new ConflictError("No pending cancellation request on this booking");
@@ -124,9 +139,6 @@ const executeCancellationApproval = async (bookingId, { isAuto = false, actorId 
     let refundResult = null;
 
     if (payment.status === "escrowed") {
-        // Booking-level cancellation has no session. Cannot use createPerSessionRefund
-        // because customer_refunds.session_id is a FK to sessions. Inline the same
-        // Connect-transfer + pending_connect logic with sessionId omitted (nullable).
         let stripeTransfer = null;
         if (customer.stripeAccountId && customer.stripeOnboardingComplete) {
             try {
@@ -169,6 +181,7 @@ const executeCancellationApproval = async (bookingId, { isAuto = false, actorId 
             data: {
                 status: BOOKING_STATUS.CANCELLED,
                 cancellationRequestedAt: null,
+                cancellationRequestedBy: null,
                 preCancellationStatus: null,
             },
         });
@@ -180,40 +193,57 @@ const executeCancellationApproval = async (bookingId, { isAuto = false, actorId 
         }
     }, { timeout: 15000 });
 
-    const emailFn = isAuto ? sendCancellationAutoApprovedToCustomer : sendCancellationApprovedToCustomer;
-    emailFn({
-        customer,
-        therapist,
-        booking,
-        refundAmount,
-        refundMethod: refundResult?.customerRefund?.status ?? "pending_connect",
-    }).catch(logger.error);
+    const refundMethod = refundResult?.customerRefund?.status ?? "pending_connect";
+
+    if (booking.cancellationRequestedBy === USER_ROLES.THERAPIST) {
+        // Therapist requested, customer approved — refund still goes to the customer
+        sendCancellationApprovedToCustomer({ customer, therapist, booking, refundAmount, refundMethod }).catch(logger.error);
+        sendCancellationApprovedToTherapist({ customer, therapist, booking, refundAmount }).catch(logger.error);
+    } else {
+        const emailFn = isAuto ? sendCancellationAutoApprovedToCustomer : sendCancellationApprovedToCustomer;
+        emailFn({ customer, therapist, booking, refundAmount, refundMethod }).catch(logger.error);
+    }
 
     logAction({
         actorId: actorId ?? "system",
         action: isAuto ? "booking.cancellation_auto_approved" : "booking.cancellation_approved",
         entityType: "booking",
         entityId: bookingId,
-        changes: { refundAmount, refundMethod: refundResult?.customerRefund?.status ?? "pending_connect" },
+        changes: { refundAmount, refundMethod, requestedBy: booking.cancellationRequestedBy },
     });
 
-    return { status: "cancelled", refundMethod: refundResult?.customerRefund?.status ?? "pending_connect" };
+    return { status: "cancelled", refundMethod };
 };
 
 /**
- * Therapist approves a pending cancellation request.
+ * The other party approves a pending cancellation request.
+ * If the customer requested, the therapist approves; if the therapist requested, the customer approves.
  *
  * @param {string} bookingId
- * @param {string} userId - must be the therapist's userId
+ * @param {string} userId
  */
 export const approveCancellation = async (bookingId, userId) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
-        select: { status: true, cancellationRequestedAt: true, therapist: { select: { userId: true } } },
+        select: {
+            status: true,
+            cancellationRequestedAt: true,
+            cancellationRequestedBy: true,
+            customer: { select: { userId: true } },
+            therapist: { select: { userId: true } },
+        },
     });
     if (!booking) throw new NotFoundError("Booking not found");
-    if (booking.therapist.userId !== userId) throw new AuthorizationError("Only the assigned therapist can approve this cancellation");
     if (booking.status !== BOOKING_STATUS.CANCELLATION_REQUESTED) throw new ConflictError("No pending cancellation request on this booking");
+
+    const isCustomer = booking.customer.userId === userId;
+    const isTherapist = booking.therapist.userId === userId;
+    if (!isCustomer && !isTherapist) throw new AuthorizationError("Unauthorized");
+
+    const approverRole = isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST;
+    if (approverRole === booking.cancellationRequestedBy) {
+        throw new ConflictError("You cannot approve your own cancellation request");
+    }
 
     const hoursSinceRequest = (Date.now() - new Date(booking.cancellationRequestedAt).getTime()) / 3_600_000;
     if (hoursSinceRequest > 24) throw new ConflictError("The 24-hour approval window has passed. The cancellation has been auto-processed.");
@@ -222,11 +252,11 @@ export const approveCancellation = async (bookingId, userId) => {
 };
 
 /**
- * Therapist rejects a pending cancellation request.
+ * The other party rejects a pending cancellation request.
  * Restores the booking to its pre-cancellation status.
  *
  * @param {string} bookingId
- * @param {string} userId - must be the therapist's userId
+ * @param {string} userId
  * @param {string} rejectionReason
  */
 export const rejectCancellation = async (bookingId, userId, rejectionReason) => {
@@ -238,8 +268,16 @@ export const rejectCancellation = async (bookingId, userId, rejectionReason) => 
         },
     });
     if (!booking) throw new NotFoundError("Booking not found");
-    if (booking.therapist.userId !== userId) throw new AuthorizationError("Only the assigned therapist can reject this cancellation");
     if (booking.status !== BOOKING_STATUS.CANCELLATION_REQUESTED) throw new ConflictError("No pending cancellation request on this booking");
+
+    const isCustomer = booking.customer.userId === userId;
+    const isTherapist = booking.therapist.userId === userId;
+    if (!isCustomer && !isTherapist) throw new AuthorizationError("Unauthorized");
+
+    const rejectorRole = isCustomer ? USER_ROLES.CUSTOMER : USER_ROLES.THERAPIST;
+    if (rejectorRole === booking.cancellationRequestedBy) {
+        throw new ConflictError("You cannot reject your own cancellation request");
+    }
 
     const restoredStatus = booking.preCancellationStatus ?? BOOKING_STATUS.CONFIRMED;
 
@@ -249,96 +287,24 @@ export const rejectCancellation = async (bookingId, userId, rejectionReason) => 
             status: restoredStatus,
             cancellationReason: null,
             cancellationRequestedAt: null,
+            cancellationRequestedBy: null,
             preCancellationStatus: null,
         },
     });
 
-    sendCancellationRejectedToCustomer({
-        customer: booking.customer,
-        therapist: booking.therapist,
-        booking,
-        rejectionReason,
-    }).catch(logger.error);
+    if (booking.cancellationRequestedBy === USER_ROLES.THERAPIST) {
+        sendCancellationRejectedToTherapist({ customer: booking.customer, therapist: booking.therapist, booking, rejectionReason }).catch(logger.error);
+    } else {
+        sendCancellationRejectedToCustomer({ customer: booking.customer, therapist: booking.therapist, booking, rejectionReason }).catch(logger.error);
+    }
 
     logAction({
         actorId: userId,
         action: "booking.cancellation_rejected",
         entityType: "booking",
         entityId: bookingId,
-        changes: { rejectionReason, restoredStatus },
+        changes: { rejectionReason, restoredStatus, requestedBy: booking.cancellationRequestedBy },
     });
 
     return { status: restoredStatus, rejectionReason };
-};
-
-/**
- * Admin override — approve or reject a pending cancellation, bypassing the 24h window.
- *
- * @param {string} bookingId
- * @param {"approve" | "reject"} action
- * @param {string} adminId
- * @param {string} [rejectionReason] - required when action is "reject"
- */
-export const adminOverrideCancellation = async (bookingId, action, adminId, rejectionReason) => {
-    const booking = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        include: {
-            therapist: { select: { userId: true, fullName: true, user: { select: { email: true } } } },
-            customer: { select: { userId: true, fullName: true, user: { select: { email: true } } } },
-        },
-    });
-    if (!booking) throw new NotFoundError("Booking not found");
-    if (booking.status !== BOOKING_STATUS.CANCELLATION_REQUESTED) throw new ConflictError("No pending cancellation request on this booking");
-
-    if (action === "approve") {
-        return executeCancellationApproval(bookingId, { actorId: adminId });
-    }
-
-    if (action === "reject") {
-        if (!rejectionReason?.trim()) throw new ConflictError("Rejection reason is required");
-        const restoredStatus = booking.preCancellationStatus ?? BOOKING_STATUS.CONFIRMED;
-
-        await prisma.booking.update({
-            where: { id: bookingId },
-            data: { status: restoredStatus, cancellationReason: null, cancellationRequestedAt: null, preCancellationStatus: null },
-        });
-
-        sendCancellationRejectedToCustomer({ customer: booking.customer, therapist: booking.therapist, booking, rejectionReason }).catch(logger.error);
-        logAction({ actorId: adminId, action: "booking.cancellation_rejected_by_admin", entityType: "booking", entityId: bookingId, changes: { rejectionReason, restoredStatus } });
-
-        return { status: restoredStatus, rejectionReason };
-    }
-
-    throw new ConflictError("Invalid action. Must be 'approve' or 'reject'");
-};
-
-/**
- * Cron job: auto-approve all cancellation requests older than 24 hours.
- * Called by the cancellation expiry cron on an hourly schedule.
- */
-export const autoApproveStaleCancellations = async () => {
-    const cutoff = new Date(Date.now() - 24 * 3_600_000);
-
-    const stale = await prisma.booking.findMany({
-        where: {
-            status: BOOKING_STATUS.CANCELLATION_REQUESTED,
-            cancellationRequestedAt: { lt: cutoff },
-        },
-        select: { id: true },
-    });
-
-    if (stale.length === 0) return { processed: 0 };
-
-    logger.info(`[CancellationService] Auto-approving ${stale.length} stale cancellation request(s)`);
-
-    const results = await Promise.allSettled(
-        stale.map(({ id }) => executeCancellationApproval(id, { isAuto: true, actorId: "system" }))
-    );
-
-    const failed = results.filter(r => r.status === "rejected");
-    if (failed.length > 0) {
-        logger.error("[CancellationService] Some auto-approvals failed", { failed: failed.map(f => f.reason?.message) });
-    }
-
-    return { processed: stale.length, failed: failed.length };
 };
