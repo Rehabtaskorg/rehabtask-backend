@@ -57,10 +57,9 @@ const getAvailableRequestsController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const primaryLicenseType = req.user.therapistProfile.primaryLicenseType;
-        const { serviceType, show, page, limit } = req.query;
+        const { show, page, limit } = req.query;
         const result = await getAvailableRequests(therapistId, {
             primaryLicenseType,
-            serviceType,
             show,
             page: page ? parseInt(page) : 1,
             limit: limit ? parseInt(limit) : 20,
