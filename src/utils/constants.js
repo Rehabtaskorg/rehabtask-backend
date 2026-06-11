@@ -126,13 +126,6 @@ export const COOKIE_MAX_AGE = {
     SEVEN_DAYS: 7 * 24 * 60 * 60 * 1000,
 };
 
-// ─── Discipline → Service Type Mapping ───────────────────────────────────────
-// Maps a therapist's primaryLicenseType to the customer-facing serviceType on
-// TherapyRequest. Assistants (PTA/OTA) serve the same service type as their
-// supervising discipline.
-// NOTE: If a new license type is added to the onboarding form, update this map
-// in the same PR — otherwise public request filtering will silently break.
-// See docs/DISCIPLINE-FILTER-SCALABILITY.md for the long-term solution.
 export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
     "Physical Therapist": "Physical Therapy",
     "Physical Therapist Assistant": "Physical Therapy",
@@ -145,3 +138,5 @@ export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
 export const ZIP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const ONE_HOUR_AGO_MS = 60 * 60 * 1000;
 export const REPORT_MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+export const MAX_SEARCH_RADIUS_MILES = 100;

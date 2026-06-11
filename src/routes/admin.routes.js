@@ -50,6 +50,12 @@ import {
 } from "../controllers/admin.dispute.controller.js";
 
 import {
+    adminGetVisitTypesController,
+    adminUpdateVisitTypeController,
+    adminSeedVisitTypesController,
+} from "../controllers/visitType.controller.js";
+
+import {
     adminListBookingsController,
     adminGetBookingController,
     adminCancelBookingController,
@@ -190,10 +196,7 @@ router.get("/reports/bookings", ...adminOnly, validate(adminReportQuerySchema, "
 router.get("/reports/payments", ...adminOnly, validate(adminReportQuerySchema, "query"), paymentsReportController);
 router.get("/reports/users", ...adminOnly, validate(adminUserReportQuerySchema, "query"), usersReportController);
 
-// Visit Types — admin CRUD
-import { adminGetVisitTypesController, adminCreateVisitTypeController, adminUpdateVisitTypeController, adminSeedVisitTypesController } from "../controllers/visitType.controller.js";
 router.get("/visit-types", ...adminOnly, adminGetVisitTypesController);
-router.post("/visit-types", ...adminOnly, adminCreateVisitTypeController);
 router.put("/visit-types/:id", ...adminOnly, adminUpdateVisitTypeController);
 router.post("/visit-types/seed", ...adminOnly, adminSeedVisitTypesController);
 

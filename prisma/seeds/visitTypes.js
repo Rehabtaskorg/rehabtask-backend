@@ -1,28 +1,29 @@
-/**
- * Visit type seed data — clinical session types grouped by discipline.
- */
 export const VISIT_TYPES = [
-    // Physical Therapy
     { code: "PTE", name: "Physical Therapist Evaluation", discipline: "Physical Therapist", sortOrder: 1 },
-    { code: "PTF", name: "Physical Therapist Follow-up", discipline: "Physical Therapist", sortOrder: 2 },
-    { code: "PTFA", name: "Physical Therapist Assistant Follow-up", discipline: "Physical Therapist", sortOrder: 3 },
-    { code: "PTSU", name: "Physical Therapist Supervisory Visit", discipline: "Physical Therapist", sortOrder: 4 },
-    { code: "PTDC", name: "Physical Therapist Discharge", discipline: "Physical Therapist", sortOrder: 5 },
-    { code: "PTAV", name: "Physical Therapist Attempted Visit", discipline: "Physical Therapist", sortOrder: 6 },
+    { code: "PTF", name: "Physical Therapist Follow-up Visit", discipline: "Physical Therapist", sortOrder: 2 },
+    { code: "PTDC", name: "Physical Therapist Discharge", discipline: "Physical Therapist", sortOrder: 3 },
+    { code: "PTDN", name: "Physical Therapist Discharge Note (Non-Billable)", discipline: "Physical Therapist", sortOrder: 4 },
+    { code: "PTAV", name: "Physical Therapist Attempted Visit", discipline: "Physical Therapist", sortOrder: 5 },
+    { code: "PTR", name: "Physical Therapist Reassessment", discipline: "Physical Therapist", sortOrder: 6 },
+    { code: "PTSU", name: "Physical Therapist Supervisory", discipline: "Physical Therapist", sortOrder: 7 },
+    { code: "PTFA", name: "Physical Therapist Assistant Follow-up Visit", discipline: "Physical Therapist", sortOrder: 8 },
 
-    // Occupational Therapy
     { code: "OTE", name: "Occupational Therapist Evaluation", discipline: "Occupational Therapist", sortOrder: 1 },
-    { code: "OTF", name: "Occupational Therapist Follow-up", discipline: "Occupational Therapist", sortOrder: 2 },
-    { code: "OTFA", name: "Occupational Therapist Assistant Follow-up", discipline: "Occupational Therapist", sortOrder: 3 },
-    { code: "OTSU", name: "Occupational Therapist Supervisory Visit", discipline: "Occupational Therapist", sortOrder: 4 },
-    { code: "OTDC", name: "Occupational Therapist Discharge", discipline: "Occupational Therapist", sortOrder: 5 },
-    { code: "OTAV", name: "Occupational Therapist Attempted Visit", discipline: "Occupational Therapist", sortOrder: 6 },
+    { code: "OTF", name: "Occupational Therapist Follow-up Visit", discipline: "Occupational Therapist", sortOrder: 2 },
+    { code: "OTDC", name: "Occupational Therapist Discharged", discipline: "Occupational Therapist", sortOrder: 3 },
+    { code: "OTDN", name: "Occupational Therapist Discharge Note (Non-Billable)", discipline: "Occupational Therapist", sortOrder: 4 },
+    { code: "OTAV", name: "Occupational Therapist Attempted Visit", discipline: "Occupational Therapist", sortOrder: 5 },
+    { code: "OTR", name: "Occupational Therapist Reassessment", discipline: "Occupational Therapist", sortOrder: 6 },
+    { code: "OTSU", name: "Occupational Therapist Supervisory", discipline: "Occupational Therapist", sortOrder: 7 },
+    { code: "OTFA", name: "Occupational Therapist Assistant Follow-up Visit", discipline: "Occupational Therapist", sortOrder: 8 },
 
-    // Speech Therapy
     { code: "STE", name: "Speech Therapist Evaluation", discipline: "Speech Therapist", sortOrder: 1 },
-    { code: "STF", name: "Speech Therapist Follow-up", discipline: "Speech Therapist", sortOrder: 2 },
-    { code: "STAV", name: "Speech Therapist Attempted Visit", discipline: "Speech Therapist", sortOrder: 3 },
+    { code: "STF", name: "Speech Therapist Follow-up Visit", discipline: "Speech Therapist", sortOrder: 2 },
+    { code: "STDC", name: "Speech Therapist Discharged", discipline: "Speech Therapist", sortOrder: 3 },
+    { code: "STDN", name: "Speech Therapist Discharge Note (Non-Billable)", discipline: "Speech Therapist", sortOrder: 4 },
+    { code: "STAV", name: "Speech Therapist Attempted Visit", discipline: "Speech Therapist", sortOrder: 5 },
+    { code: "STR", name: "Speech Therapist Reassessment", discipline: "Speech Therapist", sortOrder: 6 },
 
-    // Shared across disciplines
     { code: "MV", name: "Missed Visit", discipline: "All", sortOrder: 99 },
+    { code: "CN", name: "Communication Note", discipline: "All", sortOrder: 100 },
 ];

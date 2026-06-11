@@ -1,4 +1,5 @@
 import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest, cancelRequest, getOpenRequestsByCustomerUserId } from "../services/request.service.js";
+import { MAX_SEARCH_RADIUS_MILES } from "../utils/constants.js";
 
 /**
  * Create a new request
@@ -57,10 +58,12 @@ const getAvailableRequestsController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const primaryLicenseType = req.user.therapistProfile.primaryLicenseType;
-        const { show, page, limit } = req.query;
+        const { show, page, limit, visitTypeIds, radiusMiles } = req.query;
         const result = await getAvailableRequests(therapistId, {
             primaryLicenseType,
             show,
+            visitTypeIds: visitTypeIds ? visitTypeIds.split(",") : undefined,
+            radiusMiles: radiusMiles ? Math.min(parseInt(radiusMiles, 10), MAX_SEARCH_RADIUS_MILES) : undefined,
             page: page ? parseInt(page) : 1,
             limit: limit ? parseInt(limit) : 20,
         });

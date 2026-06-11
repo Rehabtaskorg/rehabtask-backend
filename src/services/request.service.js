@@ -200,7 +200,7 @@ export const getRequestById = async (requestId, userId) => {
 }
 
 // GEO-FILTERED: Only return requests within the therapist's work area radii
-export const getAvailableRequests = async (therapistId, { primaryLicenseType, show, page = 1, limit = 20 } = {}) => {
+export const getAvailableRequests = async (therapistId, { primaryLicenseType, show, visitTypeIds, radiusMiles, page = 1, limit = 20 } = {}) => {
     // Fetch therapist's work areas
     const workAreas = await prisma.workArea.findMany({
         where: { therapistId },
@@ -240,6 +240,7 @@ export const getAvailableRequests = async (therapistId, { primaryLicenseType, sh
                 },
             },
         },
+        ...(visitTypeIds?.length > 0 && { visitTypeId: { in: visitTypeIds } }),
     };
 
     // Fetch all matching requests (geo-filter requires post-query)
@@ -254,7 +255,7 @@ export const getAvailableRequests = async (therapistId, { primaryLicenseType, sh
         orderBy: { createdAt: "desc" },
     });
 
-    // Filter by work area radius
+    // Filter by work area radius — radiusMiles, if provided, extends (never shrinks) each area's configured radius
     let filteredRequests = requests.filter((request) => {
         const requestLat = parseFloat(request.latitude);
         const requestLng = parseFloat(request.longitude);
@@ -262,7 +263,8 @@ export const getAvailableRequests = async (therapistId, { primaryLicenseType, sh
             const areaLat = parseFloat(area.latitude);
             const areaLng = parseFloat(area.longitude);
             const distance = haversineDistance(requestLat, requestLng, areaLat, areaLng);
-            return distance <= area.radiusMiles;
+            const effectiveRadius = radiusMiles ? Math.max(area.radiusMiles, radiusMiles) : area.radiusMiles;
+            return distance <= effectiveRadius;
         });
     });
 
