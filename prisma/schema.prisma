@@ -83,7 +83,8 @@ model Patient {
   latitude           Decimal?         @db.Decimal(10, 8)
   longitude          Decimal?         @db.Decimal(11, 8)
   dateOfBirth         DateTime?        @map("date_of_birth") @db.Date
-  certificationExpiry DateTime?        @map("certification_expiry") @db.Date
+  certificationStart  DateTime?        @map("certification_start") @db.Date
+  certificationEnd    DateTime?        @map("certification_end") @db.Date
   userId             String?          @unique @map("user_id") @db.Uuid
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
