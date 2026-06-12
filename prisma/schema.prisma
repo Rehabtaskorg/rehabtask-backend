@@ -370,6 +370,7 @@ model Session {
   id                    String        @id @default(uuid()) @db.Uuid
   bookingId             String        @map("booking_id") @db.Uuid
   sessionNumber         Int?          @map("session_number")
+  visitTitle            String?       @map("visit_title") @db.VarChar(100)
   scheduledDate         DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                SessionStatus
   startedAt             DateTime?     @map("started_at") @db.Timestamptz(3)

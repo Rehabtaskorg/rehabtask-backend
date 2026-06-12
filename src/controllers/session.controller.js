@@ -5,6 +5,7 @@ import {
     respondToRevision, resubmitSession, extendRevision,
     markSessionMissed,
     markSessionAttempted,
+    updateSessionTitle,
 } from "../services/session.service.js";
 import {
     approveSessionCancellation,
@@ -157,6 +158,18 @@ const scheduleSessionController = async (req, res, next) => {
     }
 }
 
+const updateSessionTitleController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const { title } = req.body;
+        const therapistId = req.user.therapistProfile.id;
+        const session = await updateSessionTitle(sessionId, therapistId, title);
+        res.status(200).json({ success: true, data: session });
+    } catch (error) {
+        next(error);
+    }
+};
+
 /**
  * Step 1: Therapist responds to revision with a committed date
  */
@@ -255,6 +268,7 @@ export {
     getCustomerSessionsController,
     getTherapistSessionsController,
     scheduleSessionController,
+    updateSessionTitleController,
     requestRevisionController,
     submitRevisionController,
     respondToRevisionController,
