@@ -25,7 +25,7 @@ const resolveDiscipline = ({ discipline, serviceType, licenseType }) => {
  * @param {string} [opts.serviceType]
  * @param {string} [opts.licenseType]
  * @param {"customer"|"therapist"} [opts.audience="therapist"]
- * @returns {Promise<Array<{id:string,code:string,name:string,discipline:string,sortOrder:number}>>}
+ * @returns {Promise<Array<{id:string,code:string,name:string,discipline:string,sortOrder:number,isEvaluation:boolean}>>}
  */
 export const getVisitTypes = async ({ discipline, serviceType, licenseType, audience = USER_ROLES.THERAPIST } = {}) => {
     const resolvedDiscipline = resolveDiscipline({ discipline, serviceType, licenseType });
@@ -49,7 +49,7 @@ export const getVisitTypes = async ({ discipline, serviceType, licenseType, audi
                 }),
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        select: { id: true, code: true, name: true, discipline: true, sortOrder: true },
+        select: { id: true, code: true, name: true, discipline: true, sortOrder: true, isEvaluation: true },
     });
 };
 
@@ -104,17 +104,18 @@ export const seedVisitTypes = async () => {
     let updated = 0;
 
     for (const vt of VISIT_TYPES) {
+        const isEvaluation = vt.isEvaluation ?? false;
         const existing = await prisma.visitType.findUnique({ where: { code: vt.code } });
         if (existing) {
             await prisma.visitType.update({
                 where: { code: vt.code },
-                data: { name: vt.name, discipline: vt.discipline, sortOrder: vt.sortOrder },
+                data: { name: vt.name, discipline: vt.discipline, sortOrder: vt.sortOrder, isEvaluation },
             });
             updated++;
             continue;
         }
         const customerVisible = !THERAPIST_INTERNAL_CODES.has(vt.code);
-        await prisma.visitType.create({ data: { ...vt, customerVisible } });
+        await prisma.visitType.create({ data: { ...vt, isEvaluation, customerVisible } });
         created++;
     }
 
