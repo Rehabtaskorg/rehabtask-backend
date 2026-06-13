@@ -159,6 +159,7 @@ model VisitType {
   isActive        Boolean          @default(true) @map("is_active")
   sortOrder       Int              @default(0) @map("sort_order")
   customerVisible Boolean          @default(true) @map("customer_visible")
+  isEvaluation    Boolean          @default(false) @map("is_evaluation")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   offers          Offer[]

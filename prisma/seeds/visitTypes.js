@@ -1,5 +1,5 @@
 export const VISIT_TYPES = [
-    { code: "PTE", name: "Physical Therapist Evaluation", discipline: "Physical Therapist", sortOrder: 1 },
+    { code: "PTE", name: "Physical Therapist Evaluation", discipline: "Physical Therapist", sortOrder: 1, isEvaluation: true },
     { code: "PTF", name: "Physical Therapist Follow-up Visit", discipline: "Physical Therapist", sortOrder: 2 },
     { code: "PTDC", name: "Physical Therapist Discharge", discipline: "Physical Therapist", sortOrder: 3 },
     { code: "PTDN", name: "Physical Therapist Discharge Note (Non-Billable)", discipline: "Physical Therapist", sortOrder: 4 },
@@ -8,7 +8,7 @@ export const VISIT_TYPES = [
     { code: "PTSU", name: "Physical Therapist Supervisory", discipline: "Physical Therapist", sortOrder: 7 },
     { code: "PTFA", name: "Physical Therapist Assistant Follow-up Visit", discipline: "Physical Therapist", sortOrder: 8 },
 
-    { code: "OTE", name: "Occupational Therapist Evaluation", discipline: "Occupational Therapist", sortOrder: 1 },
+    { code: "OTE", name: "Occupational Therapist Evaluation", discipline: "Occupational Therapist", sortOrder: 1, isEvaluation: true },
     { code: "OTF", name: "Occupational Therapist Follow-up Visit", discipline: "Occupational Therapist", sortOrder: 2 },
     { code: "OTDC", name: "Occupational Therapist Discharged", discipline: "Occupational Therapist", sortOrder: 3 },
     { code: "OTDN", name: "Occupational Therapist Discharge Note (Non-Billable)", discipline: "Occupational Therapist", sortOrder: 4 },
@@ -17,7 +17,7 @@ export const VISIT_TYPES = [
     { code: "OTSU", name: "Occupational Therapist Supervisory", discipline: "Occupational Therapist", sortOrder: 7 },
     { code: "OTFA", name: "Occupational Therapist Assistant Follow-up Visit", discipline: "Occupational Therapist", sortOrder: 8 },
 
-    { code: "STE", name: "Speech Therapist Evaluation", discipline: "Speech Therapist", sortOrder: 1 },
+    { code: "STE", name: "Speech Therapist Evaluation", discipline: "Speech Therapist", sortOrder: 1, isEvaluation: true },
     { code: "STF", name: "Speech Therapist Follow-up Visit", discipline: "Speech Therapist", sortOrder: 2 },
     { code: "STDC", name: "Speech Therapist Discharged", discipline: "Speech Therapist", sortOrder: 3 },
     { code: "STDN", name: "Speech Therapist Discharge Note (Non-Billable)", discipline: "Speech Therapist", sortOrder: 4 },
