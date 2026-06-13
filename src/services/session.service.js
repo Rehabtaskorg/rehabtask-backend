@@ -1,4 +1,4 @@
-import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS } from "../utils/constants.js";
+import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -1238,6 +1238,56 @@ export const scheduleSession = async (sessionId, therapistId, scheduledDate) => 
         sessionNumber: session.sessionNumber,
         bookingId: session.bookingId,
         scheduledDate: proposedDate,
+    });
+
+    return updatedSession;
+};
+
+const LOCKED_VISIT_TITLE_STATUSES = [
+    SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
+    SESSION_STATUS.MISSED,
+    SESSION_STATUS.ATTEMPTED,
+    SESSION_STATUS.CANCELLED,
+];
+
+export const updateSessionTitle = async (sessionId, therapistId, title) => {
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: { booking: { include: { therapist: true } } },
+    });
+
+    if (!session) {
+        throw new Error("Session not found");
+    }
+
+    if (session.booking.therapistId !== therapistId) {
+        throw new Error("Unauthorized");
+    }
+
+    if (LOCKED_VISIT_TITLE_STATUSES.includes(session.status)) {
+        throw new BadRequestError("This visit's title can no longer be edited");
+    }
+
+    const trimmedTitle = title?.trim() || null;
+    if (trimmedTitle && trimmedTitle.length > MAX_VISIT_TITLE_LENGTH) {
+        throw new BadRequestError(`Visit title must be ${MAX_VISIT_TITLE_LENGTH} characters or fewer`);
+    }
+
+    const updatedSession = await prisma.session.update({
+        where: { id: sessionId },
+        data: { visitTitle: trimmedTitle },
+    });
+
+    logAction({
+        actorId: session.booking.therapist.userId,
+        action: "session.title_updated",
+        entityType: "session",
+        entityId: sessionId,
+        changes: {
+            bookingId: session.bookingId,
+            sessionNumber: session.sessionNumber,
+            visitTitle: trimmedTitle,
+        },
     });
 
     return updatedSession;

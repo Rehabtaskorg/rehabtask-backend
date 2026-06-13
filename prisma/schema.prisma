@@ -159,6 +159,7 @@ model VisitType {
   isActive        Boolean          @default(true) @map("is_active")
   sortOrder       Int              @default(0) @map("sort_order")
   customerVisible Boolean          @default(true) @map("customer_visible")
+  isEvaluation    Boolean          @default(false) @map("is_evaluation")
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   offers          Offer[]
@@ -370,6 +371,7 @@ model Session {
   id                    String        @id @default(uuid()) @db.Uuid
   bookingId             String        @map("booking_id") @db.Uuid
   sessionNumber         Int?          @map("session_number")
+  visitTitle            String?       @map("visit_title") @db.VarChar(100)
   scheduledDate         DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                SessionStatus
   startedAt             DateTime?     @map("started_at") @db.Timestamptz(3)
