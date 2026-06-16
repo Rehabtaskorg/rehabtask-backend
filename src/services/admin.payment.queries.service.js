@@ -87,21 +87,39 @@ export const adminGetPayment = async (paymentId) => {
 
 /**
  * Aggregate stats across all payments.
+ *
+ * Escrowed funds = money still physically held in platform escrow:
+ *   - fully escrowed payments: full amount
+ *   - partially released payments: amount - releasedAmount (the unreleased remainder)
+ * This is computed via two aggregates and combined in JS to avoid raw SQL.
  */
 export const adminGetPaymentStats = async () => {
-    const [totalVolume, platformRevenue, therapistPayouts, refunded, escrowed] = await Promise.all([
+    const [
+        totalVolume,
+        platformRevenue,
+        therapistPayouts,
+        refunded,
+        fullyEscrowed,
+        partiallyReleased,
+    ] = await Promise.all([
         prisma.payment.aggregate({ _sum: { amount: true }, where: { status: { in: ["escrowed", "partially_released", "released"] } } }),
-        prisma.payment.aggregate({ _sum: { platformFee: true }, where: { status: { in: ["partially_released", "released"] } } }),
+        prisma.payment.aggregate({ _sum: { releasedFee: true }, where: { status: { in: ["partially_released", "released"] } } }),
         prisma.payment.aggregate({ _sum: { releasedAmount: true }, where: { status: { in: ["partially_released", "released"] } } }),
         prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "refunded" } }),
-        prisma.payment.aggregate({ _sum: { amount: true }, where: { status: { in: ["escrowed", "partially_released"] } } }),
+        prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "escrowed" } }),
+        prisma.payment.aggregate({ _sum: { amount: true, releasedAmount: true }, where: { status: "partially_released" } }),
     ]);
+
+    const fullyEscrowedTotal = parseFloat(fullyEscrowed._sum.amount ?? 0);
+    const partialAmount = parseFloat(partiallyReleased._sum.amount ?? 0);
+    const partialReleased = parseFloat(partiallyReleased._sum.releasedAmount ?? 0);
+    const escrowedFunds = fullyEscrowedTotal + (partialAmount - partialReleased);
 
     return {
         totalVolume: parseFloat(totalVolume._sum.amount ?? 0),
-        platformRevenue: parseFloat(platformRevenue._sum.platformFee ?? 0),
+        platformRevenue: parseFloat(platformRevenue._sum.releasedFee ?? 0),
         therapistPayouts: parseFloat(therapistPayouts._sum.releasedAmount ?? 0),
         totalRefunded: parseFloat(refunded._sum.amount ?? 0),
-        escrowedFunds: parseFloat(escrowed._sum.amount ?? 0),
+        escrowedFunds,
     };
 };

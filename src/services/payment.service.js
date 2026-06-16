@@ -693,6 +693,8 @@ const releaseSessionPayout = async ({ session, payment, booking, isLast }) => {
 
     // Create the SessionPayout record + update payment.releasedAmount in a transaction
     const newReleasedAmount = parseFloat((alreadyReleased + perSessionTherapistPayout).toFixed(2));
+    const alreadyReleasedFee = parseFloat(payment.releasedFee ?? 0);
+    const newReleasedFee = parseFloat((alreadyReleasedFee + perSessionFee).toFixed(2));
     const allSessionsPaid = isLast || newReleasedAmount >= totalTherapistPayout - 0.01;
 
     const sessionPayout = await prisma.$transaction(async (tx) => {
@@ -711,6 +713,7 @@ const releaseSessionPayout = async ({ session, payment, booking, isLast }) => {
             where: { id: payment.id },
             data: {
                 releasedAmount: newReleasedAmount,
+                releasedFee: newReleasedFee,
                 status: allSessionsPaid ? "released" : "partially_released",
                 ...(allSessionsPaid && { releasedAt: new Date() }),
             },
@@ -872,6 +875,8 @@ const releasePartialSessionPayout = async ({ session, payment, booking, amount }
     }
 
     const newReleasedAmount = parseFloat((alreadyReleased + partialTherapistPayout).toFixed(2));
+    const alreadyReleasedFee = parseFloat(payment.releasedFee ?? 0);
+    const newReleasedFee = parseFloat((alreadyReleasedFee + partialFee).toFixed(2));
     // An attempted visit is a partial per-session release. We DO NOT flip the
     // payment to "released" here — the calling service (markSessionAttempted)
     // decides whether the whole booking is done and handles that transition.
@@ -893,6 +898,7 @@ const releasePartialSessionPayout = async ({ session, payment, booking, amount }
             where: { id: payment.id },
             data: {
                 releasedAmount: newReleasedAmount,
+                releasedFee: newReleasedFee,
                 status: nextStatus,
             },
         });
