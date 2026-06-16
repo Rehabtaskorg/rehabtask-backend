@@ -420,6 +420,7 @@ model Payment {
   platformFee           Decimal          @map("platform_fee") @db.Decimal(10, 2)
   therapistPayout       Decimal          @map("therapist_payout") @db.Decimal(10, 2)
   releasedAmount        Decimal          @default(0) @map("released_amount") @db.Decimal(10, 2)
+  releasedFee           Decimal?         @map("released_fee") @db.Decimal(10, 2)
   status                PaymentStatus
   escrowedAt            DateTime?        @map("escrowed_at") @db.Timestamptz(3)
   releasedAt            DateTime?        @map("released_at") @db.Timestamptz(3)

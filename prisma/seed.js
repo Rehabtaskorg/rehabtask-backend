@@ -98,53 +98,8 @@ async function seedRequestOptions() {
     console.log(`Request options seeded: ${created} defaults ensured`);
 }
 
-/**
- * Seed default commission rates per therapist plan tier (PRD defaults).
- * Uses upsert-equivalent logic: only inserts if no record exists for that tier yet.
- * Safe to run multiple times — idempotent.
- */
-async function seedCommissionRates() {
-    const adminUser = await prisma.user.findFirst({ where: { role: "admin" } });
-    if (!adminUser) {
-        console.warn("No admin user found — skipping commission rate seed.");
-        return;
-    }
-
-    const defaults = [
-        { tier: "basic", rate: 0.20 },  // 20% — Free tier
-        { tier: "pro",   rate: 0.12 },  // 12% — $19/mo
-        { tier: "elite", rate: 0.07 },  // 7%  — $39/mo
-    ];
-
-    let seeded = 0;
-    for (const { tier, rate } of defaults) {
-        const existing = await prisma.commissionConfig.findFirst({
-            where: { tier },
-            orderBy: { effectiveFrom: "desc" },
-        });
-
-        if (!existing) {
-            await prisma.commissionConfig.create({
-                data: {
-                    tier,
-                    rate,
-                    effectiveFrom: new Date(),
-                    createdByAdminId: adminUser.id,
-                },
-            });
-            seeded++;
-            console.log(`Commission rate seeded: ${tier} → ${(rate * 100).toFixed(0)}%`);
-        } else {
-            console.log(`Commission rate already exists: ${tier} → ${(parseFloat(existing.rate) * 100).toFixed(0)}% (skipped)`);
-        }
-    }
-
-    console.log(`Commission rates: ${seeded} seeded, ${defaults.length - seeded} already present`);
-}
-
 seed()
     .then(() => seedRequestOptions())
-    .then(() => seedCommissionRates())
     .then(() => seedVisitTypes())
     .catch((err) => {
         console.error("Seed failed:", err);

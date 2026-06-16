@@ -1,0 +1,1 @@
+ALTER TABLE "payments" ADD COLUMN "released_fee" DECIMAL(10,2);

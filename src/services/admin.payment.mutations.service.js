@@ -57,6 +57,13 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
         throw err;
     }
 
+    const totalAmount = parseFloat(payment.amount);
+    const totalFee = parseFloat(payment.platformFee);
+    const feeRatio = totalAmount > 0 ? totalFee / totalAmount : 0;
+    const releasedFeeIncrement = parseFloat((releaseAmount * feeRatio).toFixed(2));
+    const alreadyReleasedFee = parseFloat(payment.releasedFee ?? 0);
+    const newReleasedFee = parseFloat((alreadyReleasedFee + releasedFeeIncrement).toFixed(2));
+
     const updated = await prisma.payment.update({
         where: { id: paymentId },
         data: {
@@ -64,6 +71,7 @@ export const adminReleasePayment = async (paymentId, adminId, partialAmount) => 
             stripeTransferId: transfer.id,
             releasedAt: new Date(),
             releasedAmount: releaseAmount,
+            releasedFee: newReleasedFee,
         },
         include: PAYMENT_INCLUDE,
     });
@@ -108,9 +116,15 @@ export const adminReleaseRemainder = async (paymentId, adminId) => {
         throw err;
     }
 
+    const totalFee = parseFloat(payment.platformFee);
+    const alreadyReleasedFee = parseFloat(payment.releasedFee ?? 0);
+    // Remainder fee = total platform fee minus what's already been recorded as released
+    const remainderFee = parseFloat((totalFee - alreadyReleasedFee).toFixed(2));
+    const newReleasedFee = parseFloat((alreadyReleasedFee + Math.max(0, remainderFee)).toFixed(2));
+
     const updated = await prisma.payment.update({
         where: { id: paymentId },
-        data: { status: "released", releasedAmount: fullPayout, releasedAt: new Date() },
+        data: { status: "released", releasedAmount: fullPayout, releasedFee: newReleasedFee, releasedAt: new Date() },
         include: PAYMENT_INCLUDE,
     });
 
