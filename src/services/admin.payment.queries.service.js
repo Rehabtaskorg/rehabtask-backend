@@ -103,7 +103,7 @@ export const adminGetPaymentStats = async () => {
         partiallyReleased,
     ] = await Promise.all([
         prisma.payment.aggregate({ _sum: { amount: true }, where: { status: { in: ["escrowed", "partially_released", "released"] } } }),
-        prisma.payment.aggregate({ _sum: { platformFee: true }, where: { status: { in: ["partially_released", "released"] } } }),
+        prisma.payment.aggregate({ _sum: { releasedFee: true }, where: { status: { in: ["partially_released", "released"] } } }),
         prisma.payment.aggregate({ _sum: { releasedAmount: true }, where: { status: { in: ["partially_released", "released"] } } }),
         prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "refunded" } }),
         prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "escrowed" } }),
@@ -117,7 +117,7 @@ export const adminGetPaymentStats = async () => {
 
     return {
         totalVolume: parseFloat(totalVolume._sum.amount ?? 0),
-        platformRevenue: parseFloat(platformRevenue._sum.platformFee ?? 0),
+        platformRevenue: parseFloat(platformRevenue._sum.releasedFee ?? 0),
         therapistPayouts: parseFloat(therapistPayouts._sum.releasedAmount ?? 0),
         totalRefunded: parseFloat(refunded._sum.amount ?? 0),
         escrowedFunds,
