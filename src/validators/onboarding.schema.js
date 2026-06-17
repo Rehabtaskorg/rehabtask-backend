@@ -85,6 +85,24 @@ export const credentialsSchema = z.object({
         .length(2, "License state must be 2-letter code")
         .regex(/^[A-Z]{2}$/, "Invalid state code"),
 
+    npiNumber: z
+        .string()
+        .regex(/^\d{10}$/, "NPI must be exactly 10 digits")
+        .optional()
+        .nullable(),
+
+    additionalLicenseStates: z
+        .array(
+            z.string()
+                .length(2, "State code must be 2 letters")
+                .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+                    message: "Invalid US state code",
+                })
+        )
+        .max(50, "Too many states selected")
+        .optional()
+        .default([]),
+
     licenseDocuments: z
         .array(z.object({
             path: z.string(),

@@ -118,6 +118,7 @@ model TherapistProfile {
   emergencyContactName     String?                @map("emergency_contact_name") @db.VarChar(255)
   emergencyContactPhone    String?                @map("emergency_contact_phone") @db.VarChar(20)
   npiNumber                String?                @unique @map("npi_number") @db.VarChar(10)
+  additionalLicenseStates  String[]               @default([]) @map("additional_license_states")
   yearsOfExperience        Int?                   @map("years_of_experience")
   primaryLicenseType       String?                @map("primary_license_type") @db.VarChar(100)
   professionalSummary      String?                @map("professional_summary")
