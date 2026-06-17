@@ -88,6 +88,7 @@ export const credentialsSchema = z.object({
     npiNumber: z
         .string()
         .regex(/^\d{10}$/, "NPI must be exactly 10 digits")
+        .or(z.literal(""))
         .optional()
         .nullable(),
 
