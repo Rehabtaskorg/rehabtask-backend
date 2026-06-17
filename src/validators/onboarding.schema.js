@@ -1,5 +1,50 @@
 import { z } from "zod";
 
+const US_STATE_CODES = [
+    "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+    "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+    "VA","WA","WV","WI","WY",
+];
+
+const usPhoneSchema = z
+    .string()
+    .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX");
+
+export const personalInfoSchema = z.object({
+    dateOfBirth: z
+        .string()
+        .date("Date of birth must be a valid date (YYYY-MM-DD)")
+        .refine((val) => {
+            const dob = new Date(val);
+            const now = new Date();
+            const age = now.getFullYear() - dob.getFullYear();
+            return age >= 18 && age <= 100;
+        }, { message: "Therapist must be between 18 and 100 years old" }),
+
+    phone: usPhoneSchema,
+
+    addressLine1: z.string().min(1, "Address is required").max(255),
+    addressLine2: z.string().max(255).optional().nullable(),
+    city: z.string().min(1, "City is required").max(100),
+    state: z
+        .string()
+        .length(2, "State must be a 2-letter code")
+        .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+            message: "Please provide a valid US state",
+        })
+        .transform((val) => val.toUpperCase()),
+    zipCode: z
+        .string()
+        .regex(/^\d{5}$/, "ZIP code must be exactly 5 digits"),
+
+    latitude: z.number().min(-90).max(90).optional().nullable(),
+    longitude: z.number().min(-180).max(180).optional().nullable(),
+
+    emergencyContactName: z.string().max(255).optional().nullable(),
+    emergencyContactPhone: usPhoneSchema.optional().nullable(),
+});
+
 export const professionalProfileSchema = z.object({
     yearsOfExperience: z
         .number()

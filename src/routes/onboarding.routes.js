@@ -7,12 +7,14 @@ import {
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    savePersonalInfoController,
     saveProfessionalProfileController,
-    submitBackgroundCheckController
+    submitBackgroundCheckController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
+    personalInfoSchema,
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
@@ -31,6 +33,15 @@ router.use(authenticate);
  * GET /api/therapist/onboarding status
  */
 router.get("/status", getOnboardingStatusController);
+
+/**
+ * POST /api/therapist/onboarding/personal-info
+ */
+router.post(
+    "/personal-info",
+    validate(personalInfoSchema),
+    savePersonalInfoController
+);
 
 /**
  * POST /api/therapist/onboarding/profile

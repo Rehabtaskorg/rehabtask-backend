@@ -26,6 +26,13 @@ export const getOnboardingStatus = async (userId) => {
 
     // Determine which steps are complete
     const steps = {
+        personalInfo: !!(
+            therapist.dateOfBirth &&
+            therapist.addressLine1 &&
+            therapist.city &&
+            therapist.state &&
+            therapist.zipCode
+        ),
         profile: !!(
             therapist.yearsOfExperience !== null &&
             therapist.primaryLicenseType &&
@@ -45,7 +52,8 @@ export const getOnboardingStatus = async (userId) => {
     };
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
-    const progress = (completedSteps / 5) * 100;
+    const totalSteps = 8;
+    const progress = (completedSteps / totalSteps) * 100;
 
     return {
         therapist: {
@@ -58,12 +66,53 @@ export const getOnboardingStatus = async (userId) => {
         steps,
         progress,
         completedSteps,
-        totalSteps: 5
+        totalSteps,
     }
 }
 
 /**
- * Save professional profile (Step 1)
+ * Save personal information (Step 1)
+ */
+export const savePersonalInfo = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
+                phone: data.phone,
+                addressLine1: data.addressLine1,
+                addressLine2: data.addressLine2 ?? null,
+                city: data.city,
+                state: data.state,
+                zipCode: data.zipCode,
+                latitude: data.latitude ?? null,
+                longitude: data.longitude ?? null,
+                emergencyContactName: data.emergencyContactName ?? null,
+                emergencyContactPhone: data.emergencyContactPhone ?? null,
+                onboardingStep: Math.max(therapist.onboardingStep, 2),
+            },
+        });
+    });
+
+    return {
+        message: "Personal information saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
+ * Save professional profile (Step 2)
  */
 export const saveProfessionalProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({

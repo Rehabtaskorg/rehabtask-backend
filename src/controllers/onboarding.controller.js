@@ -6,9 +6,9 @@ import {
     getTherapistDocuments,
     saveAvailability,
     saveCredentials,
+    savePersonalInfo,
     saveProfessionalProfile,
-    submitBackgroundCheck
-
+    submitBackgroundCheck,
 } from "../services/onboarding.service.js";
 
 /**
@@ -40,8 +40,54 @@ export const getOnboardingStatusController = async (req, res, next) => {
 }
 
 /**
+ * POST /api/therapist/onboarding/personal-info
+ * Save personal information (Step 1)
+ */
+export const savePersonalInfoController = async (req, res, next) => {
+    try {
+        const {
+            dateOfBirth,
+            phone,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            zipCode,
+            latitude,
+            longitude,
+            emergencyContactName,
+            emergencyContactPhone,
+        } = req.body;
+
+        const result = await savePersonalInfo(req.user.id, {
+            dateOfBirth,
+            phone,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            zipCode,
+            latitude,
+            longitude,
+            emergencyContactName,
+            emergencyContactPhone,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: {
+                therapist: result.therapist,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * POST /api/therapist/onboarding/profile
- * Save professional profile (Step 1)
+ * Save professional profile (Step 2)
  */
 export const saveProfessionalProfileController = async (req, res, next) => {
     try {
