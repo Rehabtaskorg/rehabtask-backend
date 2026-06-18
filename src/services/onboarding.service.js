@@ -4,6 +4,7 @@ import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
+import { deleteFileFromStorage } from "./upload.service.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -530,7 +531,11 @@ export const getTherapistDocuments = async (userId) => {
 };
 
 /**
- * Delete document (soft delete)
+ * Delete document — soft-deletes the DB row (preserves the audit trail) and
+ * immediately removes the underlying Supabase Storage file. Removal happens
+ * during onboarding, before the document is ever part of a submitted
+ * application, so there's no retention reason to keep the storage object
+ * around — leaving it behind only orphans it and leaks storage cost.
  */
 export const deleteDocument = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
@@ -541,17 +546,16 @@ export const deleteDocument = async (userId, documentId) => {
         throw new NotFoundError("Document not found");
     }
 
-    // Verify ownership
     if (document.userId !== userId) {
         throw new BadRequestError("Not authorized to delete this document");
     }
 
-    // Already deleted
     if (document.isDeleted) {
         throw new BadRequestError("Document already deleted");
     }
 
-    // Soft delete
+    // Soft delete the row first — if storage removal fails below, the
+    // document is still correctly hidden from the user's active list.
     await prisma.licenseDocument.update({
         where: { id: documentId },
         data: {
@@ -559,6 +563,8 @@ export const deleteDocument = async (userId, documentId) => {
             deletedAt: new Date(),
         },
     });
+
+    await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
 
     return {
         message: "Document deleted successfully",

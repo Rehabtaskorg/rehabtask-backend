@@ -4,6 +4,7 @@ import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
 import { TIME_MS, APPROVAL_STATUS } from "../utils/constants.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Upload license document to Supabase storage and create database record
@@ -75,7 +76,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
         });
 
     if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
+        logger.error("Supabase upload error", { error: uploadError.message });
         throw new BadRequestError(
             `Failed to upload file: ${uploadError.message}`
         );
@@ -137,7 +138,7 @@ export const uploadProfilePhoto = async ({ userId, file }) => {
         });
 
     if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
+        logger.error("Supabase upload error", { error: uploadError.message });
         throw new BadRequestError(
             `Failed to upload file: ${uploadError.message}`
         );
@@ -157,9 +158,11 @@ export const uploadProfilePhoto = async ({ userId, file }) => {
 }
 
 /**
- * Delete file from Supabase storage
- * Only used for cleanup in error scenarios
- * 
+ * Delete a file from Supabase Storage. Used both for upload-error cleanup
+ * and for permanently removing a document's storage object when a user
+ * explicitly removes it. Swallows errors — callers treat storage cleanup
+ * as best-effort and should not fail the calling operation because of it.
+ *
  * @param {string} bucket - Bucket name
  * @param {string} filePath - File path in bucket
  */
@@ -170,9 +173,9 @@ export const deleteFileFromStorage = async (bucket, filePath) => {
             .remove([filePath]);
 
         if (error) {
-            console.error(`Failed to delete file ${filePath} from ${bucket}:`, error);
+            logger.error(`Failed to delete file from storage`, { filePath, bucket, error: error.message });
         }
     } catch (error) {
-        console.error("Storage deletion error:", error);
+        logger.error("Storage deletion error", { filePath, bucket, error: error.message });
     }
 }
