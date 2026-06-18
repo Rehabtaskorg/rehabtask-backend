@@ -134,6 +134,22 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
     "Speech-Language Pathologist": "Speech Language Pathology (SLP)",
 });
 
+/**
+ * All therapist onboarding document uploads (license, insurance, identity,
+ * compliance) live in one private bucket — access control stays simple
+ * (only the therapist and admins can read anything in it), and documentType
+ * already distinguishes purpose. Agency and patient documents get their own
+ * buckets when those flows are built — PHI must never share a bucket with
+ * therapist tax/license documents.
+ */
+export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
+
+/** documentType values accepted per onboarding upload category. */
+export const DOCUMENT_CATEGORIES = Object.freeze({
+    license: ["license"],
+    insurance: ["general_liability", "professional_liability", "auto_insurance"],
+});
+
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
 export const ZIP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const ONE_HOUR_AGO_MS = 60 * 60 * 1000;

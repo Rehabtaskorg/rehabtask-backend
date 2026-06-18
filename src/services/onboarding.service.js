@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
@@ -25,6 +25,9 @@ export const getOnboardingStatus = async (userId) => {
         throw new NotFoundError("Therapist profile not found");
     }
 
+    const hasDocumentType = (types) =>
+        therapist.licenseDocuments.some((doc) => types.includes(doc.documentType));
+
     // Determine which steps are complete
     const steps = {
         personalInfo: !!(
@@ -42,9 +45,14 @@ export const getOnboardingStatus = async (userId) => {
         credentials: !!(
             therapist.licenseNumber &&
             therapist.licenseState &&
-            therapist.licenseDocuments.length > 0
+            hasDocumentType(DOCUMENT_CATEGORIES.license)
         ),
         availability: therapist.availability.length > 0,
+        insurance: !!(
+            hasDocumentType(["general_liability"]) &&
+            hasDocumentType(["professional_liability"]) &&
+            (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
+        ),
         backgroundCheck: !!(
             therapist.backgroundCheckConsent &&
             therapist.backgroundCheckSignature
@@ -337,6 +345,69 @@ export const saveAvailability = async (userId, data) => {
             id: updated.id,
             onboardingStep: updated.onboardingStep,
         },
+    };
+};
+
+/**
+ * Save insurance documentation (Step 5)
+ *
+ * Reconciliation is scoped to insurance documentType values only — license
+ * documents share the same table and must not be touched by this step.
+ */
+export const saveInsurance = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                doesHomeVisits: data.doesHomeVisits,
+                onboardingStep: Math.max(therapist.onboardingStep, 5),
+            },
+        });
+    });
+
+    const submittedPaths = new Set(data.documents.map((doc) => doc.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.insurance },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+        },
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.insurance },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Insurance documentation saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+        documents: activeDocuments.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            documentType: doc.documentType,
+        })),
     };
 };
 

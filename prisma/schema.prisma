@@ -127,6 +127,7 @@ model TherapistProfile {
   licenseNumber            String?                @unique @map("license_number") @db.VarChar(100)
   licenseState             String?                @map("license_state") @db.VarChar(2)
   workArea                 String?                @map("work_area")
+  doesHomeVisits           Boolean                @default(false) @map("does_home_visits")
   stripeAccountId          String?                @unique @map("stripe_account_id") @db.VarChar(255)
   stripeOnboardingComplete Boolean                @default(false) @map("stripe_onboarding_complete")
   backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")

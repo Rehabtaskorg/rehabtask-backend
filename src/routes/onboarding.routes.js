@@ -7,6 +7,7 @@ import {
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveInsuranceController,
     savePersonalInfoController,
     saveProfessionalProfileController,
     submitBackgroundCheckController,
@@ -18,10 +19,11 @@ import {
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
+    insuranceSchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
-import { handleMulterError, uploadDocument, uploadImage } from "../middleware/upload.middleware.js";
-import { uploadLicenseDocumentController, uploadProfilePhotoController } from "../controllers/upload.controller.js";
+import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
+import { uploadDocumentController, uploadProfilePhotoController } from "../controllers/upload.controller.js";
 
 const router = express.Router();
 
@@ -71,6 +73,15 @@ router.post(
 );
 
 /**
+ * POST /api/therapist/onboarding/insurance
+ */
+router.post(
+    "/insurance",
+    validate(insuranceSchema),
+    saveInsuranceController
+);
+
+/**
  * POST /api/therapist/onboarding/background-check
  */
 router.post(
@@ -89,9 +100,9 @@ router.post("/complete", completeOnboardingController);
  */
 router.post(
     "/upload-document",
-    uploadDocument,
+    uploadDocumentMiddleware,
     handleMulterError,
-    uploadLicenseDocumentController
+    uploadDocumentController
 );
 
 /**

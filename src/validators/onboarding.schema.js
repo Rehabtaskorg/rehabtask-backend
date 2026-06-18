@@ -191,6 +191,28 @@ export const availabilitySchema = z.object({
     workAreas: z.array(workAreaSchema).min(1, "At least one work area is required"),
 })
 
+const insuranceDocumentSchema = z.object({
+    path: z.string(),
+    fileName: z.string(),
+    fileSize: z.number(),
+    documentType: z.enum(["general_liability", "professional_liability", "auto_insurance"]),
+    mimeType: z.string().optional(),
+});
+
+export const insuranceSchema = z.object({
+    doesHomeVisits: z.boolean(),
+    documents: z.array(insuranceDocumentSchema),
+}).refine(
+    (data) => data.documents.some((d) => d.documentType === "general_liability"),
+    { message: "General Liability insurance is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === "professional_liability"),
+    { message: "Professional Liability insurance is required", path: ["documents"] }
+).refine(
+    (data) => !data.doesHomeVisits || data.documents.some((d) => d.documentType === "auto_insurance"),
+    { message: "Auto Insurance is required because you indicated you perform home visits", path: ["documents"] }
+);
+
 export const backgroundCheckSchema = z.object({
     consent: z
         .boolean()
