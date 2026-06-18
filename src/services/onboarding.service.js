@@ -146,7 +146,7 @@ export const saveProfessionalProfile = async (userId, data) => {
                 specialization: data.specialization,
                 professionalSummary: data.professionalSummary,
                 profilePhotoUrl: data.profilePhotoUrl || null,
-                onboardingStep: Math.max(therapist.onboardingStep, 2),
+                onboardingStep: Math.max(therapist.onboardingStep, 3),
             },
         });
     });
