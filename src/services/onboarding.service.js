@@ -209,7 +209,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
                 additionalLicenseStates: data.additionalLicenseStates ?? [],
                 ...(data.ratePerVisit !== undefined && { ratePerVisit: data.ratePerVisit }),
                 ...(data.attemptedVisitRate !== undefined && { attemptedVisitRate: data.attemptedVisitRate }),
-                onboardingStep: Math.max(therapist.onboardingStep, 3),
+                onboardingStep: Math.max(therapist.onboardingStep, 4),
             },
         });
     });
@@ -334,7 +334,7 @@ export const saveAvailability = async (userId, data) => {
         return db.therapistProfile.update({
             where: { userId },
             data: {
-                onboardingStep: Math.max(therapist.onboardingStep, 4)
+                onboardingStep: Math.max(therapist.onboardingStep, 5)
             },
         });
     });
@@ -368,7 +368,7 @@ export const saveInsurance = async (userId, data) => {
             where: { userId },
             data: {
                 doesHomeVisits: data.doesHomeVisits,
-                onboardingStep: Math.max(therapist.onboardingStep, 5),
+                onboardingStep: Math.max(therapist.onboardingStep, 6),
             },
         });
     });
