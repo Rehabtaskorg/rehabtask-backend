@@ -62,7 +62,7 @@ export const getOnboardingStatus = async (userId) => {
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
     const totalSteps = Object.keys(steps).length;
-    const progress = (completedSteps / totalSteps) * 100;
+    const progress = Math.round((completedSteps / totalSteps) * 100);
 
     return {
         therapist: {
