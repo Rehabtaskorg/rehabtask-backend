@@ -7,6 +7,7 @@ import {
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveIdentityVerificationController,
     saveInsuranceController,
     savePersonalInfoController,
     saveProfessionalProfileController,
@@ -20,6 +21,7 @@ import {
     credentialsSchema,
     availabilitySchema,
     insuranceSchema,
+    identitySchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
 import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
@@ -79,6 +81,15 @@ router.post(
     "/insurance",
     validate(insuranceSchema),
     saveInsuranceController
+);
+
+/**
+ * POST /api/therapist/onboarding/identity
+ */
+router.post(
+    "/identity",
+    validate(identitySchema),
+    saveIdentityVerificationController
 );
 
 /**

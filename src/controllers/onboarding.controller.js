@@ -6,6 +6,7 @@ import {
     getTherapistDocuments,
     saveAvailability,
     saveCredentials,
+    saveIdentityVerification,
     saveInsurance,
     savePersonalInfo,
     saveProfessionalProfile,
@@ -191,6 +192,29 @@ export const saveInsuranceController = async (req, res, next) => {
         const { doesHomeVisits, documents } = req.body;
 
         const result = await saveInsurance(req.user.id, { doesHomeVisits, documents });
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: {
+                therapist: result.therapist,
+                documents: result.documents,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * POST /api/therapist/onboarding/identity
+ * Save identity verification documents (Step 6)
+ */
+export const saveIdentityVerificationController = async (req, res, next) => {
+    try {
+        const { documents } = req.body;
+
+        const result = await saveIdentityVerification(req.user.id, { documents });
 
         res.status(200).json({
             success: true,

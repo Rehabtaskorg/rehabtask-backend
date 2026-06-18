@@ -53,6 +53,7 @@ export const getOnboardingStatus = async (userId) => {
             hasDocumentType(["professional_liability"]) &&
             (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
         ),
+        identity: hasDocumentType(["government_id_front"]),
         backgroundCheck: !!(
             therapist.backgroundCheckConsent &&
             therapist.backgroundCheckSignature
@@ -399,6 +400,69 @@ export const saveInsurance = async (userId, data) => {
 
     return {
         message: "Insurance documentation saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+        documents: activeDocuments.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            documentType: doc.documentType,
+        })),
+    };
+};
+
+/**
+ * Save identity verification documents (Step 6)
+ *
+ * Storage only — no OCR or automated verification. Reconciliation is scoped
+ * to identity documentType values only — license/insurance documents share
+ * the same table and must not be touched by this step.
+ */
+export const saveIdentityVerification = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                onboardingStep: Math.max(therapist.onboardingStep, 7),
+            },
+        });
+    });
+
+    const submittedPaths = new Set(data.documents.map((doc) => doc.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+        },
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Identity verification documents saved successfully",
         therapist: {
             id: updated.id,
             onboardingStep: updated.onboardingStep,

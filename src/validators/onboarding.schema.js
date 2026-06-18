@@ -213,6 +213,21 @@ export const insuranceSchema = z.object({
     { message: "Auto Insurance is required because you indicated you perform home visits", path: ["documents"] }
 );
 
+const identityDocumentSchema = z.object({
+    path: z.string(),
+    fileName: z.string(),
+    fileSize: z.number(),
+    documentType: z.enum(["government_id_front", "government_id_back"]),
+    mimeType: z.string().optional(),
+});
+
+export const identitySchema = z.object({
+    documents: z.array(identityDocumentSchema),
+}).refine(
+    (data) => data.documents.some((d) => d.documentType === "government_id_front"),
+    { message: "Government ID (front) is required", path: ["documents"] }
+);
+
 export const backgroundCheckSchema = z.object({
     consent: z
         .boolean()

@@ -148,6 +148,7 @@ export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
 export const DOCUMENT_CATEGORIES = Object.freeze({
     license: ["license"],
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
+    identity: ["government_id_front", "government_id_back"],
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
