@@ -2,6 +2,7 @@ import express from "express";
 import {
     completeOnboardingController,
     deleteDocumentController,
+    getComplianceContentController,
     getDocumentSignedUrlController,
     getOnboardingDataController,
     getOnboardingStatusController,
@@ -12,6 +13,7 @@ import {
     saveInsuranceController,
     savePersonalInfoController,
     saveProfessionalProfileController,
+    signComplianceController,
     submitBackgroundCheckController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
@@ -23,6 +25,7 @@ import {
     availabilitySchema,
     insuranceSchema,
     identitySchema,
+    signComplianceSchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
 import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
@@ -96,6 +99,20 @@ router.post(
     "/identity",
     validate(identitySchema),
     saveIdentityVerificationController
+);
+
+/**
+ * GET /api/therapist/onboarding/compliance/content
+ */
+router.get("/compliance/content", getComplianceContentController);
+
+/**
+ * POST /api/therapist/onboarding/compliance/sign
+ */
+router.post(
+    "/compliance/sign",
+    validate(signComplianceSchema),
+    signComplianceController
 );
 
 /**

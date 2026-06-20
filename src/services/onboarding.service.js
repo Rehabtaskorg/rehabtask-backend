@@ -1,10 +1,16 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
+import {
+    renderIndependentContractorAgreement,
+    renderHipaaAcknowledgment,
+    renderBackgroundCheckAuthorization,
+    renderSignedDocument,
+} from "../data/complianceTemplates.js";
 
 /**
  * Get therapist onboarding status and progress
@@ -18,6 +24,7 @@ export const getOnboardingStatus = async (userId) => {
                 orderBy: { uploadedAt: "desc" },
             },
             availability: true,
+            complianceSignatures: true,
         }
     });
 
@@ -27,6 +34,9 @@ export const getOnboardingStatus = async (userId) => {
 
     const hasDocumentType = (types) =>
         therapist.licenseDocuments.some((doc) => types.includes(doc.documentType));
+
+    const hasSignedDocument = (documentType) =>
+        therapist.complianceSignatures.some((s) => s.documentType === documentType);
 
     // Determine which steps are complete
     const steps = {
@@ -54,6 +64,12 @@ export const getOnboardingStatus = async (userId) => {
             (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
         ),
         identity: hasDocumentType(["government_id_front"]),
+        compliance: !!(
+            hasDocumentType(DOCUMENT_CATEGORIES.compliance) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION)
+        ),
         backgroundCheck: !!(
             therapist.backgroundCheckConsent &&
             therapist.backgroundCheckSignature
@@ -572,6 +588,112 @@ export const saveIdentityVerification = async (userId, data) => {
             fileName: doc.fileName,
             documentType: doc.documentType,
         })),
+    };
+};
+
+/**
+ * Get the Compliance Forms step's content for a therapist: the rendered
+ * preview text for the 3 e-signature documents (name/date merged, no
+ * signature yet), the W-9 upload state, and which sub-steps are already
+ * signed — so the frontend can resume mid-sequence on a returning visit.
+ */
+export const getComplianceContent = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: {
+            licenseDocuments: { where: { isDeleted: false } },
+            complianceSignatures: true,
+        },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const signedDocumentTypes = new Set(therapist.complianceSignatures.map((s) => s.documentType));
+    const hasW9 = therapist.licenseDocuments.some((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType));
+
+    return {
+        independentContractorAgreement: renderIndependentContractorAgreement(therapist),
+        hipaaAcknowledgment: renderHipaaAcknowledgment(therapist),
+        backgroundCheckAuthorization: renderBackgroundCheckAuthorization(therapist),
+        w9: {
+            uploaded: hasW9,
+            documents: therapist.licenseDocuments
+                .filter((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType))
+                .map((doc) => ({
+                    id: doc.id,
+                    path: doc.documentUrl,
+                    fileName: doc.fileName,
+                    fileSize: doc.fileSize,
+                    documentType: doc.documentType,
+                    mimeType: doc.mimeType,
+                })),
+        },
+        signed: {
+            [COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT),
+            [COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT),
+            [COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION),
+        },
+    };
+};
+
+/**
+ * Record a therapist's signature on one of the 3 Compliance Forms
+ * e-signature documents (Independent Contractor Agreement, HIPAA
+ * Acknowledgment, Background Check Authorization). Re-renders the document
+ * server-side from the raw template — never trusts client-sent text — and
+ * snapshots the exact signed text, so the record proves what was actually
+ * agreed to even if the template wording changes later.
+ *
+ * Advances onboardingStep to 8 once W-9 is uploaded and all 3 documents
+ * are signed (mirrors getOnboardingStatus's steps.compliance check).
+ */
+export const signComplianceDocument = async (userId, { documentType, signature }) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: { licenseDocuments: { where: { isDeleted: false } } },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const signedText = renderSignedDocument(documentType, therapist, signature);
+
+    await prisma.complianceSignature.upsert({
+        where: { therapistId_documentType: { therapistId: therapist.id, documentType } },
+        update: { signature, signedText, signedAt: new Date() },
+        create: { therapistId: therapist.id, documentType, signature, signedText },
+    });
+
+    const allSignatures = await prisma.complianceSignature.findMany({
+        where: { therapistId: therapist.id },
+    });
+    const signedTypes = new Set(allSignatures.map((s) => s.documentType));
+    const hasW9 = therapist.licenseDocuments.some((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType));
+
+    const complianceComplete = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION);
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: complianceComplete ? { onboardingStep: Math.max(therapist.onboardingStep, 8) } : {},
+        });
+    });
+
+    return {
+        message: "Document signed successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
     };
 };
 

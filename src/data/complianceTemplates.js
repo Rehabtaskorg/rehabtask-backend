@@ -1,29 +1,3 @@
-/**
- * Legal text for the Compliance Forms onboarding step (Independent Contractor
- * Agreement, HIPAA Acknowledgment, Background Check Authorization). All three
- * are the real documents provided by stakeholders, with blank/placeholder
- * fields converted to merge tokens filled in server-side before the
- * therapist ever sees the text.
- *
- * The Background Check Authorization source document was written as an
- * email ("Dear {{firstName}}... Kind regards, Steadfast") pointing the
- * therapist to a {{CONSENT_PORTAL_LINK}} on First Advantage's platform.
- * Per stakeholder decision, the actual First Advantage screening is now
- * handled entirely outside onboarding (admin sends the portal link via the
- * in-app notification system once consent is on file) — this in-app step is
- * only the consent/authorization acknowledgment. Rewritten in first-person
- * consent language to match the HIPAA/IC Agreement pattern (the source
- * email has no explicit "I agree" statement for a checkbox+signature to
- * attach to), preserving every factual element from the original: the
- * First Advantage partnership, the FCRA rights notice, the disclosure/
- * authorization form mention, and the support contact path. The
- * {{CONSENT_PORTAL_LINK}} itself is intentionally not part of this text.
- *
- * Kept in this file rather than the DB so swapping in an admin-editable
- * source later only requires changing these functions' bodies, not every
- * call site.
- */
-
 const INDEPENDENT_CONTRACTOR_AGREEMENT_RAW = `Contract/Employment Agreement
 
 This Contract/Employment Agreement ("Agreement"), is entered on {{CONTRACT_DATE}}, between Steadfast Rehabilitation Services, LLC, a IL company (the "Company"), and {{CLINICIAN_NAME}} (the "Clinician").
@@ -204,7 +178,6 @@ Date: {{CONTRACT_DATE}}`;
 const formatContractDate = () =>
     new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-/** Builds the merged mailing address line for the IC Agreement's Notice clause. */
 const buildClinicianAddress = (therapist) => {
     const addressParts = [
         therapist.addressLine1,
@@ -218,18 +191,7 @@ const buildClinicianAddress = (therapist) => {
 /** Visual stand-in for {{CLINICIAN_SIGNATURE}} in preview text, before a signature exists. */
 const BLANK_SIGNATURE_LINE = "_____________________";
 
-/**
- * Replace {{CLINICIAN_NAME}} and {{CLINICIAN_ADDRESS}} tokens, show today's
- * date as a live preview of {{CONTRACT_DATE}}, and show a blank line in
- * place of {{CLINICIAN_SIGNATURE}} (matching how the source PDFs show blank
- * signature lines before signing) so the document reads naturally while
- * being reviewed. This is preview-only — neither the date nor the signature
- * shown here is what gets signed. renderSignedDocument re-renders both
- * fresh at the actual moment of signing, since a therapist may open this
- * screen one day and not sign until later.
- * @param {{ fullName: string, addressLine1: string, addressLine2: string|null, city: string, state: string, zipCode: string }} therapist
- * @returns {string} the rendered agreement text, preview-only (no signature yet)
- */
+
 export const renderIndependentContractorAgreement = (therapist) =>
     INDEPENDENT_CONTRACTOR_AGREEMENT_RAW
         .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
@@ -237,43 +199,21 @@ export const renderIndependentContractorAgreement = (therapist) =>
         .replaceAll("{{CLINICIAN_ADDRESS}}", buildClinicianAddress(therapist))
         .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
 
-/**
- * Preview-only — see renderIndependentContractorAgreement's docstring for
- * why {{CONTRACT_DATE}}/{{CLINICIAN_SIGNATURE}} shown here are not what gets signed.
- * @param {{ fullName: string }} therapist
- * @returns {string} the rendered HIPAA Acknowledgment text, preview-only (no signature yet)
- */
+
 export const renderHipaaAcknowledgment = (therapist) =>
     HIPAA_ACKNOWLEDGMENT_RAW
         .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
         .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
         .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
 
-/**
- * Preview-only — see renderIndependentContractorAgreement's docstring for
- * why {{CONTRACT_DATE}}/{{CLINICIAN_SIGNATURE}} shown here are not what gets signed.
- * @param {{ fullName: string }} therapist
- * @returns {string} the rendered Background Check Authorization text, preview-only (no signature yet)
- */
+
 export const renderBackgroundCheckAuthorization = (therapist) =>
     BACKGROUND_CHECK_AUTHORIZATION_RAW
         .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
         .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
         .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
 
-/**
- * Re-renders a document's RAW template (not the preview output) with the
- * therapist's typed signature AND today's date merged in together, at the
- * actual moment of signing — never reusing whatever date the preview
- * happened to show. The result is what gets snapshotted into
- * ComplianceSignature.signedText, proving exactly what was signed and when.
- * Every document type goes through the same final chain, so the signature
- * is merged unconditionally regardless of which template was selected.
- * @param {"independent_contractor_agreement"|"hipaa_acknowledgment"|"background_check_authorization"} documentType
- * @param {{ fullName: string, addressLine1: string, addressLine2: string|null, city: string, state: string, zipCode: string }} therapist
- * @param {string} signature - the therapist's typed signature
- * @returns {string} the final signed document text
- */
+
 export const renderSignedDocument = (documentType, therapist, signature) => {
     const raw = {
         independent_contractor_agreement: INDEPENDENT_CONTRACTOR_AGREEMENT_RAW,

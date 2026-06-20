@@ -1,6 +1,7 @@
 import {
     completeOnboarding,
     deleteDocument,
+    getComplianceContent,
     getDocumentSignedUrl,
     getOnboardingData,
     getOnboardingStatus,
@@ -11,6 +12,7 @@ import {
     saveInsurance,
     savePersonalInfo,
     saveProfessionalProfile,
+    signComplianceDocument,
     submitBackgroundCheck,
 } from "../services/onboarding.service.js";
 
@@ -241,6 +243,45 @@ export const saveIdentityVerificationController = async (req, res, next) => {
             data: {
                 therapist: result.therapist,
                 documents: result.documents,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * GET /api/therapist/onboarding/compliance/content
+ * Get the Compliance Forms step's rendered document previews + sign status (Step 7)
+ */
+export const getComplianceContentController = async (req, res, next) => {
+    try {
+        const result = await getComplianceContent(req.user.id);
+
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * POST /api/therapist/onboarding/compliance/sign
+ * Record a signature on one of the 3 Compliance Forms e-signature documents (Step 7)
+ */
+export const signComplianceController = async (req, res, next) => {
+    try {
+        const { documentType, signature } = req.body;
+
+        const result = await signComplianceDocument(req.user.id, { documentType, signature });
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: {
+                therapist: result.therapist,
             },
         });
     } catch (error) {
