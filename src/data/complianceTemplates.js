@@ -179,13 +179,8 @@ const formatContractDate = () =>
     new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
 const buildClinicianAddress = (therapist) => {
-    const addressParts = [
-        therapist.addressLine1,
-        therapist.addressLine2,
-        [therapist.city, therapist.state].filter(Boolean).join(", "),
-        therapist.zipCode,
-    ].filter(Boolean);
-    return addressParts.length ? addressParts.join(", ") : "Address on file with the Company";
+    if (therapist.addressLine2) return `${therapist.addressLine1}, ${therapist.addressLine2}`;
+    return therapist.addressLine1 || "Address on file with the Company";
 };
 
 /** Visual stand-in for {{CLINICIAN_SIGNATURE}} in preview text, before a signature exists. */
