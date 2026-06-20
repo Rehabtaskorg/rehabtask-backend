@@ -122,6 +122,8 @@ export const getOnboardingData = async (userId) => {
         return acc;
     }, {});
 
+    const toNumberOrNull = (value) => (value === null || value === undefined ? null : parseFloat(value));
+
     return {
         personalInfo: {
             dateOfBirth: therapist.dateOfBirth,
@@ -131,8 +133,8 @@ export const getOnboardingData = async (userId) => {
             city: therapist.city,
             state: therapist.state,
             zipCode: therapist.zipCode,
-            latitude: therapist.latitude,
-            longitude: therapist.longitude,
+            latitude: toNumberOrNull(therapist.latitude),
+            longitude: toNumberOrNull(therapist.longitude),
             emergencyContactName: therapist.emergencyContactName,
             emergencyContactPhone: therapist.emergencyContactPhone,
         },
@@ -148,8 +150,8 @@ export const getOnboardingData = async (userId) => {
             licenseState: therapist.licenseState,
             npiNumber: therapist.npiNumber,
             additionalLicenseStates: therapist.additionalLicenseStates,
-            ratePerVisit: therapist.ratePerVisit,
-            attemptedVisitRate: therapist.attemptedVisitRate,
+            ratePerVisit: toNumberOrNull(therapist.ratePerVisit),
+            attemptedVisitRate: toNumberOrNull(therapist.attemptedVisitRate),
             licenseDocuments: documentsByCategory(DOCUMENT_CATEGORIES.license),
         },
         availability: {
@@ -158,8 +160,8 @@ export const getOnboardingData = async (userId) => {
                 zipCode: wa.zipCode,
                 city: wa.city,
                 state: wa.state,
-                latitude: wa.latitude,
-                longitude: wa.longitude,
+                latitude: toNumberOrNull(wa.latitude),
+                longitude: toNumberOrNull(wa.longitude),
                 radiusMiles: wa.radiusMiles,
             })),
         },
