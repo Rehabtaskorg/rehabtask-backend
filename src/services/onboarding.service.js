@@ -117,8 +117,13 @@ export const getOnboardingData = async (userId) => {
                 mimeType: doc.mimeType,
             }));
 
-    const schedule = therapist.availability.reduce((acc, day) => {
+    const daysOfWeek = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    const scheduleByDay = therapist.availability.reduce((acc, day) => {
         acc[day.dayOfWeek] = { enabled: day.isEnabled, timeBlocks: day.timeBlocks };
+        return acc;
+    }, {});
+    const schedule = daysOfWeek.reduce((acc, day) => {
+        acc[day] = scheduleByDay[day] ?? { enabled: false, timeBlocks: [] };
         return acc;
     }, {});
 
