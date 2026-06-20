@@ -1,18 +1,27 @@
 /**
  * Legal text for the Compliance Forms onboarding step (Independent Contractor
- * Agreement, HIPAA Acknowledgment). The Independent Contractor Agreement text
- * is the real document provided by stakeholders, with its [MONTH] [DAY] [YEAR]
- * and [CLINICIAN] placeholders converted to merge tokens. Clause 12(b)'s blank
- * address lines (meant for the Clinician to hand-fill on paper) are merged
- * with the therapist's actual address already collected in onboarding Step 1,
- * rather than left as a vague "on file" reference.
+ * Agreement, HIPAA Acknowledgment, Background Check Authorization). All three
+ * are the real documents provided by stakeholders, with blank/placeholder
+ * fields converted to merge tokens filled in server-side before the
+ * therapist ever sees the text.
  *
- * The HIPAA Acknowledgment is still placeholder content — stakeholders have
- * not yet delivered final legal copy for it.
+ * The Background Check Authorization source document was written as an
+ * email ("Dear {{firstName}}... Kind regards, Steadfast") pointing the
+ * therapist to a {{CONSENT_PORTAL_LINK}} on First Advantage's platform.
+ * Per stakeholder decision, the actual First Advantage screening is now
+ * handled entirely outside onboarding (admin sends the portal link via the
+ * in-app notification system once consent is on file) — this in-app step is
+ * only the consent/authorization acknowledgment. Rewritten in first-person
+ * consent language to match the HIPAA/IC Agreement pattern (the source
+ * email has no explicit "I agree" statement for a checkbox+signature to
+ * attach to), preserving every factual element from the original: the
+ * First Advantage partnership, the FCRA rights notice, the disclosure/
+ * authorization form mention, and the support contact path. The
+ * {{CONSENT_PORTAL_LINK}} itself is intentionally not part of this text.
  *
  * Kept in this file rather than the DB so swapping in an admin-editable
- * source later only requires changing these two functions' bodies, not
- * every call site.
+ * source later only requires changing these functions' bodies, not every
+ * call site.
  */
 
 const INDEPENDENT_CONTRACTOR_AGREEMENT_RAW = `Contract/Employment Agreement
@@ -119,54 +128,162 @@ Waiver
 
 IN WITNESS WHEREOF, the Parties hereto have executed this Agreement as of the day and year first above written.
 
-Steadfast Rehabilitation Services, LLC — countersigned by an authorized representative of the Company (handled offline, outside this application).`;
+Therapist Signature: {{CLINICIAN_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
 
-const HIPAA_ACKNOWLEDGMENT_TEXT = `HIPAA Acknowledgment
+const HIPAA_ACKNOWLEDGMENT_RAW = `HIPAA Acknowledgment (Therapist)
 
-[PLACEHOLDER — final legal text pending from stakeholders.]
+Steadfast Rehabilitation Services, LLC
+HIPAA Acknowledgment Form
 
-As a condition of providing services through RehabTask, you may have access to Protected Health Information ("PHI") belonging to patients you treat. This acknowledgment confirms your understanding of, and commitment to, your obligations under the Health Insurance Portability and Accountability Act (HIPAA).
+I, {{CLINICIAN_NAME}} ("Therapist"), acknowledge that in the course of providing services on behalf of Steadfast Rehabilitation Services, LLC ("Steadfast"), I may have access to Protected Health Information ("PHI") and other confidential patient information.
 
-You agree to:
-- Access PHI only as necessary to perform your duties as a therapist on the platform.
-- Never disclose PHI to any third party without proper authorization.
-- Store, transmit, and dispose of any PHI in your possession securely, in accordance with HIPAA's Privacy and Security Rules.
-- Report any suspected breach or unauthorized disclosure of PHI to RehabTask immediately upon discovery.
-- Complete any HIPAA training required by RehabTask from time to time.
+I understand and agree to the following:
 
-Violation of these obligations may result in removal from the RehabTask platform and may carry independent legal consequences under federal and state law.
+1. Confidentiality of Patient Information
+I will maintain the confidentiality of all patient information, medical records, and PHI in accordance with the requirements of the Health Insurance Portability and Accountability Act of 1996 (HIPAA) and all applicable federal, state, and local privacy laws.
 
-By signing below, you acknowledge that you have read, understood, and agree to comply with the obligations described above.`;
+2. Permitted Use and Disclosure
+I will access, use, and disclose PHI only as necessary to perform my assigned job duties and provide patient care. I will not access, use, or disclose PHI for any unauthorized purpose.
 
-/**
- * Replace {{CLINICIAN_NAME}}, {{CONTRACT_DATE}}, and {{CLINICIAN_ADDRESS}}
- * tokens with the therapist's actual details, server-side, before the
- * agreement is ever shown to or signed by the therapist.
- * @param {{ fullName: string, addressLine1: string, addressLine2: string|null, city: string, state: string, zipCode: string }} therapist
- * @returns {string} the rendered agreement text
- */
-export const renderIndependentContractorAgreement = (therapist) => {
-    const contractDate = new Date().toLocaleDateString("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-    });
+3. Safeguarding Information
+I agree to take reasonable precautions to protect PHI from unauthorized access, disclosure, alteration, loss, or destruction, including but not limited to:
+    - Securing electronic devices containing PHI.
+    - Using password-protected systems and accounts.
+    - Preventing unauthorized individuals from viewing patient information.
+    - Properly storing and disposing of patient records and documents.
 
+4. Electronic Communications
+I understand that PHI may only be transmitted through approved and secure communication methods authorized by Steadfast and its client agencies. I will not transmit PHI through unsecured email, text messaging, social media, or other unauthorized platforms.
+
+5. Reporting Security Incidents
+I agree to immediately report any suspected or actual privacy breach, security incident, unauthorized disclosure, loss, theft, or compromise of PHI to Steadfast Rehabilitation Services.
+
+6. Minimum Necessary Standard
+I will limit my access to PHI to the minimum amount necessary to perform my duties and comply with applicable healthcare regulations.
+
+7. Ongoing Obligation
+I understand that my obligation to maintain the confidentiality of PHI continues during and after my relationship with Steadfast Rehabilitation Services and its client agencies.
+
+8. Compliance
+I acknowledge that failure to comply with HIPAA requirements, confidentiality obligations, or Steadfast policies may result in disciplinary action, termination of my contract or employment, and/or legal penalties as permitted by law.
+
+Acknowledgment
+
+By signing below, I acknowledge that I have read, understand, and agree to comply with the requirements outlined in this HIPAA Acknowledgment. I understand my responsibility to protect patient privacy and maintain the confidentiality of Protected Health Information.
+
+Therapist Name: {{CLINICIAN_NAME}}
+Signature: {{CLINICIAN_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+const BACKGROUND_CHECK_AUTHORIZATION_RAW = `Background Check Authorization
+
+I, {{CLINICIAN_NAME}}, understand that as part of RehabTask's onboarding and compliance process, Steadfast Rehabilitation Services has partnered with First Advantage to conduct background screenings for clinicians providing services through the platform.
+
+I understand and agree to the following:
+
+1. Authorization
+I authorize Steadfast Rehabilitation Services and First Advantage to obtain a consumer report and/or investigative consumer report about me for the purpose of evaluating my eligibility to provide services through RehabTask.
+
+2. Disclosure and Authorization Form
+I understand that, separately from this acknowledgment, I will be asked to complete an electronic Disclosure and Authorization Form directly with First Advantage, and that my information will be submitted through First Advantage's secure platform and handled in accordance with their privacy and security standards. I understand communications regarding this process may come from First Advantage or its affiliate, Sterling.
+
+3. My Rights Under the Fair Credit Reporting Act (FCRA)
+I acknowledge that I have been informed of my rights under the Fair Credit Reporting Act (FCRA), where applicable, including my right to review the contents of my file and to dispute the accuracy or completeness of any information in any consumer report obtained about me.
+
+4. Support
+I understand that if I experience any issues completing the authorization or background screening, I should notify my contact at Steadfast Rehabilitation Services as soon as possible.
+
+By signing below, I acknowledge that I have read, understand, and consent to the background screening process described above.
+
+Therapist Name: {{CLINICIAN_NAME}}
+Signature: {{CLINICIAN_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+/** Today's date, formatted the same way across every compliance document. */
+const formatContractDate = () =>
+    new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+/** Builds the merged mailing address line for the IC Agreement's Notice clause. */
+const buildClinicianAddress = (therapist) => {
     const addressParts = [
         therapist.addressLine1,
         therapist.addressLine2,
         [therapist.city, therapist.state].filter(Boolean).join(", "),
         therapist.zipCode,
     ].filter(Boolean);
-    const clinicianAddress = addressParts.length ? addressParts.join(", ") : "Address on file with the Company";
-
-    return INDEPENDENT_CONTRACTOR_AGREEMENT_RAW
-        .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
-        .replaceAll("{{CONTRACT_DATE}}", contractDate)
-        .replaceAll("{{CLINICIAN_ADDRESS}}", clinicianAddress);
+    return addressParts.length ? addressParts.join(", ") : "Address on file with the Company";
 };
 
+/** Visual stand-in for {{CLINICIAN_SIGNATURE}} in preview text, before a signature exists. */
+const BLANK_SIGNATURE_LINE = "_____________________";
+
 /**
- * @returns {string} the HIPAA Acknowledgment text — placeholder pending real legal copy.
+ * Replace {{CLINICIAN_NAME}} and {{CLINICIAN_ADDRESS}} tokens, show today's
+ * date as a live preview of {{CONTRACT_DATE}}, and show a blank line in
+ * place of {{CLINICIAN_SIGNATURE}} (matching how the source PDFs show blank
+ * signature lines before signing) so the document reads naturally while
+ * being reviewed. This is preview-only — neither the date nor the signature
+ * shown here is what gets signed. renderSignedDocument re-renders both
+ * fresh at the actual moment of signing, since a therapist may open this
+ * screen one day and not sign until later.
+ * @param {{ fullName: string, addressLine1: string, addressLine2: string|null, city: string, state: string, zipCode: string }} therapist
+ * @returns {string} the rendered agreement text, preview-only (no signature yet)
  */
-export const getHipaaAcknowledgmentText = () => HIPAA_ACKNOWLEDGMENT_TEXT;
+export const renderIndependentContractorAgreement = (therapist) =>
+    INDEPENDENT_CONTRACTOR_AGREEMENT_RAW
+        .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{CLINICIAN_ADDRESS}}", buildClinicianAddress(therapist))
+        .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/**
+ * Preview-only — see renderIndependentContractorAgreement's docstring for
+ * why {{CONTRACT_DATE}}/{{CLINICIAN_SIGNATURE}} shown here are not what gets signed.
+ * @param {{ fullName: string }} therapist
+ * @returns {string} the rendered HIPAA Acknowledgment text, preview-only (no signature yet)
+ */
+export const renderHipaaAcknowledgment = (therapist) =>
+    HIPAA_ACKNOWLEDGMENT_RAW
+        .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/**
+ * Preview-only — see renderIndependentContractorAgreement's docstring for
+ * why {{CONTRACT_DATE}}/{{CLINICIAN_SIGNATURE}} shown here are not what gets signed.
+ * @param {{ fullName: string }} therapist
+ * @returns {string} the rendered Background Check Authorization text, preview-only (no signature yet)
+ */
+export const renderBackgroundCheckAuthorization = (therapist) =>
+    BACKGROUND_CHECK_AUTHORIZATION_RAW
+        .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{CLINICIAN_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/**
+ * Re-renders a document's RAW template (not the preview output) with the
+ * therapist's typed signature AND today's date merged in together, at the
+ * actual moment of signing — never reusing whatever date the preview
+ * happened to show. The result is what gets snapshotted into
+ * ComplianceSignature.signedText, proving exactly what was signed and when.
+ * Every document type goes through the same final chain, so the signature
+ * is merged unconditionally regardless of which template was selected.
+ * @param {"independent_contractor_agreement"|"hipaa_acknowledgment"|"background_check_authorization"} documentType
+ * @param {{ fullName: string, addressLine1: string, addressLine2: string|null, city: string, state: string, zipCode: string }} therapist
+ * @param {string} signature - the therapist's typed signature
+ * @returns {string} the final signed document text
+ */
+export const renderSignedDocument = (documentType, therapist, signature) => {
+    const raw = {
+        independent_contractor_agreement: INDEPENDENT_CONTRACTOR_AGREEMENT_RAW,
+        hipaa_acknowledgment: HIPAA_ACKNOWLEDGMENT_RAW,
+        background_check_authorization: BACKGROUND_CHECK_AUTHORIZATION_RAW,
+    }[documentType];
+
+    return raw
+        .replaceAll("{{CLINICIAN_NAME}}", therapist.fullName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{CLINICIAN_ADDRESS}}", buildClinicianAddress(therapist))
+        .replaceAll("{{CLINICIAN_SIGNATURE}}", signature);
+};
