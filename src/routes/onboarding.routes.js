@@ -3,6 +3,7 @@ import {
     completeOnboardingController,
     deleteDocumentController,
     getDocumentSignedUrlController,
+    getOnboardingDataController,
     getOnboardingStatusController,
     getTherapistDocumentsController,
     saveAvailabilityController,
@@ -37,6 +38,11 @@ router.use(authenticate);
  * GET /api/therapist/onboarding status
  */
 router.get("/status", getOnboardingStatusController);
+
+/**
+ * GET /api/therapist/onboarding/data
+ */
+router.get("/data", getOnboardingDataController);
 
 /**
  * POST /api/therapist/onboarding/personal-info

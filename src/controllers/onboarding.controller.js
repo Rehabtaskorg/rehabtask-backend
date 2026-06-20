@@ -2,6 +2,7 @@ import {
     completeOnboarding,
     deleteDocument,
     getDocumentSignedUrl,
+    getOnboardingData,
     getOnboardingStatus,
     getTherapistDocuments,
     saveAvailability,
@@ -31,6 +32,24 @@ const getClientIp = (req) => {
 export const getOnboardingStatusController = async (req, res, next) => {
     try {
         const result = await getOnboardingStatus(req.user.id);
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * GET /api/therapist/onboarding/data
+ * Get every previously-saved onboarding field value, so step forms can
+ * repopulate themselves on mount instead of relying on the Zustand store.
+ */
+export const getOnboardingDataController = async (req, res, next) => {
+    try {
+        const result = await getOnboardingData(req.user.id);
 
         res.status(200).json({
             success: true,

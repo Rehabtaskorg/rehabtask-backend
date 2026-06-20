@@ -81,6 +81,99 @@ export const getOnboardingStatus = async (userId) => {
 }
 
 /**
+ * Get every previously-saved onboarding field value for a therapist, so
+ * step forms can repopulate themselves on mount instead of relying on the
+ * Zustand store — which is intentionally wiped on logout and was never the
+ * source of truth. Separate from getOnboardingStatus (frequently called by
+ * the progress bar/banner/route guard, which only need boolean completion
+ * flags) so those callers don't pay for this larger payload on every load.
+ */
+export const getOnboardingData = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: {
+            licenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
+            availability: true,
+            workAreas: true,
+        },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const documentsByCategory = (types) =>
+        therapist.licenseDocuments
+            .filter((doc) => types.includes(doc.documentType))
+            .map((doc) => ({
+                id: doc.id,
+                path: doc.documentUrl,
+                fileName: doc.fileName,
+                fileSize: doc.fileSize,
+                documentType: doc.documentType,
+                mimeType: doc.mimeType,
+            }));
+
+    const schedule = therapist.availability.reduce((acc, day) => {
+        acc[day.dayOfWeek] = { enabled: day.isEnabled, timeBlocks: day.timeBlocks };
+        return acc;
+    }, {});
+
+    return {
+        personalInfo: {
+            dateOfBirth: therapist.dateOfBirth,
+            phone: therapist.phone,
+            addressLine1: therapist.addressLine1,
+            addressLine2: therapist.addressLine2,
+            city: therapist.city,
+            state: therapist.state,
+            zipCode: therapist.zipCode,
+            latitude: therapist.latitude,
+            longitude: therapist.longitude,
+            emergencyContactName: therapist.emergencyContactName,
+            emergencyContactPhone: therapist.emergencyContactPhone,
+        },
+        professionalProfile: {
+            yearsOfExperience: therapist.yearsOfExperience,
+            primaryLicenseType: therapist.primaryLicenseType,
+            specialization: therapist.specialization,
+            professionalSummary: therapist.professionalSummary,
+            profilePhotoUrl: therapist.profilePhotoUrl,
+        },
+        credentials: {
+            licenseNumber: therapist.licenseNumber,
+            licenseState: therapist.licenseState,
+            npiNumber: therapist.npiNumber,
+            additionalLicenseStates: therapist.additionalLicenseStates,
+            ratePerVisit: therapist.ratePerVisit,
+            attemptedVisitRate: therapist.attemptedVisitRate,
+            licenseDocuments: documentsByCategory(DOCUMENT_CATEGORIES.license),
+        },
+        availability: {
+            schedule,
+            workAreas: therapist.workAreas.map((wa) => ({
+                zipCode: wa.zipCode,
+                city: wa.city,
+                state: wa.state,
+                latitude: wa.latitude,
+                longitude: wa.longitude,
+                radiusMiles: wa.radiusMiles,
+            })),
+        },
+        insurance: {
+            doesHomeVisits: therapist.doesHomeVisits,
+            documents: documentsByCategory(DOCUMENT_CATEGORIES.insurance),
+        },
+        identity: {
+            documents: documentsByCategory(DOCUMENT_CATEGORIES.identity),
+        },
+    };
+};
+
+/**
  * Save personal information (Step 1)
  */
 export const savePersonalInfo = async (userId, data) => {
