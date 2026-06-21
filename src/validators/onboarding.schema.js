@@ -65,6 +65,7 @@ export const professionalProfileSchema = z.object({
 
     professionalSummary: z
         .string()
+        .trim()
         .min(100, "Professional summary must be at least 100 characters")
         .max(2000, "Professional summary must not exceed 2000 characters"),
 
