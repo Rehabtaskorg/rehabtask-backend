@@ -12,34 +12,14 @@ import {
     renderSignedDocument,
 } from "../data/complianceTemplates.js";
 
-/**
- * Get therapist onboarding status and progress
- */
-export const getOnboardingStatus = async (userId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { userId },
-        include: {
-            licenseDocuments: {
-                where: { isDeleted: false },
-                orderBy: { uploadedAt: "desc" },
-            },
-            availability: true,
-            complianceSignatures: true,
-        }
-    });
-
-    if (!therapist) {
-        throw new NotFoundError("Therapist profile not found");
-    }
-
+const computeOnboardingSteps = (therapist) => {
     const hasDocumentType = (types) =>
         therapist.licenseDocuments.some((doc) => types.includes(doc.documentType));
 
     const hasSignedDocument = (documentType) =>
         therapist.complianceSignatures.some((s) => s.documentType === documentType);
 
-    // Determine which steps are complete
-    const steps = {
+    return {
         personalInfo: !!(
             therapist.dateOfBirth &&
             therapist.addressLine1 &&
@@ -70,10 +50,31 @@ export const getOnboardingStatus = async (userId) => {
             hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT) &&
             hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION)
         ),
-        backgroundCheck: !!(
-            therapist.backgroundCheckConsent &&
-            therapist.backgroundCheckSignature
-        ),
+    };
+};
+
+/**
+ * Get therapist onboarding status and progress
+ */
+export const getOnboardingStatus = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: {
+            licenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
+            availability: true,
+            complianceSignatures: true,
+        }
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const steps = {
+        ...computeOnboardingSteps(therapist),
         stripe: therapist.stripeOnboardingComplete,
     };
 
@@ -96,14 +97,6 @@ export const getOnboardingStatus = async (userId) => {
     }
 }
 
-/**
- * Get every previously-saved onboarding field value for a therapist, so
- * step forms can repopulate themselves on mount instead of relying on the
- * Zustand store — which is intentionally wiped on logout and was never the
- * source of truth. Separate from getOnboardingStatus (frequently called by
- * the progress bar/banner/route guard, which only need boolean completion
- * flags) so those callers don't pay for this larger payload on every load.
- */
 export const getOnboardingData = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -745,7 +738,8 @@ export const completeOnboarding = async (userId) => {
             licenseDocuments: {
                 where: { isDeleted: false },
             },
-            availability: true
+            availability: true,
+            complianceSignatures: true,
         },
     });
 
@@ -753,28 +747,13 @@ export const completeOnboarding = async (userId) => {
         throw new NotFoundError("Therapist profile not found");
     }
 
-    // Validate all required fields are present
-    const isProfileComplete = !!(
-        therapist.yearsOfExperience !== null &&
-        therapist.primaryLicenseType &&
-        therapist.professionalSummary
-    );
+    const steps = computeOnboardingSteps(therapist);
+    const incompleteSteps = Object.entries(steps)
+        .filter(([, isComplete]) => !isComplete)
+        .map(([step]) => step);
 
-    const isCredentialsComplete = !!(
-        therapist.licenseNumber &&
-        therapist.licenseState &&
-        therapist.licenseDocuments.length > 0
-    );
-
-    const isAvailabilityComplete = therapist.availability.length > 0;
-
-    const isBackgroundCheckComplete = !!(
-        therapist.backgroundCheckConsent &&
-        therapist.backgroundCheckSignature
-    );
-
-    if (!isProfileComplete || !isCredentialsComplete || !isAvailabilityComplete || !isBackgroundCheckComplete) {
-        throw new BadRequestError("All onboarding steps must be completed");
+    if (incompleteSteps.length > 0) {
+        throw new BadRequestError(`All onboarding steps must be completed: ${incompleteSteps.join(", ")}`);
     }
 
 
