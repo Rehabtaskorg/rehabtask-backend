@@ -294,6 +294,20 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         throw new ConflictError("License number already registered");
     }
 
+    // Check if NPI number already exists (for another therapist)
+    if (data.npiNumber) {
+        const existingNpi = await prisma.therapistProfile.findFirst({
+            where: {
+                npiNumber: data.npiNumber,
+                userId: { not: userId }
+            },
+        });
+
+        if (existingNpi) {
+            throw new ConflictError("NPI number already registered");
+        }
+    }
+
     // Rate limit check: Max 10 uploads per hour
     const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
