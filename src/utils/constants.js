@@ -146,6 +146,7 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
 export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
     INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
     HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
+    BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
