@@ -1,5 +1,6 @@
 import express from "express";
 import {
+    advanceToFinalReviewController,
     completeOnboardingController,
     deleteDocumentController,
     getComplianceContentController,
@@ -123,6 +124,11 @@ router.post(
     validate(backgroundCheckSchema),
     submitBackgroundCheckController
 );
+
+/**
+ * POST /api/therapist/onboarding/advance-to-review
+ */
+router.post("/advance-to-review", advanceToFinalReviewController);
 
 /**
  * POST /api/therapist/onboarding/complete

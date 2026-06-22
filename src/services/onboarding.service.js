@@ -743,6 +743,36 @@ export const submitBackgroundCheck = async (userId, data) => {
 };
 
 /**
+ * Advance onboardingStep to 9 (Final Review) after Stripe is finished or
+ * skipped. Stripe is never a hard requirement, so this never validates
+ * anything — it only records that the therapist has reached the last step.
+ */
+export const advanceToFinalReview = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: { onboardingStep: Math.max(therapist.onboardingStep, 9) },
+        });
+    });
+
+    return {
+        message: "Advanced to final review",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
  * Complete onboarding (after Stripe connection)
  */
 export const completeOnboarding = async (userId) => {

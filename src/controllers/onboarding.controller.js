@@ -1,4 +1,5 @@
 import {
+    advanceToFinalReview,
     completeOnboarding,
     deleteDocument,
     getComplianceContent,
@@ -305,6 +306,26 @@ export const submitBackgroundCheckController = async (req, res, next) => {
         res.status(200).json({
             success: true,
             message: result.message,
+            data: {
+                therapist: result.therapist
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * POST /api/therapist/onboarding/advance-to-review
+ * Advance to Final Review (step 9) after Stripe is finished or skipped
+ */
+export const advanceToFinalReviewController = async (req, res, next) => {
+    try {
+        const result = await advanceToFinalReview(req.user.id);
+
+        res.status(200).json({
+            success: true,
+            result: result.message,
             data: {
                 therapist: result.therapist
             },
