@@ -3,13 +3,24 @@ import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
-import { TIME_MS, APPROVAL_STATUS } from "../utils/constants.js";
+import { TIME_MS, APPROVAL_STATUS, THERAPIST_DOCUMENTS_BUCKET, DOCUMENT_CATEGORIES } from "../utils/constants.js";
+import { logger } from "../config/logger.js";
 
 /**
- * Upload license document to Supabase storage and create database record
- * Uses service role to bypass RLS policies
+ * Upload a therapist onboarding document (license, insurance, identity,
+ * compliance, ...) to the shared therapist-documents bucket and create its
+ * DB record. One function for every category — category only decides which
+ * documentType values are accepted; storage location and DB shape are the same.
  */
-export const uploadLicenseDocument = async ({ userId, file, documentType = "license", uploadIp = null }) => {
+export const uploadDocument = async ({ userId, file, category = "license", documentType, uploadIp = null }) => {
+    const allowedTypes = DOCUMENT_CATEGORIES[category];
+    if (!allowedTypes) {
+        throw new BadRequestError(`Unknown document category: ${category}`);
+    }
+    if (!allowedTypes.includes(documentType)) {
+        throw new BadRequestError(`Invalid documentType "${documentType}" for category "${category}"`);
+    }
+
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: {
@@ -46,6 +57,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
     const activeDocuments = await prisma.licenseDocument.count({
         where: {
             therapistId,
+            documentType: { in: allowedTypes },
             isDeleted: false
         }
     });
@@ -62,12 +74,12 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
         .replace(/[^a-zA-Z0-9.-]/g, '_')
         .substring(0, 100);
 
-    // Path structure: userId/timestamp_uniqueId_filename
-    const filePath = `${userId}/${timestamp}_${uniqueId}_${sanitizedFileName}`;
+    // Path structure: userId/category/timestamp_uniqueId_filename
+    const filePath = `${userId}/${category}/${timestamp}_${uniqueId}_${sanitizedFileName}`;
 
     // Upload to Supabase using service role (bypasses RLS)
     const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from("license-documents")
+        .from(THERAPIST_DOCUMENTS_BUCKET)
         .upload(filePath, file.buffer, {
             contentType: file.mimetype,
             upsert: false, // Don't overwrite if exists
@@ -75,7 +87,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
         });
 
     if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
+        logger.error("Supabase upload error", { error: uploadError.message });
         throw new BadRequestError(
             `Failed to upload file: ${uploadError.message}`
         );
@@ -87,7 +99,7 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
             therapistId,
             userId,
             documentUrl: filePath,
-            bucket: "license-documents",
+            bucket: THERAPIST_DOCUMENTS_BUCKET,
             documentType,
             fileName: file.originalname,
             mimeType: file.mimetype,
@@ -137,7 +149,7 @@ export const uploadProfilePhoto = async ({ userId, file }) => {
         });
 
     if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
+        logger.error("Supabase upload error", { error: uploadError.message });
         throw new BadRequestError(
             `Failed to upload file: ${uploadError.message}`
         );
@@ -157,9 +169,11 @@ export const uploadProfilePhoto = async ({ userId, file }) => {
 }
 
 /**
- * Delete file from Supabase storage
- * Only used for cleanup in error scenarios
- * 
+ * Delete a file from Supabase Storage. Used both for upload-error cleanup
+ * and for permanently removing a document's storage object when a user
+ * explicitly removes it. Swallows errors — callers treat storage cleanup
+ * as best-effort and should not fail the calling operation because of it.
+ *
  * @param {string} bucket - Bucket name
  * @param {string} filePath - File path in bucket
  */
@@ -170,9 +184,9 @@ export const deleteFileFromStorage = async (bucket, filePath) => {
             .remove([filePath]);
 
         if (error) {
-            console.error(`Failed to delete file ${filePath} from ${bucket}:`, error);
+            logger.error(`Failed to delete file from storage`, { filePath, bucket, error: error.message });
         }
     } catch (error) {
-        console.error("Storage deletion error:", error);
+        logger.error("Storage deletion error", { filePath, bucket, error: error.message });
     }
 }

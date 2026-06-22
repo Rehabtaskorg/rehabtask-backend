@@ -1,9 +1,57 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
+import { deleteFileFromStorage } from "./upload.service.js";
+import {
+    renderIndependentContractorAgreement,
+    renderHipaaAcknowledgment,
+    renderBackgroundCheckAuthorization,
+    renderSignedDocument,
+} from "../data/complianceTemplates.js";
+
+const computeOnboardingSteps = (therapist) => {
+    const hasDocumentType = (types) =>
+        therapist.licenseDocuments.some((doc) => types.includes(doc.documentType));
+
+    const hasSignedDocument = (documentType) =>
+        therapist.complianceSignatures.some((s) => s.documentType === documentType);
+
+    return {
+        personalInfo: !!(
+            therapist.dateOfBirth &&
+            therapist.addressLine1 &&
+            therapist.city &&
+            therapist.state &&
+            therapist.zipCode
+        ),
+        profile: !!(
+            therapist.yearsOfExperience !== null &&
+            therapist.primaryLicenseType &&
+            therapist.professionalSummary
+        ),
+        credentials: !!(
+            therapist.licenseNumber &&
+            therapist.licenseState &&
+            hasDocumentType(DOCUMENT_CATEGORIES.license)
+        ),
+        availability: therapist.availability.length > 0,
+        insurance: !!(
+            hasDocumentType(["general_liability"]) &&
+            hasDocumentType(["professional_liability"]) &&
+            (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
+        ),
+        identity: hasDocumentType(["government_id_front"]),
+        compliance: !!(
+            hasDocumentType(DOCUMENT_CATEGORIES.compliance) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT) &&
+            hasSignedDocument(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION)
+        ),
+    };
+};
 
 /**
  * Get therapist onboarding status and progress
@@ -17,6 +65,7 @@ export const getOnboardingStatus = async (userId) => {
                 orderBy: { uploadedAt: "desc" },
             },
             availability: true,
+            complianceSignatures: true,
         }
     });
 
@@ -24,28 +73,14 @@ export const getOnboardingStatus = async (userId) => {
         throw new NotFoundError("Therapist profile not found");
     }
 
-    // Determine which steps are complete
     const steps = {
-        profile: !!(
-            therapist.yearsOfExperience !== null &&
-            therapist.primaryLicenseType &&
-            therapist.professionalSummary
-        ),
-        credentials: !!(
-            therapist.licenseNumber &&
-            therapist.licenseState &&
-            therapist.licenseDocuments.length > 0
-        ),
-        availability: therapist.availability.length > 0,
-        backgroundCheck: !!(
-            therapist.backgroundCheckConsent &&
-            therapist.backgroundCheckSignature
-        ),
+        ...computeOnboardingSteps(therapist),
         stripe: therapist.stripeOnboardingComplete,
     };
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
-    const progress = (completedSteps / 5) * 100;
+    const totalSteps = Object.keys(steps).length;
+    const progress = Math.round((completedSteps / totalSteps) * 100);
 
     return {
         therapist: {
@@ -58,12 +93,145 @@ export const getOnboardingStatus = async (userId) => {
         steps,
         progress,
         completedSteps,
-        totalSteps: 5
+        totalSteps,
     }
 }
 
+export const getOnboardingData = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: {
+            licenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
+            availability: true,
+            workAreas: true,
+        },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const documentsByCategory = (types) =>
+        therapist.licenseDocuments
+            .filter((doc) => types.includes(doc.documentType))
+            .map((doc) => ({
+                id: doc.id,
+                path: doc.documentUrl,
+                fileName: doc.fileName,
+                fileSize: doc.fileSize,
+                documentType: doc.documentType,
+                mimeType: doc.mimeType,
+            }));
+
+    const daysOfWeek = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    const scheduleByDay = therapist.availability.reduce((acc, day) => {
+        acc[day.dayOfWeek] = { enabled: day.isEnabled, timeBlocks: day.timeBlocks };
+        return acc;
+    }, {});
+    const schedule = daysOfWeek.reduce((acc, day) => {
+        acc[day] = scheduleByDay[day] ?? { enabled: false, timeBlocks: [] };
+        return acc;
+    }, {});
+
+    const toNumberOrNull = (value) => (value === null || value === undefined ? null : parseFloat(value));
+
+    return {
+        personalInfo: {
+            dateOfBirth: therapist.dateOfBirth,
+            phone: therapist.phone,
+            addressLine1: therapist.addressLine1,
+            addressLine2: therapist.addressLine2,
+            city: therapist.city,
+            state: therapist.state,
+            zipCode: therapist.zipCode,
+            latitude: toNumberOrNull(therapist.latitude),
+            longitude: toNumberOrNull(therapist.longitude),
+            emergencyContactName: therapist.emergencyContactName,
+            emergencyContactPhone: therapist.emergencyContactPhone,
+        },
+        professionalProfile: {
+            yearsOfExperience: therapist.yearsOfExperience,
+            primaryLicenseType: therapist.primaryLicenseType,
+            specialization: therapist.specialization,
+            professionalSummary: therapist.professionalSummary,
+            profilePhotoUrl: therapist.profilePhotoUrl,
+        },
+        credentials: {
+            licenseNumber: therapist.licenseNumber,
+            licenseState: therapist.licenseState,
+            npiNumber: therapist.npiNumber,
+            additionalLicenseStates: therapist.additionalLicenseStates,
+            ratePerVisit: toNumberOrNull(therapist.ratePerVisit),
+            attemptedVisitRate: toNumberOrNull(therapist.attemptedVisitRate),
+            licenseDocuments: documentsByCategory(DOCUMENT_CATEGORIES.license),
+        },
+        availability: {
+            schedule,
+            workAreas: therapist.workAreas.map((wa) => ({
+                zipCode: wa.zipCode,
+                city: wa.city,
+                state: wa.state,
+                latitude: toNumberOrNull(wa.latitude),
+                longitude: toNumberOrNull(wa.longitude),
+                radiusMiles: wa.radiusMiles,
+            })),
+        },
+        insurance: {
+            doesHomeVisits: therapist.doesHomeVisits,
+            documents: documentsByCategory(DOCUMENT_CATEGORIES.insurance),
+        },
+        identity: {
+            documents: documentsByCategory(DOCUMENT_CATEGORIES.identity),
+        },
+    };
+};
+
 /**
- * Save professional profile (Step 1)
+ * Save personal information (Step 1)
+ */
+export const savePersonalInfo = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
+                phone: data.phone,
+                addressLine1: data.addressLine1,
+                addressLine2: data.addressLine2 ?? null,
+                city: data.city,
+                state: data.state,
+                zipCode: data.zipCode,
+                latitude: data.latitude ?? null,
+                longitude: data.longitude ?? null,
+                emergencyContactName: data.emergencyContactName ?? null,
+                emergencyContactPhone: data.emergencyContactPhone ?? null,
+                onboardingStep: Math.max(therapist.onboardingStep, 2),
+            },
+        });
+    });
+
+    return {
+        message: "Personal information saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
+ * Save professional profile (Step 2)
  */
 export const saveProfessionalProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
@@ -88,7 +256,7 @@ export const saveProfessionalProfile = async (userId, data) => {
                 specialization: data.specialization,
                 professionalSummary: data.professionalSummary,
                 profilePhotoUrl: data.profilePhotoUrl || null,
-                onboardingStep: Math.max(therapist.onboardingStep, 2),
+                onboardingStep: Math.max(therapist.onboardingStep, 3),
             },
         });
     });
@@ -126,6 +294,20 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
         throw new ConflictError("License number already registered");
     }
 
+    // Check if NPI number already exists (for another therapist)
+    if (data.npiNumber) {
+        const existingNpi = await prisma.therapistProfile.findFirst({
+            where: {
+                npiNumber: data.npiNumber,
+                userId: { not: userId }
+            },
+        });
+
+        if (existingNpi) {
+            throw new ConflictError("NPI number already registered");
+        }
+    }
+
     // Rate limit check: Max 10 uploads per hour
     const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
@@ -147,9 +329,11 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
             data: {
                 licenseNumber: data.licenseNumber,
                 licenseState: data.licenseState,
+                npiNumber: data.npiNumber ?? null,
+                additionalLicenseStates: data.additionalLicenseStates ?? [],
                 ...(data.ratePerVisit !== undefined && { ratePerVisit: data.ratePerVisit }),
                 ...(data.attemptedVisitRate !== undefined && { attemptedVisitRate: data.attemptedVisitRate }),
-                onboardingStep: Math.max(therapist.onboardingStep, 3),
+                onboardingStep: Math.max(therapist.onboardingStep, 4),
             },
         });
     });
@@ -274,13 +458,245 @@ export const saveAvailability = async (userId, data) => {
         return db.therapistProfile.update({
             where: { userId },
             data: {
-                onboardingStep: Math.max(therapist.onboardingStep, 4)
+                onboardingStep: Math.max(therapist.onboardingStep, 5)
             },
         });
     });
 
     return {
         message: "Availability saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
+ * Save insurance documentation (Step 5)
+ *
+ * Reconciliation is scoped to insurance documentType values only — license
+ * documents share the same table and must not be touched by this step.
+ */
+export const saveInsurance = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                doesHomeVisits: data.doesHomeVisits,
+                onboardingStep: Math.max(therapist.onboardingStep, 6),
+            },
+        });
+    });
+
+    const submittedPaths = new Set(data.documents.map((doc) => doc.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.insurance },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+        },
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.insurance },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Insurance documentation saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+        documents: activeDocuments.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            documentType: doc.documentType,
+        })),
+    };
+};
+
+/**
+ * Save identity verification documents (Step 6)
+ *
+ * Storage only — no OCR or automated verification. Reconciliation is scoped
+ * to identity documentType values only — license/insurance documents share
+ * the same table and must not be touched by this step.
+ */
+export const saveIdentityVerification = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                onboardingStep: Math.max(therapist.onboardingStep, 7),
+            },
+        });
+    });
+
+    const submittedPaths = new Set(data.documents.map((doc) => doc.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+        },
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Identity verification documents saved successfully",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+        documents: activeDocuments.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            documentType: doc.documentType,
+        })),
+    };
+};
+
+/**
+ * Get the Compliance Forms step's content for a therapist: the rendered
+ * preview text for the 3 e-signature documents (name/date merged, no
+ * signature yet), the W-9 upload state, and which sub-steps are already
+ * signed — so the frontend can resume mid-sequence on a returning visit.
+ */
+export const getComplianceContent = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: {
+            licenseDocuments: { where: { isDeleted: false } },
+            complianceSignatures: true,
+        },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const signedDocumentTypes = new Set(therapist.complianceSignatures.map((s) => s.documentType));
+    const hasW9 = therapist.licenseDocuments.some((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType));
+
+    return {
+        independentContractorAgreement: renderIndependentContractorAgreement(therapist),
+        hipaaAcknowledgment: renderHipaaAcknowledgment(therapist),
+        backgroundCheckAuthorization: renderBackgroundCheckAuthorization(therapist),
+        w9: {
+            uploaded: hasW9,
+            documents: therapist.licenseDocuments
+                .filter((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType))
+                .map((doc) => ({
+                    id: doc.id,
+                    path: doc.documentUrl,
+                    fileName: doc.fileName,
+                    fileSize: doc.fileSize,
+                    documentType: doc.documentType,
+                    mimeType: doc.mimeType,
+                })),
+        },
+        signed: {
+            [COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT),
+            [COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT),
+            [COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION]:
+                signedDocumentTypes.has(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION),
+        },
+    };
+};
+
+/**
+ * Record a therapist's signature on one of the 3 Compliance Forms
+ * e-signature documents (Independent Contractor Agreement, HIPAA
+ * Acknowledgment, Background Check Authorization). Re-renders the document
+ * server-side from the raw template — never trusts client-sent text — and
+ * snapshots the exact signed text, so the record proves what was actually
+ * agreed to even if the template wording changes later.
+ *
+ * Advances onboardingStep to 8 once W-9 is uploaded and all 3 documents
+ * are signed (mirrors getOnboardingStatus's steps.compliance check).
+ */
+export const signComplianceDocument = async (userId, { documentType, signature }) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        include: { licenseDocuments: { where: { isDeleted: false } } },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const signedText = renderSignedDocument(documentType, therapist, signature);
+
+    await prisma.complianceSignature.upsert({
+        where: { therapistId_documentType: { therapistId: therapist.id, documentType } },
+        update: { signature, signedText, signedAt: new Date() },
+        create: { therapistId: therapist.id, documentType, signature, signedText },
+    });
+
+    const allSignatures = await prisma.complianceSignature.findMany({
+        where: { therapistId: therapist.id },
+    });
+    const signedTypes = new Set(allSignatures.map((s) => s.documentType));
+    const hasW9 = therapist.licenseDocuments.some((doc) => DOCUMENT_CATEGORIES.compliance.includes(doc.documentType));
+
+    const complianceComplete = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.INDEPENDENT_CONTRACTOR_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_ACKNOWLEDGMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.BACKGROUND_CHECK_AUTHORIZATION);
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: complianceComplete ? { onboardingStep: Math.max(therapist.onboardingStep, 8) } : {},
+        });
+    });
+
+    return {
+        message: "Document signed successfully",
         therapist: {
             id: updated.id,
             onboardingStep: updated.onboardingStep,
@@ -327,6 +743,36 @@ export const submitBackgroundCheck = async (userId, data) => {
 };
 
 /**
+ * Advance onboardingStep to 9 (Final Review) after Stripe is finished or
+ * skipped. Stripe is never a hard requirement, so this never validates
+ * anything — it only records that the therapist has reached the last step.
+ */
+export const advanceToFinalReview = async (userId) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!therapist) {
+        throw new NotFoundError("Therapist profile not found");
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: { onboardingStep: Math.max(therapist.onboardingStep, 9) },
+        });
+    });
+
+    return {
+        message: "Advanced to final review",
+        therapist: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
  * Complete onboarding (after Stripe connection)
  */
 export const completeOnboarding = async (userId) => {
@@ -336,7 +782,8 @@ export const completeOnboarding = async (userId) => {
             licenseDocuments: {
                 where: { isDeleted: false },
             },
-            availability: true
+            availability: true,
+            complianceSignatures: true,
         },
     });
 
@@ -344,28 +791,13 @@ export const completeOnboarding = async (userId) => {
         throw new NotFoundError("Therapist profile not found");
     }
 
-    // Validate all required fields are present
-    const isProfileComplete = !!(
-        therapist.yearsOfExperience !== null &&
-        therapist.primaryLicenseType &&
-        therapist.professionalSummary
-    );
+    const steps = computeOnboardingSteps(therapist);
+    const incompleteSteps = Object.entries(steps)
+        .filter(([, isComplete]) => !isComplete)
+        .map(([step]) => step);
 
-    const isCredentialsComplete = !!(
-        therapist.licenseNumber &&
-        therapist.licenseState &&
-        therapist.licenseDocuments.length > 0
-    );
-
-    const isAvailabilityComplete = therapist.availability.length > 0;
-
-    const isBackgroundCheckComplete = !!(
-        therapist.backgroundCheckConsent &&
-        therapist.backgroundCheckSignature
-    );
-
-    if (!isProfileComplete || !isCredentialsComplete || !isAvailabilityComplete || !isBackgroundCheckComplete) {
-        throw new BadRequestError("All onboarding steps must be completed");
+    if (incompleteSteps.length > 0) {
+        throw new BadRequestError(`All onboarding steps must be completed: ${incompleteSteps.join(", ")}`);
     }
 
 
@@ -479,7 +911,11 @@ export const getTherapistDocuments = async (userId) => {
 };
 
 /**
- * Delete document (soft delete)
+ * Delete document — soft-deletes the DB row (preserves the audit trail) and
+ * immediately removes the underlying Supabase Storage file. Removal happens
+ * during onboarding, before the document is ever part of a submitted
+ * application, so there's no retention reason to keep the storage object
+ * around — leaving it behind only orphans it and leaks storage cost.
  */
 export const deleteDocument = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
@@ -490,17 +926,16 @@ export const deleteDocument = async (userId, documentId) => {
         throw new NotFoundError("Document not found");
     }
 
-    // Verify ownership
     if (document.userId !== userId) {
         throw new BadRequestError("Not authorized to delete this document");
     }
 
-    // Already deleted
     if (document.isDeleted) {
         throw new BadRequestError("Document already deleted");
     }
 
-    // Soft delete
+    // Soft delete the row first — if storage removal fails below, the
+    // document is still correctly hidden from the user's active list.
     await prisma.licenseDocument.update({
         where: { id: documentId },
         data: {
@@ -508,6 +943,8 @@ export const deleteDocument = async (userId, documentId) => {
             deletedAt: new Date(),
         },
     });
+
+    await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
 
     return {
         message: "Document deleted successfully",

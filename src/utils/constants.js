@@ -91,32 +91,29 @@ export const TIME_MS = {
     NINETY_DAYS: 90 * 24 * 60 * 60 * 1000,
 };
 
-// Number of days added to the revision deadline on each therapist "Extend" action.
-// Uses max(currentDueBy, now) + this value so early extensions always move the deadline forward.
 export const REVISION_EXTEND_DAYS = 3;
 
 export const RATE_LIMIT = {
-    API_WINDOW_MS: 15 * 60 * 1000,  // 15 minutes
+    API_WINDOW_MS: 15 * 60 * 1000,  
     API_MAX_PROD: 100,
     API_MAX_DEV: 10000,
 
-    SENSITIVE_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
+    SENSITIVE_WINDOW_MS: 60 * 60 * 1000,  
     SENSITIVE_MAX_PROD: 10,
     SENSITIVE_MAX_DEV: 1000,
 
-    AUTH_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
-    AUTH_MAX_PROD: 10,
+    AUTH_WINDOW_MS: 60 * 60 * 1000, 
     AUTH_MAX_DEV: 1000,
 
-    SOCKET_WINDOW_MS: 15 * 60 * 1000,  // 15 minutes
+    SOCKET_WINDOW_MS: 15 * 60 * 1000,  
     SOCKET_MAX_PROD: 600,
     SOCKET_MAX_DEV: 10000,
 
-    UPLOAD_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
+    UPLOAD_WINDOW_MS: 60 * 60 * 1000,  
     UPLOAD_MAX_PROD: 20,
     UPLOAD_MAX_DEV: 1000,
 
-    MESSAGE_WINDOW_MS: 60 * 1000,        // 1 minute
+    MESSAGE_WINDOW_MS: 60 * 1000,        
     MESSAGE_MAX_PROD: 20,
     MESSAGE_MAX_DEV: 1000,
 };
@@ -132,6 +129,24 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
     "Occupational Therapist": "Occupational Therapy",
     "Occupational Therapist Assistant": "Occupational Therapy",
     "Speech-Language Pathologist": "Speech Language Pathology (SLP)",
+});
+
+
+export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
+
+/** documentType values accepted per onboarding upload category. */
+export const DOCUMENT_CATEGORIES = Object.freeze({
+    license: ["license"],
+    insurance: ["general_liability", "professional_liability", "auto_insurance"],
+    identity: ["government_id_front", "government_id_back"],
+    compliance: ["w9"],
+});
+
+/** documentType values accepted by ComplianceSignature — e-signed onboarding documents, not file uploads. */
+export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
+    INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
+    HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
+    BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
