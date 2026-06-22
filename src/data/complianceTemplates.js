@@ -1,6 +1,6 @@
 const INDEPENDENT_CONTRACTOR_AGREEMENT_RAW = `Contract/Employment Agreement
 
-This Contract/Employment Agreement ("Agreement"), is entered on {{CONTRACT_DATE}}, between Steadfast Rehabilitation Services, LLC, a IL company (the "Company"), and {{CLINICIAN_NAME}} (the "Clinician").
+This Contract/Employment Agreement ("Agreement"), is entered on {{CONTRACT_DATE}}, between RehabTask, a IL company (the "Company"), and {{CLINICIAN_NAME}} (the "Clinician").
 
 The Company desires to employ the Employee, and the Employee wishes to enter into that employment, as set forth in this agreement.
 
@@ -57,7 +57,7 @@ Return of Property
 Notice
 
 12. All notices, requests, demands or other communications required or permitted by the terms of this Agreement will be given in writing and delivered to the Parties of this Agreement as follows:
-    a. Steadfast Rehabilitation Services, LLC, 332 S Michigan Ave STE 121 #5888, Chicago, IL 60604
+    a. RehabTask, 332 S Michigan Ave STE 121 #5888, Chicago, IL 60604
     b. {{CLINICIAN_NAME}}, {{CLINICIAN_ADDRESS}}
 
 or to such other address as any Party may inform the other to be his/her/its current address.
@@ -107,10 +107,10 @@ Date: {{CONTRACT_DATE}}`;
 
 const HIPAA_ACKNOWLEDGMENT_RAW = `HIPAA Acknowledgment (Therapist)
 
-Steadfast Rehabilitation Services, LLC
+RehabTask
 HIPAA Acknowledgment Form
 
-I, {{CLINICIAN_NAME}} ("Therapist"), acknowledge that in the course of providing services on behalf of Steadfast Rehabilitation Services, LLC ("Steadfast"), I may have access to Protected Health Information ("PHI") and other confidential patient information.
+I, {{CLINICIAN_NAME}} ("Therapist"), acknowledge that in the course of providing services on behalf of RehabTask, I may have access to Protected Health Information ("PHI") and other confidential patient information.
 
 I understand and agree to the following:
 
@@ -128,19 +128,19 @@ I agree to take reasonable precautions to protect PHI from unauthorized access, 
     - Properly storing and disposing of patient records and documents.
 
 4. Electronic Communications
-I understand that PHI may only be transmitted through approved and secure communication methods authorized by Steadfast and its client agencies. I will not transmit PHI through unsecured email, text messaging, social media, or other unauthorized platforms.
+I understand that PHI may only be transmitted through approved and secure communication methods authorized by RehabTask and its client agencies. I will not transmit PHI through unsecured email, text messaging, social media, or other unauthorized platforms.
 
 5. Reporting Security Incidents
-I agree to immediately report any suspected or actual privacy breach, security incident, unauthorized disclosure, loss, theft, or compromise of PHI to Steadfast Rehabilitation Services.
+I agree to immediately report any suspected or actual privacy breach, security incident, unauthorized disclosure, loss, theft, or compromise of PHI to RehabTask.
 
 6. Minimum Necessary Standard
 I will limit my access to PHI to the minimum amount necessary to perform my duties and comply with applicable healthcare regulations.
 
 7. Ongoing Obligation
-I understand that my obligation to maintain the confidentiality of PHI continues during and after my relationship with Steadfast Rehabilitation Services and its client agencies.
+I understand that my obligation to maintain the confidentiality of PHI continues during and after my relationship with RehabTask and its client agencies.
 
 8. Compliance
-I acknowledge that failure to comply with HIPAA requirements, confidentiality obligations, or Steadfast policies may result in disciplinary action, termination of my contract or employment, and/or legal penalties as permitted by law.
+I acknowledge that failure to comply with HIPAA requirements, confidentiality obligations, or RehabTask policies may result in disciplinary action, termination of my contract or employment, and/or legal penalties as permitted by law.
 
 Acknowledgment
 
@@ -152,12 +152,12 @@ Date: {{CONTRACT_DATE}}`;
 
 const BACKGROUND_CHECK_AUTHORIZATION_RAW = `Background Check Authorization
 
-I, {{CLINICIAN_NAME}}, understand that as part of RehabTask's onboarding and compliance process, Steadfast Rehabilitation Services has partnered with First Advantage to conduct background screenings for clinicians providing services through the platform.
+I, {{CLINICIAN_NAME}}, understand that as part of RehabTask's onboarding and compliance process, RehabTask has partnered with First Advantage to conduct background screenings for clinicians providing services through the platform.
 
 I understand and agree to the following:
 
 1. Authorization
-I authorize Steadfast Rehabilitation Services and First Advantage to obtain a consumer report and/or investigative consumer report about me for the purpose of evaluating my eligibility to provide services through RehabTask.
+I authorize RehabTask and First Advantage to obtain a consumer report and/or investigative consumer report about me for the purpose of evaluating my eligibility to provide services through RehabTask.
 
 2. Disclosure and Authorization Form
 I understand that, separately from this acknowledgment, I will be asked to complete an electronic Disclosure and Authorization Form directly with First Advantage, and that my information will be submitted through First Advantage's secure platform and handled in accordance with their privacy and security standards. I understand communications regarding this process may come from First Advantage or its affiliate, Sterling.
@@ -166,7 +166,7 @@ I understand that, separately from this acknowledgment, I will be asked to compl
 I acknowledge that I have been informed of my rights under the Fair Credit Reporting Act (FCRA), where applicable, including my right to review the contents of my file and to dispute the accuracy or completeness of any information in any consumer report obtained about me.
 
 4. Support
-I understand that if I experience any issues completing the authorization or background screening, I should notify my contact at Steadfast Rehabilitation Services as soon as possible.
+I understand that if I experience any issues completing the authorization or background screening, I should notify my contact at RehabTask as soon as possible.
 
 By signing below, I acknowledge that I have read, understand, and consent to the background screening process described above.
 
