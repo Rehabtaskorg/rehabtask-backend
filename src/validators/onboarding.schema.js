@@ -250,3 +250,26 @@ export const backgroundCheckSchema = z.object({
         .min(2, "Signature is required")
         .max(255, "Signature too long"),
 });
+
+export const agencyBusinessProfileSchema = z.object({
+    dbaName: z.string().max(255).optional().nullable(),
+    ein: z
+        .string()
+        .regex(/^\d{2}-\d{7}$/, "EIN must be in format XX-XXXXXXX")
+        .optional()
+        .nullable(),
+    billingEmail: z
+        .string()
+        .email("Billing email must be a valid email address"),
+    addressLine1: z.string().min(1, "Business address is required").max(255),
+    addressLine2: z.string().max(255).optional().nullable(),
+    city: z.string().min(1, "City is required").max(100),
+    state: z
+        .string()
+        .length(2, "State must be a 2-letter code")
+        .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+            message: "Please provide a valid US state",
+        })
+        .transform((val) => val.toUpperCase()),
+    zipCode: z.string().regex(/^\d{5}$/, "ZIP code must be exactly 5 digits"),
+});

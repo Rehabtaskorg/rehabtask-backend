@@ -15,6 +15,9 @@ import {
     saveProfessionalProfile,
     signComplianceDocument,
     submitBackgroundCheck,
+    getAgencyOnboardingStatus,
+    getAgencyOnboardingData,
+    saveAgencyBusinessProfile,
 } from "../services/onboarding.service.js";
 
 /**
@@ -409,3 +412,42 @@ export const deleteDocumentController = async (req, res, next) => {
         next(error);
     }
 }
+
+// ─── Agency Onboarding Controllers ───────────────────────────────────────────
+
+export const getAgencyOnboardingStatusController = async (req, res, next) => {
+    try {
+        const result = await getAgencyOnboardingStatus(req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getAgencyOnboardingDataController = async (req, res, next) => {
+    try {
+        const result = await getAgencyOnboardingData(req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const saveAgencyBusinessProfileController = async (req, res, next) => {
+    try {
+        const { dbaName, ein, billingEmail, addressLine1, addressLine2, city, state, zipCode } = req.body;
+        const result = await saveAgencyBusinessProfile(req.user.id, {
+            dbaName,
+            ein,
+            billingEmail,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            zipCode,
+        });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};

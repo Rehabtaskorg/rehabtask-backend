@@ -801,8 +801,6 @@ export const completeOnboarding = async (userId) => {
     }
 
 
-    // Only move to "review" if the therapist has not already been approved or rejected
-    // An already-approved therapist connecting Stripe post-approval must NOT be sent back to review
     const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
     const wasAlreadyComplete = therapist.onboardingComplete;
 
@@ -910,13 +908,7 @@ export const getTherapistDocuments = async (userId) => {
     return { documents };
 };
 
-/**
- * Delete document — soft-deletes the DB row (preserves the audit trail) and
- * immediately removes the underlying Supabase Storage file. Removal happens
- * during onboarding, before the document is ever part of a submitted
- * application, so there's no retention reason to keep the storage object
- * around — leaving it behind only orphans it and leaks storage cost.
- */
+
 export const deleteDocument = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
         where: { id: documentId },
@@ -948,5 +940,102 @@ export const deleteDocument = async (userId, documentId) => {
 
     return {
         message: "Document deleted successfully",
+    };
+};
+
+
+export const getAgencyOnboardingStatus = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const steps = {
+        businessProfile: !!(
+            customer.billingEmail &&
+            customer.addressLine1 &&
+            customer.city &&
+            customer.state &&
+            customer.zipCode
+        ),
+    };
+
+    const completedSteps = Object.values(steps).filter(Boolean).length;
+    const totalSteps = Object.keys(steps).length;
+    const progress = Math.round((completedSteps / totalSteps) * 100);
+
+    return {
+        customer: {
+            id: customer.id,
+            onboardingStep: customer.onboardingStep,
+            onboardingComplete: customer.onboardingComplete,
+            approvalStatus: customer.approvalStatus,
+        },
+        steps,
+        progress,
+        completedSteps,
+        totalSteps,
+    };
+};
+
+export const getAgencyOnboardingData = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { user: { select: { email: true } } },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    return {
+        registration: {
+            agencyName: customer.agencyName,
+            fullName: customer.fullName,
+            phone: customer.phone,
+            email: customer.user.email,
+        },
+        businessProfile: {
+            dbaName: customer.dbaName,
+            ein: customer.ein,
+            billingEmail: customer.billingEmail,
+            addressLine1: customer.addressLine1,
+            addressLine2: customer.addressLine2,
+            city: customer.city,
+            state: customer.state,
+            zipCode: customer.zipCode,
+        },
+    };
+};
+
+export const saveAgencyBusinessProfile = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                dbaName: data.dbaName ?? null,
+                ein: data.ein ?? null,
+                billingEmail: data.billingEmail,
+                addressLine1: data.addressLine1,
+                addressLine2: data.addressLine2 ?? null,
+                city: data.city,
+                state: data.state,
+                zipCode: data.zipCode,
+                onboardingStep: Math.max(customer.onboardingStep, 2),
+            },
+        });
+    });
+
+    return {
+        message: "Business profile saved successfully",
+        customer: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
     };
 };
