@@ -1225,3 +1225,82 @@ export const signAgencyComplianceDocument = async (userId, { documentType, signa
         customer: { id: updated.id, onboardingStep: updated.onboardingStep },
     };
 };
+
+/**
+ * Complete agency onboarding (Step 5 — Activation).
+ * Validates all 4 prerequisite steps are done before committing.
+ * Sets approvalStatus = "approved" + onboardingComplete = true instantly —
+ * no admin review gate (confirmed product decision).
+ */
+export const completeAgencyOnboarding = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            agencyLicenseDocuments: { where: { isDeleted: false } },
+            agencyComplianceSignatures: true,
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    // Guard: all prerequisite steps must be complete before we seal the record.
+    const REQUIRED_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const uploadedTypes = new Set(customer.agencyLicenseDocuments.map((d) => d.documentType));
+    const hasRequiredDocs = REQUIRED_DOC_TYPES.every((t) => uploadedTypes.has(t));
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
+    const signedTypes = new Set(customer.agencyComplianceSignatures.map((s) => s.documentType));
+    const hasServiceAgreement = signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT);
+    const hasHipaaBaa = signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
+    const hasBusinessProfile = !!(
+        customer.billingEmail &&
+        customer.addressLine1 &&
+        customer.city &&
+        customer.state &&
+        customer.zipCode
+    );
+
+    const incompleteSteps = [
+        !hasBusinessProfile && "businessProfile",
+        !hasRequiredDocs && "uploadDocuments",
+        !hasW9 && "w9",
+        !hasServiceAgreement && "serviceAgreement",
+        !hasHipaaBaa && "hipaaBaa",
+    ].filter(Boolean);
+
+    if (incompleteSteps.length > 0) {
+        throw new BadRequestError(
+            `All onboarding steps must be completed before activation: ${incompleteSteps.join(", ")}`
+        );
+    }
+
+    if (customer.onboardingComplete) {
+        return {
+            message: "Agency onboarding already complete.",
+            customer: {
+                id: customer.id,
+                onboardingComplete: customer.onboardingComplete,
+                approvalStatus: customer.approvalStatus,
+            },
+        };
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                onboardingComplete: true,
+                onboardingStep: 5,
+                approvalStatus: APPROVAL_STATUS.APPROVED,
+            },
+        });
+    });
+
+    return {
+        message: "Agency onboarding completed. Your account is now active.",
+        customer: {
+            id: updated.id,
+            onboardingComplete: updated.onboardingComplete,
+            approvalStatus: updated.approvalStatus,
+        },
+    };
+};

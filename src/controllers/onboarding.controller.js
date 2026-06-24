@@ -22,6 +22,7 @@ import {
     deleteAgencyDocument,
     getAgencyComplianceContent,
     signAgencyComplianceDocument,
+    completeAgencyOnboarding,
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument } from "../services/upload.service.js";
 import { BadRequestError } from "../utils/errors.js";
@@ -532,6 +533,19 @@ export const signAgencyComplianceController = async (req, res, next) => {
     try {
         const { documentType, signature } = req.body;
         const result = await signAgencyComplianceDocument(req.user.id, { documentType, signature });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/agency/onboarding/complete
+ * Complete agency onboarding — sets approvalStatus approved + onboardingComplete true.
+ */
+export const completeAgencyOnboardingController = async (req, res, next) => {
+    try {
+        const result = await completeAgencyOnboarding(req.user.id);
         res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
     } catch (error) {
         next(error);

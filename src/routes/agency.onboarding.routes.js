@@ -12,6 +12,7 @@ import {
     deleteAgencyDocumentController,
     getAgencyComplianceContentController,
     signAgencyComplianceController,
+    completeAgencyOnboardingController,
 } from "../controllers/onboarding.controller.js";
 import { uploadDocument as uploadDocumentMiddleware, handleMulterError } from "../middleware/upload.middleware.js";
 
@@ -28,5 +29,6 @@ router.post("/save-upload-documents", validate(agencyUploadDocumentsSchema), sav
 router.delete("/document/:documentId", deleteAgencyDocumentController);
 router.get("/compliance/content/:documentType", getAgencyComplianceContentController);
 router.post("/compliance/sign", validate(agencySignComplianceSchema), signAgencyComplianceController);
+router.post("/complete", completeAgencyOnboardingController);
 
 export default router;
