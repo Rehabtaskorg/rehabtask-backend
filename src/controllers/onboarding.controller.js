@@ -20,6 +20,8 @@ import {
     saveAgencyBusinessProfile,
     saveAgencyUploadDocuments,
     deleteAgencyDocument,
+    getAgencyComplianceContent,
+    signAgencyComplianceDocument,
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument } from "../services/upload.service.js";
 import { BadRequestError } from "../utils/errors.js";
@@ -504,6 +506,33 @@ export const deleteAgencyDocumentController = async (req, res, next) => {
     try {
         const result = await deleteAgencyDocument(req.user.id, req.params.documentId);
         res.status(200).json({ success: true, message: result.message });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /api/agency/onboarding/compliance/content/:documentType
+ * Return the rendered preview text for one agency compliance document.
+ */
+export const getAgencyComplianceContentController = async (req, res, next) => {
+    try {
+        const result = await getAgencyComplianceContent(req.user.id, req.params.documentType);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/agency/onboarding/compliance/sign
+ * Record an agency's signature on a compliance document.
+ */
+export const signAgencyComplianceController = async (req, res, next) => {
+    try {
+        const { documentType, signature } = req.body;
+        const result = await signAgencyComplianceDocument(req.user.id, { documentType, signature });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
     } catch (error) {
         next(error);
     }

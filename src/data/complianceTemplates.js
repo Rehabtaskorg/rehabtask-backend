@@ -222,3 +222,126 @@ export const renderSignedDocument = (documentType, therapist, signature) => {
         .replaceAll("{{CLINICIAN_ADDRESS}}", buildClinicianAddress(therapist))
         .replaceAll("{{CLINICIAN_SIGNATURE}}", signature);
 };
+
+// ─── Agency Compliance Templates ─────────────────────────────────────────────
+
+const AGENCY_SERVICE_AGREEMENT_RAW = `Service Agreement
+
+This Service Agreement ("Agreement") is entered into as of {{CONTRACT_DATE}}, between RehabTask, a Illinois company ("RehabTask"), and {{AGENCY_NAME}} ("Agency").
+
+SERVICES
+
+1. RehabTask provides a platform connecting licensed therapy professionals with home health agencies and patients requiring rehabilitation services. Agency agrees to use the RehabTask platform solely for lawful purposes in connection with its home health and therapy staffing operations.
+
+PLATFORM USAGE
+
+2. Agency acknowledges that access to the RehabTask platform is subject to ongoing compliance with all applicable state and federal regulations governing home health agencies, including but not limited to licensing requirements and Medicare/Medicaid conditions of participation.
+
+3. Agency agrees not to misrepresent the qualifications, licensing status, or employment status of any therapist engaged through the RehabTask platform.
+
+PAYMENT TERMS
+
+4. Agency agrees to pay all fees associated with bookings and platform usage as described in the RehabTask pricing schedule communicated at onboarding and as updated from time to time with reasonable notice.
+
+5. Payments are processed through the RehabTask platform. Agency authorizes RehabTask to charge the payment method on file for all confirmed bookings.
+
+CONFIDENTIALITY
+
+6. Each party agrees to maintain the confidentiality of the other party's proprietary business information and to use such information only as necessary to perform obligations under this Agreement.
+
+HIPAA COMPLIANCE
+
+7. Agency acknowledges that a separate Business Associate Agreement ("BAA") governs the handling of Protected Health Information ("PHI") and is incorporated into this Agreement by reference. Agency agrees to comply with all requirements of the BAA.
+
+TERM AND TERMINATION
+
+8. This Agreement commences on the date signed and continues until terminated by either party upon thirty (30) days written notice. RehabTask may terminate immediately for material breach or failure to maintain required licensure.
+
+LIMITATION OF LIABILITY
+
+9. RehabTask's liability to Agency under this Agreement shall not exceed the total fees paid by Agency to RehabTask in the three (3) months preceding the claim giving rise to liability.
+
+GOVERNING LAW
+
+10. This Agreement is governed by the laws of the State of Illinois, without regard to conflict of law principles.
+
+IN WITNESS WHEREOF, the authorized representative of Agency has signed this Agreement as of the date above.
+
+Agency: {{AGENCY_NAME}}
+Authorized Signature: {{AGENCY_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+const AGENCY_HIPAA_BAA_RAW = `HIPAA Business Associate Agreement
+
+This Business Associate Agreement ("BAA") is entered into as of {{CONTRACT_DATE}}, between RehabTask ("Covered Entity") and {{AGENCY_NAME}} ("Business Associate"), collectively the "Parties."
+
+RECITALS
+
+RehabTask operates a healthcare staffing and scheduling platform and may disclose Protected Health Information ("PHI") to Agency in connection with services provided under the Service Agreement. This BAA is required under the Health Insurance Portability and Accountability Act of 1996 ("HIPAA") and its implementing regulations, including the HIPAA Privacy Rule (45 CFR Part 164) and the HIPAA Security Rule.
+
+DEFINITIONS
+
+"Protected Health Information" or "PHI" has the meaning set forth in 45 CFR § 160.103, limited to PHI received from or created on behalf of RehabTask.
+
+OBLIGATIONS OF BUSINESS ASSOCIATE
+
+1. Permitted Uses and Disclosures. Agency may use or disclose PHI only as necessary to perform services under the Service Agreement or as required by law, and shall not use or disclose PHI in any manner that would violate HIPAA if done by RehabTask.
+
+2. Safeguards. Agency shall implement and maintain appropriate administrative, physical, and technical safeguards to protect PHI from unauthorized use or disclosure, in accordance with the HIPAA Security Rule (45 CFR Part 164, Subpart C).
+
+3. Breach Notification. Agency shall notify RehabTask without unreasonable delay, and in no case later than sixty (60) days after discovery, of any Breach of Unsecured PHI, as defined in 45 CFR § 164.402.
+
+4. Subcontractors. Agency shall ensure that any subcontractors that create, receive, maintain, or transmit PHI on behalf of Agency agree to the same restrictions, conditions, and requirements that apply to Agency under this BAA.
+
+5. Access and Amendment. To the extent Agency maintains PHI in a Designated Record Set, Agency shall make PHI available to RehabTask to enable RehabTask to fulfil its obligations under 45 CFR §§ 164.524 and 164.526.
+
+6. Accounting of Disclosures. Agency shall document and make available to RehabTask any information required for RehabTask to provide an accounting of disclosures as required by 45 CFR § 164.528.
+
+7. Minimum Necessary. Agency shall use, disclose, or request only the minimum amount of PHI necessary to accomplish the intended purpose.
+
+TERM AND TERMINATION
+
+8. This BAA is effective as of the date signed and shall remain in effect for the duration of the Service Agreement. Either party may terminate this BAA upon thirty (30) days written notice if the other party has breached a material term and failed to cure such breach within the notice period.
+
+9. Upon termination, Agency shall return or destroy all PHI received from or created on behalf of RehabTask, if feasible. If return or destruction is not feasible, Agency shall extend the protections of this BAA to such PHI and limit further uses and disclosures.
+
+MISCELLANEOUS
+
+10. The Parties agree to amend this BAA to the extent necessary to comply with changes in HIPAA or other applicable law.
+
+11. This BAA is governed by the laws of the State of Illinois.
+
+IN WITNESS WHEREOF, the authorized representative of Agency has signed this BAA as of the date above.
+
+Agency: {{AGENCY_NAME}}
+Authorized Signature: {{AGENCY_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+/** Render agency Service Agreement preview (no signature yet). */
+export const renderAgencyServiceAgreement = (agency) =>
+    AGENCY_SERVICE_AGREEMENT_RAW
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/** Render agency HIPAA BAA preview (no signature yet). */
+export const renderAgencyHipaaBaa = (agency) =>
+    AGENCY_HIPAA_BAA_RAW
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/** Render a signed agency compliance document for audit-trail storage. */
+export const renderSignedAgencyDocument = (documentType, agency, signature) => {
+    const raw = {
+        service_agreement: AGENCY_SERVICE_AGREEMENT_RAW,
+        hipaa_baa: AGENCY_HIPAA_BAA_RAW,
+    }[documentType];
+
+    if (!raw) throw new Error(`Unknown agency document type: ${documentType}`);
+
+    return raw
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", signature);
+};

@@ -11,6 +11,9 @@ import {
     renderHipaaAcknowledgment,
     renderBackgroundCheckAuthorization,
     renderSignedDocument,
+    renderAgencyServiceAgreement,
+    renderAgencyHipaaBaa,
+    renderSignedAgencyDocument,
 } from "../data/complianceTemplates.js";
 
 const computeOnboardingSteps = (therapist) => {
@@ -950,6 +953,7 @@ export const getAgencyOnboardingStatus = async (userId) => {
         where: { userId },
         include: {
             licenseDocuments: { where: { isDeleted: false } },
+            agencyComplianceSignatures: true,
         },
     });
 
@@ -958,6 +962,12 @@ export const getAgencyOnboardingStatus = async (userId) => {
     const REQUIRED_AGENCY_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
     const uploadedTypes = new Set(customer.licenseDocuments.map((d) => d.documentType));
     const hasRequiredDocs = REQUIRED_AGENCY_DOC_TYPES.every((t) => uploadedTypes.has(t));
+
+    const signedTypes = new Set(customer.agencyComplianceSignatures.map((s) => s.documentType));
+    const hasW9 = customer.licenseDocuments.some((d) => d.documentType === "w9");
+    const complianceForms = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
 
     const steps = {
         businessProfile: !!(
@@ -968,7 +978,7 @@ export const getAgencyOnboardingStatus = async (userId) => {
             customer.zipCode
         ),
         uploadDocuments: hasRequiredDocs,
-        complianceForms: false,
+        complianceForms,
         activation: false,
     };
 
@@ -1134,4 +1144,84 @@ export const deleteAgencyDocument = async (userId, documentId) => {
     await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
 
     return { message: "Document deleted successfully" };
+};
+
+/**
+ * Return the rendered preview text for one agency compliance document.
+ * Content is rendered server-side from the template — client never provides text.
+ */
+export const getAgencyComplianceContent = async (userId, documentType) => {
+    const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown agency compliance document type: ${documentType}`);
+    }
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const content = documentType === COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT
+        ? renderAgencyServiceAgreement(customer)
+        : renderAgencyHipaaBaa(customer);
+
+    return { documentType, content };
+};
+
+/**
+ * Record an agency's signature on one compliance document (Service Agreement or HIPAA BAA).
+ * Re-renders the document server-side for the audit-trail snapshot.
+ * Advances onboardingStep to 4 once W-9 is uploaded and both docs are signed.
+ */
+export const signAgencyComplianceDocument = async (userId, { documentType, signature }) => {
+    const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown agency compliance document type: ${documentType}`);
+    }
+
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { licenseDocuments: { where: { isDeleted: false } } },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const signedText = renderSignedAgencyDocument(documentType, customer, signature);
+
+    // Cannot use prisma upsert — the unique constraint is a raw partial index not
+    // reflected in schema.prisma, so Prisma has no named constraint to target.
+    const existing = await prisma.complianceSignature.findFirst({
+        where: { agencyId: customer.id, documentType },
+    });
+
+    if (existing) {
+        await prisma.complianceSignature.update({
+            where: { id: existing.id },
+            data: { signature, signedText, signedAt: new Date() },
+        });
+    } else {
+        await prisma.complianceSignature.create({
+            data: { agencyId: customer.id, documentType, signature, signedText },
+        });
+    }
+
+    const allSigs = await prisma.complianceSignature.findMany({
+        where: { agencyId: customer.id },
+    });
+    const signedTypes = new Set(allSigs.map((s) => s.documentType));
+    const hasW9 = customer.licenseDocuments.some((d) => d.documentType === "w9");
+
+    const complianceComplete = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: complianceComplete ? { onboardingStep: Math.max(customer.onboardingStep, 4) } : {},
+        });
+    });
+
+    return {
+        message: "Document signed successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
 };

@@ -272,6 +272,11 @@ export const agencyUploadDocumentsSchema = z.object({
     { message: "Professional Liability Insurance is required", path: ["documents"] }
 );
 
+export const agencySignComplianceSchema = z.object({
+    documentType: z.enum(["service_agreement", "hipaa_baa"]),
+    signature: z.string().min(2, "Signature is required").max(255, "Signature too long"),
+});
+
 export const agencyBusinessProfileSchema = z.object({
     dbaName: z.string().max(255).optional().nullable(),
     ein: z
