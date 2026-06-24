@@ -18,7 +18,11 @@ import {
     getAgencyOnboardingStatus,
     getAgencyOnboardingData,
     saveAgencyBusinessProfile,
+    saveAgencyUploadDocuments,
+    deleteAgencyDocument,
 } from "../services/onboarding.service.js";
+import { uploadAgencyDocument } from "../services/upload.service.js";
+import { BadRequestError } from "../utils/errors.js";
 
 /**
  * Get client IP address from the request
@@ -447,6 +451,59 @@ export const saveAgencyBusinessProfileController = async (req, res, next) => {
             zipCode,
         });
         res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/agency/onboarding/upload-document
+ * Upload a single agency onboarding document to the agency-documents bucket.
+ */
+export const uploadAgencyDocumentController = async (req, res, next) => {
+    try {
+        if (!req.file) throw new BadRequestError("No file uploaded");
+
+        const result = await uploadAgencyDocument({
+            userId: req.user.id,
+            file: req.file,
+            documentType: req.body.documentType,
+            uploadIp: getClientIp(req),
+        });
+
+        res.status(201).json({ success: true, message: "Document uploaded successfully", data: result });
+    } catch (error) {
+        if (req.file) req.file.buffer = null;
+        next(error);
+    }
+};
+
+/**
+ * POST /api/agency/onboarding/save-upload-documents
+ * Reconcile agency upload documents and advance onboardingStep to 3.
+ */
+export const saveAgencyUploadDocumentsController = async (req, res, next) => {
+    try {
+        const { documents } = req.body;
+        const result = await saveAgencyUploadDocuments(req.user.id, { documents });
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: { customer: result.customer, documents: result.documents },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * DELETE /api/agency/onboarding/document/:documentId
+ * Soft-delete an agency onboarding document.
+ */
+export const deleteAgencyDocumentController = async (req, res, next) => {
+    try {
+        const result = await deleteAgencyDocument(req.user.id, req.params.documentId);
+        res.status(200).json({ success: true, message: result.message });
     } catch (error) {
         next(error);
     }

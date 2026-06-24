@@ -1,7 +1,8 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES, AGENCY_DOCUMENTS_BUCKET } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
+import { logger } from "../config/logger.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
@@ -862,7 +863,7 @@ export const getDocumentSignedUrl = async (userId, documentId) => {
         .createSignedUrl(document.documentUrl, 60);
 
     if (error) {
-        console.error("Supabase signed URL error:", error);
+        logger.error("Supabase signed URL error", { error: error.message });
         throw new BadRequestError("Failed to generate document URL");
     }
 
@@ -947,9 +948,16 @@ export const deleteDocument = async (userId, documentId) => {
 export const getAgencyOnboardingStatus = async (userId) => {
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
+        include: {
+            licenseDocuments: { where: { isDeleted: false } },
+        },
     });
 
     if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const REQUIRED_AGENCY_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const uploadedTypes = new Set(customer.licenseDocuments.map((d) => d.documentType));
+    const hasRequiredDocs = REQUIRED_AGENCY_DOC_TYPES.every((t) => uploadedTypes.has(t));
 
     const steps = {
         businessProfile: !!(
@@ -959,6 +967,9 @@ export const getAgencyOnboardingStatus = async (userId) => {
             customer.state &&
             customer.zipCode
         ),
+        uploadDocuments: hasRequiredDocs,
+        complianceForms: false,
+        activation: false,
     };
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
@@ -1038,4 +1049,89 @@ export const saveAgencyBusinessProfile = async (userId, data) => {
             onboardingStep: updated.onboardingStep,
         },
     };
+};
+
+/**
+ * Reconcile and save agency upload documents (Step 3).
+ * Soft-deletes any active agency docs not in the submitted list, then
+ * advances onboardingStep to 3 once all required types are present.
+ */
+export const saveAgencyUploadDocuments = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const REQUIRED_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const submittedTypes = data.documents.map((d) => d.documentType);
+    const missingRequired = REQUIRED_TYPES.filter((t) => !submittedTypes.includes(t));
+
+    if (missingRequired.length > 0) {
+        throw new BadRequestError(
+            `Missing required documents: ${missingRequired.join(", ")}`
+        );
+    }
+
+    const submittedPaths = new Set(data.documents.map((d) => d.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            agencyId: customer.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.agency },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: { onboardingStep: Math.max(customer.onboardingStep, 3) },
+        });
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            agencyId: customer.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.agency },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Upload documents saved successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+        documents: activeDocuments.map((d) => ({ id: d.id, fileName: d.fileName, documentType: d.documentType })),
+    };
+};
+
+/**
+ * Soft-delete a single agency LicenseDocument and remove its storage object.
+ * Ownership is verified by checking agencyId matches the caller's customerProfile.
+ */
+export const deleteAgencyDocument = async (userId, documentId) => {
+    const document = await prisma.licenseDocument.findUnique({
+        where: { id: documentId },
+    });
+
+    if (!document) throw new NotFoundError("Document not found");
+    if (document.isDeleted) throw new BadRequestError("Document already deleted");
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+
+    if (!customer || document.agencyId !== customer.id) {
+        throw new BadRequestError("Not authorized to delete this document");
+    }
+
+    await prisma.licenseDocument.update({
+        where: { id: documentId },
+        data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+
+    return { message: "Document deleted successfully" };
 };

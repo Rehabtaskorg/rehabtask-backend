@@ -251,6 +251,27 @@ export const backgroundCheckSchema = z.object({
         .max(255, "Signature too long"),
 });
 
+const agencyDocumentSchema = z.object({
+    path: z.string().min(1, "Document path is required"),
+    fileName: z.string().min(1),
+    fileSize: z.number().positive(),
+    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"]),
+    mimeType: z.string().optional(),
+});
+
+export const agencyUploadDocumentsSchema = z.object({
+    documents: z.array(agencyDocumentSchema).min(1, "At least one document is required"),
+}).refine(
+    (data) => data.documents.some((d) => d.documentType === "home_health_license"),
+    { message: "State Home Health License is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === "general_liability"),
+    { message: "General Liability Insurance is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === "professional_liability"),
+    { message: "Professional Liability Insurance is required", path: ["documents"] }
+);
+
 export const agencyBusinessProfileSchema = z.object({
     dbaName: z.string().max(255).optional().nullable(),
     ein: z

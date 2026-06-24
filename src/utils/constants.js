@@ -133,6 +133,7 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
 
 
 export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
+export const AGENCY_DOCUMENTS_BUCKET = "agency-documents";
 
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({
@@ -140,6 +141,7 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
     identity: ["government_id_front", "government_id_back"],
     compliance: ["w9"],
+    agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
 });
 
 /** documentType values accepted by ComplianceSignature — e-signed onboarding documents, not file uploads. */
