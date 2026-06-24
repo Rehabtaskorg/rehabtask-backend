@@ -952,7 +952,7 @@ export const getAgencyOnboardingStatus = async (userId) => {
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
         include: {
-            licenseDocuments: { where: { isDeleted: false } },
+            agencyLicenseDocuments: { where: { isDeleted: false } },
             agencyComplianceSignatures: true,
         },
     });
@@ -960,11 +960,11 @@ export const getAgencyOnboardingStatus = async (userId) => {
     if (!customer) throw new NotFoundError("Customer profile not found");
 
     const REQUIRED_AGENCY_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
-    const uploadedTypes = new Set(customer.licenseDocuments.map((d) => d.documentType));
+    const uploadedTypes = new Set(customer.agencyLicenseDocuments.map((d) => d.documentType));
     const hasRequiredDocs = REQUIRED_AGENCY_DOC_TYPES.every((t) => uploadedTypes.has(t));
 
     const signedTypes = new Set(customer.agencyComplianceSignatures.map((s) => s.documentType));
-    const hasW9 = customer.licenseDocuments.some((d) => d.documentType === "w9");
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
     const complianceForms = hasW9
         && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
         && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
@@ -1179,7 +1179,7 @@ export const signAgencyComplianceDocument = async (userId, { documentType, signa
 
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
-        include: { licenseDocuments: { where: { isDeleted: false } } },
+        include: { agencyLicenseDocuments: { where: { isDeleted: false } } },
     });
 
     if (!customer) throw new NotFoundError("Customer profile not found");
@@ -1207,7 +1207,7 @@ export const signAgencyComplianceDocument = async (userId, { documentType, signa
         where: { agencyId: customer.id },
     });
     const signedTypes = new Set(allSigs.map((s) => s.documentType));
-    const hasW9 = customer.licenseDocuments.some((d) => d.documentType === "w9");
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
 
     const complianceComplete = hasW9
         && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
