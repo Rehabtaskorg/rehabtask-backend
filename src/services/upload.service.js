@@ -128,7 +128,7 @@ export const uploadDocument = async ({ userId, file, category = "license", docum
  * Mirrors uploadDocument but scoped to CustomerProfile (agencyId FK).
  */
 export const uploadAgencyDocument = async ({ userId, file, documentType, uploadIp = null }) => {
-    const allowedTypes = DOCUMENT_CATEGORIES.agency;
+    const allowedTypes = [...DOCUMENT_CATEGORIES.agency, ...DOCUMENT_CATEGORIES.compliance];
     if (!allowedTypes.includes(documentType)) {
         throw new BadRequestError(`Invalid documentType "${documentType}" for agency uploads`);
     }
