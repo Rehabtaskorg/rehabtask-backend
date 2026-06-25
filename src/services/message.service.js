@@ -1,4 +1,4 @@
-import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
+import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js"
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -505,7 +505,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
             where: { id: senderId },
             select: {
                 id: true, role: true,
-                customerProfile: { select: { onboardingComplete: true } },
+                customerProfile: { select: { customerType: true, onboardingComplete: true } },
             },
         }),
         prisma.user.findUnique({
@@ -522,7 +522,8 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
 
     // Access control
     if (sender.role === USER_ROLES.CUSTOMER) {
-        if (!sender.customerProfile?.onboardingComplete) {
+        const isAgency = sender.customerProfile?.customerType === CUSTOMER_TYPES.AGENCY;
+        if (isAgency && !sender.customerProfile?.onboardingComplete) {
             throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
         }
         if (recipient.role !== "therapist") {
