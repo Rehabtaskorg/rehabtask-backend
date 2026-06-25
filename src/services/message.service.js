@@ -503,7 +503,10 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
     const [sender, recipient] = await Promise.all([
         prisma.user.findUnique({
             where: { id: senderId },
-            select: { id: true, role: true },
+            select: {
+                id: true, role: true,
+                customerProfile: { select: { onboardingComplete: true } },
+            },
         }),
         prisma.user.findUnique({
             where: { id: recipientId },
@@ -519,7 +522,9 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
 
     // Access control
     if (sender.role === USER_ROLES.CUSTOMER) {
-        // Customer can message any approved therapist
+        if (!sender.customerProfile?.onboardingComplete) {
+            throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
+        }
         if (recipient.role !== "therapist") {
             throw new BadRequestError("Customers can only direct message therapists");
         }
