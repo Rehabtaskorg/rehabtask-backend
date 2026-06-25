@@ -58,11 +58,16 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
         throw new BadRequestError("Message content cannot be empty", "EMPTY_MESSAGE");
     }
 
-    // Verify caller is a participant in this conversation
-    const conversation = await prisma.directConversation.findUnique({
-        where: { id: conversationId },
-        select: { id: true, user1Id: true, user2Id: true },
-    });
+    const [conversation, sender] = await Promise.all([
+        prisma.directConversation.findUnique({
+            where: { id: conversationId },
+            select: { id: true, user1Id: true, user2Id: true },
+        }),
+        prisma.user.findUnique({
+            where: { id: senderId },
+            select: { role: true, customerProfile: { select: { onboardingComplete: true } } },
+        }),
+    ]);
 
     if (!conversation) {
         throw new BadRequestError("Conversation not found", "CONVERSATION_NOT_FOUND");
@@ -71,6 +76,10 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
     const isParticipant = conversation.user1Id === senderId || conversation.user2Id === senderId;
     if (!isParticipant) {
         throw new AuthorizationError("You are not a participant in this conversation");
+    }
+
+    if (sender?.role === USER_ROLES.CUSTOMER && !sender.customerProfile?.onboardingComplete) {
+        throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
     }
 
     const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
