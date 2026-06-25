@@ -522,8 +522,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
 
     // Access control
     if (sender.role === USER_ROLES.CUSTOMER) {
-        const isAgency = sender.customerProfile?.customerType === CUSTOMER_TYPES.AGENCY;
-        if (isAgency && !sender.customerProfile?.onboardingComplete) {
+        if (!sender.customerProfile?.onboardingComplete) {
             throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
         }
         if (recipient.role !== "therapist") {

@@ -68,7 +68,7 @@ model CustomerProfile {
   // Onboarding tracking (shared by agency and individual)
   onboardingStep           Int              @default(1) @map("onboarding_step")
   onboardingComplete       Boolean          @default(false) @map("onboarding_complete")
-  approvalStatus           ApprovalStatus   @default(review) @map("approval_status")
+  approvalStatus           ApprovalStatus   @default(pending) @map("approval_status")
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
