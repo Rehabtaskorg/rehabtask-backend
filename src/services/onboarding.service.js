@@ -979,7 +979,6 @@ export const getAgencyOnboardingStatus = async (userId) => {
         ),
         uploadDocuments: hasRequiredDocs,
         complianceForms,
-        activation: false,
     };
 
     const completedSteps = Object.values(steps).filter(Boolean).length;
