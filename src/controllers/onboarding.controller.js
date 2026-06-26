@@ -23,8 +23,16 @@ import {
     getAgencyComplianceContent,
     signAgencyComplianceDocument,
     completeAgencyOnboarding,
+    getIndividualOnboardingStatus,
+    getIndividualOnboardingData,
+    saveIndividualPersonalInfo,
+    saveIndividualMedicalInfo,
+    deleteIndividualDocument,
+    getIndividualConsentContent,
+    signIndividualConsentDocument,
+    completeIndividualOnboarding,
 } from "../services/onboarding.service.js";
-import { uploadAgencyDocument } from "../services/upload.service.js";
+import { uploadAgencyDocument, uploadIndividualDocument } from "../services/upload.service.js";
 import { BadRequestError } from "../utils/errors.js";
 
 /**
@@ -546,6 +554,112 @@ export const signAgencyComplianceController = async (req, res, next) => {
 export const completeAgencyOnboardingController = async (req, res, next) => {
     try {
         const result = await completeAgencyOnboarding(req.user.id);
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getIndividualOnboardingStatusController = async (req, res, next) => {
+    try {
+        const result = await getIndividualOnboardingStatus(req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getIndividualOnboardingDataController = async (req, res, next) => {
+    try {
+        const result = await getIndividualOnboardingData(req.user.id);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const saveIndividualPersonalInfoController = async (req, res, next) => {
+    try {
+        const { dateOfBirth, addressLine1, addressLine2, city, state, zipCode } = req.body;
+        const result = await saveIndividualPersonalInfo(req.user.id, {
+            dateOfBirth,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            zipCode,
+        });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const saveIndividualMedicalInfoController = async (req, res, next) => {
+    try {
+        const { primaryDiagnosis, referringProviderName } = req.body;
+        const result = await saveIndividualMedicalInfo(req.user.id, { primaryDiagnosis, referringProviderName });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const uploadIndividualDocumentController = async (req, res, next) => {
+    try {
+        if (!req.file) throw new BadRequestError("No file uploaded");
+
+        const result = await uploadIndividualDocument({
+            userId: req.user.id,
+            file: req.file,
+            documentType: req.body.documentType,
+            uploadIp: getClientIp(req),
+        });
+
+        res.status(201).json({ success: true, message: "Document uploaded successfully", data: result });
+    } catch (error) {
+        if (req.file) req.file.buffer = null;
+        next(error);
+    }
+};
+
+export const deleteIndividualDocumentController = async (req, res, next) => {
+    try {
+        const result = await deleteIndividualDocument(req.user.id, req.params.documentId);
+        res.status(200).json({ success: true, message: result.message });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getIndividualConsentContentController = async (req, res, next) => {
+    try {
+        const result = await getIndividualConsentContent(req.user.id, req.params.documentType);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const signIndividualConsentController = async (req, res, next) => {
+    try {
+        const { documentType, signature, representativeName, representativeRelationship, representativeAuthority } = req.body;
+        const result = await signIndividualConsentDocument(req.user.id, {
+            documentType,
+            signature,
+            representativeName,
+            representativeRelationship,
+            representativeAuthority,
+        });
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const completeIndividualOnboardingController = async (req, res, next) => {
+    try {
+        const result = await completeIndividualOnboarding(req.user.id);
         res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
     } catch (error) {
         next(error);

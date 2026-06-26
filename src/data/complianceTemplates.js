@@ -223,6 +223,127 @@ export const renderSignedDocument = (documentType, therapist, signature) => {
         .replaceAll("{{CLINICIAN_SIGNATURE}}", signature);
 };
 
+// ─── Individual Customer Consent Templates ────────────────────────────────────
+
+const INDIVIDUAL_HIPAA_CONSENT_RAW = `HIPAA Authorization for Use and Disclosure of Protected Health Information
+
+This Authorization is entered into as of {{CONSENT_DATE}}, by {{PATIENT_NAME}} ("Patient").
+
+AUTHORIZATION
+
+I, {{PATIENT_NAME}}, hereby authorize RehabTask and the therapy professionals engaged through the RehabTask platform to use and disclose my Protected Health Information ("PHI") as described in this Authorization, in accordance with the Health Insurance Portability and Accountability Act of 1996 ("HIPAA") and its implementing regulations.
+
+INFORMATION TO BE USED OR DISCLOSED
+
+1. The PHI subject to this Authorization includes, but is not limited to: medical history, diagnosis, treatment records, progress notes, therapy orders, referral information, insurance and billing information, and any other health information generated in connection with therapy services received through the RehabTask platform.
+
+PURPOSE OF USE OR DISCLOSURE
+
+2. My PHI may be used and disclosed for the following purposes:
+   a. Treatment — To provide, coordinate, and manage my rehabilitation and therapy services, including communications among my care team.
+   b. Payment — To process and obtain payment for therapy services, including submission of claims to insurance carriers or payers.
+   c. Healthcare Operations — To support quality assessment, improvement activities, care coordination, and administrative functions necessary to operate the RehabTask platform.
+   d. Platform Communications — To send me appointment confirmations, scheduling updates, care summaries, and other service-related communications.
+
+MY RIGHTS
+
+3. I understand that I have the right to revoke this Authorization at any time by submitting a written request to RehabTask. Revocation will not affect any uses or disclosures already made in reliance on this Authorization prior to the revocation.
+
+4. I understand that RehabTask may not condition the provision of services on whether I sign this Authorization.
+
+5. I understand that information disclosed pursuant to this Authorization may be subject to re-disclosure by the recipient and may no longer be protected by federal privacy law.
+
+6. I understand that I am entitled to receive a copy of this Authorization after signing.
+
+DURATION
+
+7. This Authorization shall remain in effect for the duration of my engagement with the RehabTask platform, or until I revoke it in writing, whichever comes first.
+
+GOVERNING LAW
+
+8. This Authorization is governed by HIPAA, applicable federal regulations, and the laws of the State of Illinois.
+
+Patient Name: {{PATIENT_NAME}}
+Signature: {{PATIENT_SIGNATURE}}
+Date: {{CONSENT_DATE}}`;
+
+const INDIVIDUAL_TREATMENT_CONSENT_RAW = `Informed Consent to Receive Therapy Services
+
+This Informed Consent is entered into as of {{CONSENT_DATE}}, by {{PATIENT_NAME}} ("Patient").
+
+PURPOSE
+
+I, {{PATIENT_NAME}}, voluntarily consent to receive physical therapy, occupational therapy, speech-language pathology, or other rehabilitation services ("Services") through the RehabTask platform, provided by licensed therapy professionals ("Therapist").
+
+NATURE OF SERVICES
+
+1. I understand that therapy services may include, but are not limited to: physical examination and evaluation, therapeutic exercises, manual therapy, neuromuscular re-education, functional training, modalities, patient education, home exercise programming, and other evidence-based rehabilitation interventions as determined appropriate by my Therapist.
+
+RISKS AND BENEFITS
+
+2. I acknowledge that all medical and therapeutic interventions carry potential risks. Common risks associated with therapy services may include temporary soreness, fatigue, bruising, or, in rare cases, aggravation of a pre-existing condition or injury. My Therapist will explain specific risks relevant to my treatment plan.
+
+3. I understand the potential benefits of therapy services, which may include improved function, reduced pain, increased strength and mobility, and enhanced quality of life. However, no guarantee of specific outcomes has been made to me.
+
+VOLUNTARY PARTICIPATION AND RIGHT TO WITHDRAW
+
+4. I understand that my participation in therapy services is entirely voluntary. I have the right to refuse or discontinue any treatment at any time without affecting my right to receive other services available through the RehabTask platform.
+
+5. I understand that if I choose to stop treatment, I should notify my Therapist so that appropriate discharge planning can occur.
+
+THERAPIST QUALIFICATIONS
+
+6. I understand that all Therapists on the RehabTask platform are independently licensed professionals. RehabTask facilitates the connection between patients and Therapists but does not itself provide clinical services.
+
+COMMUNICATION AND RECORDS
+
+7. I consent to the creation and maintenance of clinical records documenting my care. These records will be handled in accordance with the RehabTask Privacy Notice and HIPAA Authorization I have separately signed.
+
+8. I consent to the use of secure digital communications through the RehabTask platform for appointment scheduling, care coordination, and receipt of my treatment records and summaries.
+
+EMERGENCY SITUATIONS
+
+9. In the event of a medical emergency during a therapy session, I authorize my Therapist to take appropriate emergency action, including contacting emergency medical services.
+
+ACKNOWLEDGMENT
+
+By signing below, I confirm that I have read and understood this Informed Consent, that my questions have been answered to my satisfaction, and that I voluntarily agree to participate in therapy services through the RehabTask platform.
+
+Patient Name: {{PATIENT_NAME}}
+Signature: {{PATIENT_SIGNATURE}}
+Date: {{CONSENT_DATE}}`;
+
+const formatConsentDate = () =>
+    new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+const BLANK_CONSENT_SIGNATURE_LINE = "_____________________";
+
+export const renderIndividualHipaaConsent = (customer) =>
+    INDIVIDUAL_HIPAA_CONSENT_RAW
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", BLANK_CONSENT_SIGNATURE_LINE);
+
+export const renderIndividualTreatmentConsent = (customer) =>
+    INDIVIDUAL_TREATMENT_CONSENT_RAW
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", BLANK_CONSENT_SIGNATURE_LINE);
+
+export const renderSignedIndividualConsentDocument = (documentType, customer, signature) => {
+    const raw = {
+        hipaa_consent: INDIVIDUAL_HIPAA_CONSENT_RAW,
+        treatment_consent: INDIVIDUAL_TREATMENT_CONSENT_RAW,
+    }[documentType];
+
+    if (!raw) throw new Error(`Unknown individual consent document type: ${documentType}`);
+
+    return raw
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", signature);
+};
+
 // ─── Agency Compliance Templates ─────────────────────────────────────────────
 
 const AGENCY_SERVICE_AGREEMENT_RAW = `Service Agreement
