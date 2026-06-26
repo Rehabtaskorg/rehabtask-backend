@@ -250,3 +250,98 @@ export const backgroundCheckSchema = z.object({
         .min(2, "Signature is required")
         .max(255, "Signature too long"),
 });
+
+const agencyDocumentSchema = z.object({
+    path: z.string().min(1, "Document path is required"),
+    fileName: z.string().min(1),
+    fileSize: z.number().positive(),
+    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"]),
+    mimeType: z.string().optional(),
+});
+
+export const agencyUploadDocumentsSchema = z.object({
+    documents: z.array(agencyDocumentSchema).min(1, "At least one document is required"),
+}).refine(
+    (data) => data.documents.some((d) => d.documentType === "home_health_license"),
+    { message: "State Home Health License is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === "general_liability"),
+    { message: "General Liability Insurance is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === "professional_liability"),
+    { message: "Professional Liability Insurance is required", path: ["documents"] }
+);
+
+export const agencySignComplianceSchema = z.object({
+    documentType: z.enum(["service_agreement", "hipaa_baa"]),
+    signature: z.string().min(2, "Signature is required").max(255, "Signature too long"),
+});
+
+export const agencyBusinessProfileSchema = z.object({
+    dbaName: z.string().max(255).optional().nullable(),
+    ein: z
+        .string()
+        .regex(/^\d{2}-\d{7}$/, "EIN must be in format XX-XXXXXXX")
+        .optional()
+        .nullable(),
+    billingEmail: z
+        .string()
+        .email("Billing email must be a valid email address"),
+    addressLine1: z.string().min(1, "Business address is required").max(255),
+    addressLine2: z.string().max(255).optional().nullable(),
+    city: z.string().min(1, "City is required").max(100),
+    state: z
+        .string()
+        .length(2, "State must be a 2-letter code")
+        .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+            message: "Please provide a valid US state",
+        })
+        .transform((val) => val.toUpperCase()),
+    zipCode: z.string().regex(/^\d{5}$/, "ZIP code must be exactly 5 digits"),
+});
+
+export const individualPersonalInfoSchema = z.object({
+    dateOfBirth: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in YYYY-MM-DD format")
+        .refine((val) => {
+            const date = new Date(val);
+            const now = new Date();
+            const age = now.getFullYear() - date.getFullYear();
+            return !isNaN(date.getTime()) && age >= 0 && age <= 120;
+        }, "Please provide a valid date of birth"),
+    addressLine1: z.string().min(1, "Address is required").max(255),
+    addressLine2: z.string().max(255).optional().nullable(),
+    city: z.string().min(1, "City is required").max(100),
+    state: z
+        .string()
+        .length(2, "State must be a 2-letter code")
+        .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+            message: "Please provide a valid US state",
+        })
+        .transform((val) => val.toUpperCase()),
+    zipCode: z.string().regex(/^\d{5}$/, "ZIP code must be exactly 5 digits"),
+});
+
+export const individualMedicalInfoSchema = z.object({
+    primaryDiagnosis: z.string().min(1, "Primary diagnosis is required").max(255),
+    referringProviderName: z.string().max(255).optional().nullable(),
+});
+
+export const individualSignConsentSchema = z.object({
+    documentType: z.enum(["hipaa_consent", "treatment_consent"]),
+    signature: z.string().min(2, "Signature is required").max(255, "Signature too long"),
+    representativeName: z.string().max(255).optional().nullable(),
+    representativeRelationship: z.string().max(100).optional().nullable(),
+    representativeAuthority: z.string().max(100).optional().nullable(),
+}).refine(
+    (data) => {
+        const hasAny = !!(data.representativeName || data.representativeRelationship || data.representativeAuthority);
+        const hasAll = !!(data.representativeName && data.representativeRelationship && data.representativeAuthority);
+        return !hasAny || hasAll;
+    },
+    {
+        message: "All representative fields (name, relationship, authority) are required when signing on behalf of another person.",
+        path: ["representativeName"],
+    }
+);

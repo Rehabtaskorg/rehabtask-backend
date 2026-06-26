@@ -1,7 +1,8 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET, INDIVIDUAL_CONSENT_DOCUMENT_TYPES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
+import { logger } from "../config/logger.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
@@ -10,6 +11,12 @@ import {
     renderHipaaAcknowledgment,
     renderBackgroundCheckAuthorization,
     renderSignedDocument,
+    renderAgencyServiceAgreement,
+    renderAgencyHipaaBaa,
+    renderSignedAgencyDocument,
+    renderIndividualHipaaConsent,
+    renderIndividualTreatmentConsent,
+    renderSignedIndividualConsentDocument,
 } from "../data/complianceTemplates.js";
 
 const computeOnboardingSteps = (therapist) => {
@@ -801,8 +808,6 @@ export const completeOnboarding = async (userId) => {
     }
 
 
-    // Only move to "review" if the therapist has not already been approved or rejected
-    // An already-approved therapist connecting Stripe post-approval must NOT be sent back to review
     const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
     const wasAlreadyComplete = therapist.onboardingComplete;
 
@@ -864,7 +869,7 @@ export const getDocumentSignedUrl = async (userId, documentId) => {
         .createSignedUrl(document.documentUrl, 60);
 
     if (error) {
-        console.error("Supabase signed URL error:", error);
+        logger.error("Supabase signed URL error", { error: error.message });
         throw new BadRequestError("Failed to generate document URL");
     }
 
@@ -910,13 +915,7 @@ export const getTherapistDocuments = async (userId) => {
     return { documents };
 };
 
-/**
- * Delete document — soft-deletes the DB row (preserves the audit trail) and
- * immediately removes the underlying Supabase Storage file. Removal happens
- * during onboarding, before the document is ever part of a submitted
- * application, so there's no retention reason to keep the storage object
- * around — leaving it behind only orphans it and leaks storage cost.
- */
+
 export const deleteDocument = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
         where: { id: documentId },
@@ -948,5 +947,679 @@ export const deleteDocument = async (userId, documentId) => {
 
     return {
         message: "Document deleted successfully",
+    };
+};
+
+
+export const getAgencyOnboardingStatus = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            agencyLicenseDocuments: { where: { isDeleted: false } },
+            agencyComplianceSignatures: true,
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const REQUIRED_AGENCY_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const uploadedTypes = new Set(customer.agencyLicenseDocuments.map((d) => d.documentType));
+    const hasRequiredDocs = REQUIRED_AGENCY_DOC_TYPES.every((t) => uploadedTypes.has(t));
+
+    const signedTypes = new Set(customer.agencyComplianceSignatures.map((s) => s.documentType));
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
+    const complianceForms = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
+
+    const steps = {
+        businessProfile: !!(
+            customer.billingEmail &&
+            customer.addressLine1 &&
+            customer.city &&
+            customer.state &&
+            customer.zipCode
+        ),
+        uploadDocuments: hasRequiredDocs,
+        complianceForms,
+    };
+
+    const completedSteps = Object.values(steps).filter(Boolean).length;
+    const totalSteps = Object.keys(steps).length;
+    const progress = Math.round((completedSteps / totalSteps) * 100);
+
+    return {
+        customer: {
+            id: customer.id,
+            onboardingStep: customer.onboardingStep,
+            onboardingComplete: customer.onboardingComplete,
+            approvalStatus: customer.approvalStatus,
+        },
+        steps,
+        progress,
+        completedSteps,
+        totalSteps,
+    };
+};
+
+export const getAgencyOnboardingData = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { user: { select: { email: true } } },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    return {
+        registration: {
+            agencyName: customer.agencyName,
+            fullName: customer.fullName,
+            phone: customer.phone,
+            email: customer.user.email,
+        },
+        businessProfile: {
+            dbaName: customer.dbaName,
+            ein: customer.ein,
+            billingEmail: customer.billingEmail,
+            addressLine1: customer.addressLine1,
+            addressLine2: customer.addressLine2,
+            city: customer.city,
+            state: customer.state,
+            zipCode: customer.zipCode,
+        },
+    };
+};
+
+export const saveAgencyBusinessProfile = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                dbaName: data.dbaName ?? null,
+                ein: data.ein ?? null,
+                billingEmail: data.billingEmail,
+                addressLine1: data.addressLine1,
+                addressLine2: data.addressLine2 ?? null,
+                city: data.city,
+                state: data.state,
+                zipCode: data.zipCode,
+                onboardingStep: Math.max(customer.onboardingStep, 2),
+            },
+        });
+    });
+
+    return {
+        message: "Business profile saved successfully",
+        customer: {
+            id: updated.id,
+            onboardingStep: updated.onboardingStep,
+        },
+    };
+};
+
+/**
+ * Reconcile and save agency upload documents (Step 3).
+ * Soft-deletes any active agency docs not in the submitted list, then
+ * advances onboardingStep to 3 once all required types are present.
+ */
+export const saveAgencyUploadDocuments = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const REQUIRED_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const submittedTypes = data.documents.map((d) => d.documentType);
+    const missingRequired = REQUIRED_TYPES.filter((t) => !submittedTypes.includes(t));
+
+    if (missingRequired.length > 0) {
+        throw new BadRequestError(
+            `Missing required documents: ${missingRequired.join(", ")}`
+        );
+    }
+
+    const submittedPaths = new Set(data.documents.map((d) => d.path));
+
+    await prisma.licenseDocument.updateMany({
+        where: {
+            agencyId: customer.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.agency },
+            documentUrl: { notIn: [...submittedPaths] },
+        },
+        data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: { onboardingStep: Math.max(customer.onboardingStep, 3) },
+        });
+    });
+
+    const activeDocuments = await prisma.licenseDocument.findMany({
+        where: {
+            agencyId: customer.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.agency },
+        },
+        orderBy: { uploadedAt: "desc" },
+    });
+
+    return {
+        message: "Upload documents saved successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+        documents: activeDocuments.map((d) => ({ id: d.id, fileName: d.fileName, documentType: d.documentType })),
+    };
+};
+
+/**
+ * Soft-delete a single agency LicenseDocument and remove its storage object.
+ * Ownership is verified by checking agencyId matches the caller's customerProfile.
+ */
+export const deleteAgencyDocument = async (userId, documentId) => {
+    const document = await prisma.licenseDocument.findUnique({
+        where: { id: documentId },
+    });
+
+    if (!document) throw new NotFoundError("Document not found");
+    if (document.isDeleted) throw new BadRequestError("Document already deleted");
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+
+    if (!customer || document.agencyId !== customer.id) {
+        throw new BadRequestError("Not authorized to delete this document");
+    }
+
+    await prisma.licenseDocument.update({
+        where: { id: documentId },
+        data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+
+    return { message: "Document deleted successfully" };
+};
+
+/**
+ * Return the rendered preview text for one agency compliance document.
+ * Content is rendered server-side from the template — client never provides text.
+ */
+export const getAgencyComplianceContent = async (userId, documentType) => {
+    const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown agency compliance document type: ${documentType}`);
+    }
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const content = documentType === COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT
+        ? renderAgencyServiceAgreement(customer)
+        : renderAgencyHipaaBaa(customer);
+
+    return { documentType, content };
+};
+
+/**
+ * Record an agency's signature on one compliance document (Service Agreement or HIPAA BAA).
+ * Re-renders the document server-side for the audit-trail snapshot.
+ * Advances onboardingStep to 4 once W-9 is uploaded and both docs are signed.
+ */
+export const signAgencyComplianceDocument = async (userId, { documentType, signature }) => {
+    const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown agency compliance document type: ${documentType}`);
+    }
+
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { agencyLicenseDocuments: { where: { isDeleted: false } } },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const signedText = renderSignedAgencyDocument(documentType, customer, signature);
+
+    // Cannot use prisma upsert — the unique constraint is a raw partial index not
+    // reflected in schema.prisma, so Prisma has no named constraint to target.
+    const existing = await prisma.complianceSignature.findFirst({
+        where: { agencyId: customer.id, documentType },
+    });
+
+    if (existing) {
+        await prisma.complianceSignature.update({
+            where: { id: existing.id },
+            data: { signature, signedText, signedAt: new Date() },
+        });
+    } else {
+        await prisma.complianceSignature.create({
+            data: { agencyId: customer.id, documentType, signature, signedText },
+        });
+    }
+
+    const allSigs = await prisma.complianceSignature.findMany({
+        where: { agencyId: customer.id },
+    });
+    const signedTypes = new Set(allSigs.map((s) => s.documentType));
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
+
+    const complianceComplete = hasW9
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT)
+        && signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: complianceComplete ? { onboardingStep: Math.max(customer.onboardingStep, 4) } : {},
+        });
+    });
+
+    return {
+        message: "Document signed successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
+};
+
+/**
+ * Complete agency onboarding (Step 5 — Activation).
+ * Validates all 4 prerequisite steps are done before committing.
+ * Sets approvalStatus = "approved" + onboardingComplete = true instantly —
+ * no admin review gate (confirmed product decision).
+ */
+export const completeAgencyOnboarding = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            agencyLicenseDocuments: { where: { isDeleted: false } },
+            agencyComplianceSignatures: true,
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    // Guard: all prerequisite steps must be complete before we seal the record.
+    const REQUIRED_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const uploadedTypes = new Set(customer.agencyLicenseDocuments.map((d) => d.documentType));
+    const hasRequiredDocs = REQUIRED_DOC_TYPES.every((t) => uploadedTypes.has(t));
+    const hasW9 = customer.agencyLicenseDocuments.some((d) => d.documentType === "w9");
+    const signedTypes = new Set(customer.agencyComplianceSignatures.map((s) => s.documentType));
+    const hasServiceAgreement = signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT);
+    const hasHipaaBaa = signedTypes.has(COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA);
+    const hasBusinessProfile = !!(
+        customer.billingEmail &&
+        customer.addressLine1 &&
+        customer.city &&
+        customer.state &&
+        customer.zipCode
+    );
+
+    const incompleteSteps = [
+        !hasBusinessProfile && "businessProfile",
+        !hasRequiredDocs && "uploadDocuments",
+        !hasW9 && "w9",
+        !hasServiceAgreement && "serviceAgreement",
+        !hasHipaaBaa && "hipaaBaa",
+    ].filter(Boolean);
+
+    if (incompleteSteps.length > 0) {
+        throw new BadRequestError(
+            `All onboarding steps must be completed before activation: ${incompleteSteps.join(", ")}`
+        );
+    }
+
+    if (customer.onboardingComplete) {
+        return {
+            message: "Agency onboarding already complete.",
+            customer: {
+                id: customer.id,
+                onboardingComplete: customer.onboardingComplete,
+                approvalStatus: customer.approvalStatus,
+            },
+        };
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                onboardingComplete: true,
+                onboardingStep: 5,
+                approvalStatus: APPROVAL_STATUS.APPROVED,
+            },
+        });
+    });
+
+    return {
+        message: "Agency onboarding completed. Your account is now active.",
+        customer: {
+            id: updated.id,
+            onboardingComplete: updated.onboardingComplete,
+            approvalStatus: updated.approvalStatus,
+        },
+    };
+};
+
+export const getIndividualOnboardingStatus = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            customerConsentSignatures: true,
+            customerLicenseDocuments: { where: { isDeleted: false } },
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const signedTypes = new Set(customer.customerConsentSignatures.map((s) => s.documentType));
+
+    const steps = {
+        personalInfo: !!(
+            customer.dateOfBirth &&
+            customer.addressLine1 &&
+            customer.city &&
+            customer.state &&
+            customer.zipCode
+        ),
+        medicalInfo: !!customer.primaryDiagnosis,
+        consentForms:
+            signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT) &&
+            signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.TREATMENT_CONSENT),
+    };
+
+    const completedSteps = Object.values(steps).filter(Boolean).length;
+    const totalSteps = Object.keys(steps).length;
+    const progress = Math.round((completedSteps / totalSteps) * 100);
+
+    return {
+        customer: {
+            id: customer.id,
+            onboardingStep: customer.onboardingStep,
+            onboardingComplete: customer.onboardingComplete,
+            approvalStatus: customer.approvalStatus,
+        },
+        steps,
+        progress,
+        completedSteps,
+        totalSteps,
+    };
+};
+
+export const getIndividualOnboardingData = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            user: { select: { email: true } },
+            customerLicenseDocuments: { where: { isDeleted: false } },
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const therapyOrderDoc = customer.customerLicenseDocuments.find(
+        (d) => d.documentType === "therapy_order"
+    );
+
+    return {
+        registration: {
+            fullName: customer.fullName,
+            phone: customer.phone,
+            email: customer.user.email,
+        },
+        personalInfo: {
+            dateOfBirth: customer.dateOfBirth ? customer.dateOfBirth.toISOString().split("T")[0] : null,
+            addressLine1: customer.addressLine1,
+            addressLine2: customer.addressLine2,
+            city: customer.city,
+            state: customer.state,
+            zipCode: customer.zipCode,
+        },
+        medicalInfo: {
+            primaryDiagnosis: customer.primaryDiagnosis,
+            referringProviderName: customer.referringProviderName,
+        },
+        therapyOrderDocument: therapyOrderDoc
+            ? {
+                id: therapyOrderDoc.id,
+                path: therapyOrderDoc.documentUrl,
+                fileName: therapyOrderDoc.fileName,
+                fileSize: therapyOrderDoc.fileSize,
+                mimeType: therapyOrderDoc.mimeType,
+                documentType: therapyOrderDoc.documentType,
+            }
+            : null,
+    };
+};
+
+export const saveIndividualPersonalInfo = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                dateOfBirth: new Date(data.dateOfBirth),
+                addressLine1: data.addressLine1,
+                addressLine2: data.addressLine2 ?? null,
+                city: data.city,
+                state: data.state,
+                zipCode: data.zipCode,
+                onboardingStep: Math.max(customer.onboardingStep, 2),
+            },
+        });
+    });
+
+    return {
+        message: "Personal information saved successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
+};
+
+export const saveIndividualMedicalInfo = async (userId, data) => {
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                primaryDiagnosis: data.primaryDiagnosis,
+                referringProviderName: data.referringProviderName ?? null,
+                onboardingStep: Math.max(customer.onboardingStep, 3),
+            },
+        });
+    });
+
+    return {
+        message: "Medical information saved successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
+};
+
+export const deleteIndividualDocument = async (userId, documentId) => {
+    const document = await prisma.licenseDocument.findUnique({ where: { id: documentId } });
+
+    if (!document) throw new NotFoundError("Document not found");
+    if (document.isDeleted) throw new BadRequestError("Document already deleted");
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+
+    if (!customer || document.customerId !== customer.id) {
+        throw new BadRequestError("Not authorized to delete this document");
+    }
+
+    await prisma.licenseDocument.update({
+        where: { id: documentId },
+        data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    await deleteFileFromStorage(document.bucket || INDIVIDUAL_DOCUMENTS_BUCKET, document.documentUrl);
+
+    return { message: "Document deleted successfully" };
+};
+
+export const getIndividualConsentContent = async (userId, documentType) => {
+    const ALLOWED = [
+        INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT,
+        INDIVIDUAL_CONSENT_DOCUMENT_TYPES.TREATMENT_CONSENT,
+    ];
+
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown individual consent document type: ${documentType}`);
+    }
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const content = documentType === INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT
+        ? renderIndividualHipaaConsent(customer)
+        : renderIndividualTreatmentConsent(customer);
+
+    return { documentType, content };
+};
+
+export const signIndividualConsentDocument = async (userId, { documentType, signature, representativeName, representativeRelationship, representativeAuthority }) => {
+    const ALLOWED = [
+        INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT,
+        INDIVIDUAL_CONSENT_DOCUMENT_TYPES.TREATMENT_CONSENT,
+    ];
+
+    if (!ALLOWED.includes(documentType)) {
+        throw new BadRequestError(`Unknown individual consent document type: ${documentType}`);
+    }
+
+    const isRepresentative = !!(representativeName || representativeRelationship || representativeAuthority);
+    if (isRepresentative) {
+        if (!representativeName || !representativeRelationship || !representativeAuthority) {
+            throw new BadRequestError("All representative fields (name, relationship, authority) are required when signing on behalf of another person.");
+        }
+    }
+
+    const customer = await prisma.customerProfile.findUnique({ where: { userId } });
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const signedText = renderSignedIndividualConsentDocument(documentType, customer, signature);
+
+    const existing = await prisma.customerConsentSignature.findFirst({
+        where: { customerId: customer.id, documentType },
+    });
+
+    if (existing) {
+        await prisma.customerConsentSignature.update({
+            where: { id: existing.id },
+            data: {
+                signature,
+                signedText,
+                signedAt: new Date(),
+                representativeName: representativeName ?? null,
+                representativeRelationship: representativeRelationship ?? null,
+                representativeAuthority: representativeAuthority ?? null,
+            },
+        });
+    } else {
+        await prisma.customerConsentSignature.create({
+            data: {
+                customerId: customer.id,
+                documentType,
+                signature,
+                signedText,
+                representativeName: representativeName ?? null,
+                representativeRelationship: representativeRelationship ?? null,
+                representativeAuthority: representativeAuthority ?? null,
+            },
+        });
+    }
+
+    const allSigs = await prisma.customerConsentSignature.findMany({
+        where: { customerId: customer.id },
+    });
+    const signedTypes = new Set(allSigs.map((s) => s.documentType));
+    const consentFormsComplete =
+        signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT) &&
+        signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.TREATMENT_CONSENT);
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: consentFormsComplete ? { onboardingStep: Math.max(customer.onboardingStep, 4) } : {},
+        });
+    });
+
+    return {
+        message: "Consent document signed successfully",
+        customer: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
+};
+
+export const completeIndividualOnboarding = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: { customerConsentSignatures: true },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const hasPersonalInfo = !!(
+        customer.dateOfBirth &&
+        customer.addressLine1 &&
+        customer.city &&
+        customer.state &&
+        customer.zipCode
+    );
+    const hasMedicalInfo = !!customer.primaryDiagnosis;
+    const signedTypes = new Set(customer.customerConsentSignatures.map((s) => s.documentType));
+    const hasHipaaConsent = signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.HIPAA_CONSENT);
+    const hasTreatmentConsent = signedTypes.has(INDIVIDUAL_CONSENT_DOCUMENT_TYPES.TREATMENT_CONSENT);
+
+    const incompleteSteps = [
+        !hasPersonalInfo && "personalInfo",
+        !hasMedicalInfo && "medicalInfo",
+        !hasHipaaConsent && "hipaaConsent",
+        !hasTreatmentConsent && "treatmentConsent",
+    ].filter(Boolean);
+
+    if (incompleteSteps.length > 0) {
+        throw new BadRequestError(
+            `All onboarding steps must be completed before activation: ${incompleteSteps.join(", ")}`
+        );
+    }
+
+    if (customer.onboardingComplete) {
+        return {
+            message: "Individual onboarding already complete.",
+            customer: {
+                id: customer.id,
+                onboardingComplete: customer.onboardingComplete,
+                approvalStatus: customer.approvalStatus,
+            },
+        };
+    }
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.update({
+            where: { userId },
+            data: {
+                onboardingComplete: true,
+                onboardingStep: 5,
+                approvalStatus: APPROVAL_STATUS.APPROVED,
+            },
+        });
+    });
+
+    return {
+        message: "Your account is now active. Welcome to RehabTask!",
+        customer: {
+            id: updated.id,
+            onboardingComplete: updated.onboardingComplete,
+            approvalStatus: updated.approvalStatus,
+        },
     };
 };

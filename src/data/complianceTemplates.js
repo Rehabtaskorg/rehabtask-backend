@@ -222,3 +222,247 @@ export const renderSignedDocument = (documentType, therapist, signature) => {
         .replaceAll("{{CLINICIAN_ADDRESS}}", buildClinicianAddress(therapist))
         .replaceAll("{{CLINICIAN_SIGNATURE}}", signature);
 };
+
+// ─── Individual Customer Consent Templates ────────────────────────────────────
+
+const INDIVIDUAL_HIPAA_CONSENT_RAW = `HIPAA Authorization for Use and Disclosure of Protected Health Information
+
+This Authorization is entered into as of {{CONSENT_DATE}}, by {{PATIENT_NAME}} ("Patient").
+
+AUTHORIZATION
+
+I, {{PATIENT_NAME}}, hereby authorize RehabTask and the therapy professionals engaged through the RehabTask platform to use and disclose my Protected Health Information ("PHI") as described in this Authorization, in accordance with the Health Insurance Portability and Accountability Act of 1996 ("HIPAA") and its implementing regulations.
+
+INFORMATION TO BE USED OR DISCLOSED
+
+1. The PHI subject to this Authorization includes, but is not limited to: medical history, diagnosis, treatment records, progress notes, therapy orders, referral information, insurance and billing information, and any other health information generated in connection with therapy services received through the RehabTask platform.
+
+PURPOSE OF USE OR DISCLOSURE
+
+2. My PHI may be used and disclosed for the following purposes:
+   a. Treatment — To provide, coordinate, and manage my rehabilitation and therapy services, including communications among my care team.
+   b. Payment — To process and obtain payment for therapy services, including submission of claims to insurance carriers or payers.
+   c. Healthcare Operations — To support quality assessment, improvement activities, care coordination, and administrative functions necessary to operate the RehabTask platform.
+   d. Platform Communications — To send me appointment confirmations, scheduling updates, care summaries, and other service-related communications.
+
+MY RIGHTS
+
+3. I understand that I have the right to revoke this Authorization at any time by submitting a written request to RehabTask. Revocation will not affect any uses or disclosures already made in reliance on this Authorization prior to the revocation.
+
+4. I understand that RehabTask may not condition the provision of services on whether I sign this Authorization.
+
+5. I understand that information disclosed pursuant to this Authorization may be subject to re-disclosure by the recipient and may no longer be protected by federal privacy law.
+
+6. I understand that I am entitled to receive a copy of this Authorization after signing.
+
+DURATION
+
+7. This Authorization shall remain in effect for the duration of my engagement with the RehabTask platform, or until I revoke it in writing, whichever comes first.
+
+GOVERNING LAW
+
+8. This Authorization is governed by HIPAA, applicable federal regulations, and the laws of the State of Illinois.
+
+Patient Name: {{PATIENT_NAME}}
+Signature: {{PATIENT_SIGNATURE}}
+Date: {{CONSENT_DATE}}`;
+
+const INDIVIDUAL_TREATMENT_CONSENT_RAW = `Informed Consent to Receive Therapy Services
+
+This Informed Consent is entered into as of {{CONSENT_DATE}}, by {{PATIENT_NAME}} ("Patient").
+
+PURPOSE
+
+I, {{PATIENT_NAME}}, voluntarily consent to receive physical therapy, occupational therapy, speech-language pathology, or other rehabilitation services ("Services") through the RehabTask platform, provided by licensed therapy professionals ("Therapist").
+
+NATURE OF SERVICES
+
+1. I understand that therapy services may include, but are not limited to: physical examination and evaluation, therapeutic exercises, manual therapy, neuromuscular re-education, functional training, modalities, patient education, home exercise programming, and other evidence-based rehabilitation interventions as determined appropriate by my Therapist.
+
+RISKS AND BENEFITS
+
+2. I acknowledge that all medical and therapeutic interventions carry potential risks. Common risks associated with therapy services may include temporary soreness, fatigue, bruising, or, in rare cases, aggravation of a pre-existing condition or injury. My Therapist will explain specific risks relevant to my treatment plan.
+
+3. I understand the potential benefits of therapy services, which may include improved function, reduced pain, increased strength and mobility, and enhanced quality of life. However, no guarantee of specific outcomes has been made to me.
+
+VOLUNTARY PARTICIPATION AND RIGHT TO WITHDRAW
+
+4. I understand that my participation in therapy services is entirely voluntary. I have the right to refuse or discontinue any treatment at any time without affecting my right to receive other services available through the RehabTask platform.
+
+5. I understand that if I choose to stop treatment, I should notify my Therapist so that appropriate discharge planning can occur.
+
+THERAPIST QUALIFICATIONS
+
+6. I understand that all Therapists on the RehabTask platform are independently licensed professionals. RehabTask facilitates the connection between patients and Therapists but does not itself provide clinical services.
+
+COMMUNICATION AND RECORDS
+
+7. I consent to the creation and maintenance of clinical records documenting my care. These records will be handled in accordance with the RehabTask Privacy Notice and HIPAA Authorization I have separately signed.
+
+8. I consent to the use of secure digital communications through the RehabTask platform for appointment scheduling, care coordination, and receipt of my treatment records and summaries.
+
+EMERGENCY SITUATIONS
+
+9. In the event of a medical emergency during a therapy session, I authorize my Therapist to take appropriate emergency action, including contacting emergency medical services.
+
+ACKNOWLEDGMENT
+
+By signing below, I confirm that I have read and understood this Informed Consent, that my questions have been answered to my satisfaction, and that I voluntarily agree to participate in therapy services through the RehabTask platform.
+
+Patient Name: {{PATIENT_NAME}}
+Signature: {{PATIENT_SIGNATURE}}
+Date: {{CONSENT_DATE}}`;
+
+const formatConsentDate = () =>
+    new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+const BLANK_CONSENT_SIGNATURE_LINE = "_____________________";
+
+export const renderIndividualHipaaConsent = (customer) =>
+    INDIVIDUAL_HIPAA_CONSENT_RAW
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", BLANK_CONSENT_SIGNATURE_LINE);
+
+export const renderIndividualTreatmentConsent = (customer) =>
+    INDIVIDUAL_TREATMENT_CONSENT_RAW
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", BLANK_CONSENT_SIGNATURE_LINE);
+
+export const renderSignedIndividualConsentDocument = (documentType, customer, signature) => {
+    const raw = {
+        hipaa_consent: INDIVIDUAL_HIPAA_CONSENT_RAW,
+        treatment_consent: INDIVIDUAL_TREATMENT_CONSENT_RAW,
+    }[documentType];
+
+    if (!raw) throw new Error(`Unknown individual consent document type: ${documentType}`);
+
+    return raw
+        .replaceAll("{{PATIENT_NAME}}", customer.fullName)
+        .replaceAll("{{CONSENT_DATE}}", formatConsentDate())
+        .replaceAll("{{PATIENT_SIGNATURE}}", signature);
+};
+
+// ─── Agency Compliance Templates ─────────────────────────────────────────────
+
+const AGENCY_SERVICE_AGREEMENT_RAW = `Service Agreement
+
+This Service Agreement ("Agreement") is entered into as of {{CONTRACT_DATE}}, between RehabTask, a Illinois company ("RehabTask"), and {{AGENCY_NAME}} ("Agency").
+
+SERVICES
+
+1. RehabTask provides a platform connecting licensed therapy professionals with home health agencies and patients requiring rehabilitation services. Agency agrees to use the RehabTask platform solely for lawful purposes in connection with its home health and therapy staffing operations.
+
+PLATFORM USAGE
+
+2. Agency acknowledges that access to the RehabTask platform is subject to ongoing compliance with all applicable state and federal regulations governing home health agencies, including but not limited to licensing requirements and Medicare/Medicaid conditions of participation.
+
+3. Agency agrees not to misrepresent the qualifications, licensing status, or employment status of any therapist engaged through the RehabTask platform.
+
+PAYMENT TERMS
+
+4. Agency agrees to pay all fees associated with bookings and platform usage as described in the RehabTask pricing schedule communicated at onboarding and as updated from time to time with reasonable notice.
+
+5. Payments are processed through the RehabTask platform. Agency authorizes RehabTask to charge the payment method on file for all confirmed bookings.
+
+CONFIDENTIALITY
+
+6. Each party agrees to maintain the confidentiality of the other party's proprietary business information and to use such information only as necessary to perform obligations under this Agreement.
+
+HIPAA COMPLIANCE
+
+7. Agency acknowledges that a separate Business Associate Agreement ("BAA") governs the handling of Protected Health Information ("PHI") and is incorporated into this Agreement by reference. Agency agrees to comply with all requirements of the BAA.
+
+TERM AND TERMINATION
+
+8. This Agreement commences on the date signed and continues until terminated by either party upon thirty (30) days written notice. RehabTask may terminate immediately for material breach or failure to maintain required licensure.
+
+LIMITATION OF LIABILITY
+
+9. RehabTask's liability to Agency under this Agreement shall not exceed the total fees paid by Agency to RehabTask in the three (3) months preceding the claim giving rise to liability.
+
+GOVERNING LAW
+
+10. This Agreement is governed by the laws of the State of Illinois, without regard to conflict of law principles.
+
+IN WITNESS WHEREOF, the authorized representative of Agency has signed this Agreement as of the date above.
+
+Agency: {{AGENCY_NAME}}
+Authorized Signature: {{AGENCY_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+const AGENCY_HIPAA_BAA_RAW = `HIPAA Business Associate Agreement
+
+This Business Associate Agreement ("BAA") is entered into as of {{CONTRACT_DATE}}, between RehabTask ("Covered Entity") and {{AGENCY_NAME}} ("Business Associate"), collectively the "Parties."
+
+RECITALS
+
+RehabTask operates a healthcare staffing and scheduling platform and may disclose Protected Health Information ("PHI") to Agency in connection with services provided under the Service Agreement. This BAA is required under the Health Insurance Portability and Accountability Act of 1996 ("HIPAA") and its implementing regulations, including the HIPAA Privacy Rule (45 CFR Part 164) and the HIPAA Security Rule.
+
+DEFINITIONS
+
+"Protected Health Information" or "PHI" has the meaning set forth in 45 CFR § 160.103, limited to PHI received from or created on behalf of RehabTask.
+
+OBLIGATIONS OF BUSINESS ASSOCIATE
+
+1. Permitted Uses and Disclosures. Agency may use or disclose PHI only as necessary to perform services under the Service Agreement or as required by law, and shall not use or disclose PHI in any manner that would violate HIPAA if done by RehabTask.
+
+2. Safeguards. Agency shall implement and maintain appropriate administrative, physical, and technical safeguards to protect PHI from unauthorized use or disclosure, in accordance with the HIPAA Security Rule (45 CFR Part 164, Subpart C).
+
+3. Breach Notification. Agency shall notify RehabTask without unreasonable delay, and in no case later than sixty (60) days after discovery, of any Breach of Unsecured PHI, as defined in 45 CFR § 164.402.
+
+4. Subcontractors. Agency shall ensure that any subcontractors that create, receive, maintain, or transmit PHI on behalf of Agency agree to the same restrictions, conditions, and requirements that apply to Agency under this BAA.
+
+5. Access and Amendment. To the extent Agency maintains PHI in a Designated Record Set, Agency shall make PHI available to RehabTask to enable RehabTask to fulfil its obligations under 45 CFR §§ 164.524 and 164.526.
+
+6. Accounting of Disclosures. Agency shall document and make available to RehabTask any information required for RehabTask to provide an accounting of disclosures as required by 45 CFR § 164.528.
+
+7. Minimum Necessary. Agency shall use, disclose, or request only the minimum amount of PHI necessary to accomplish the intended purpose.
+
+TERM AND TERMINATION
+
+8. This BAA is effective as of the date signed and shall remain in effect for the duration of the Service Agreement. Either party may terminate this BAA upon thirty (30) days written notice if the other party has breached a material term and failed to cure such breach within the notice period.
+
+9. Upon termination, Agency shall return or destroy all PHI received from or created on behalf of RehabTask, if feasible. If return or destruction is not feasible, Agency shall extend the protections of this BAA to such PHI and limit further uses and disclosures.
+
+MISCELLANEOUS
+
+10. The Parties agree to amend this BAA to the extent necessary to comply with changes in HIPAA or other applicable law.
+
+11. This BAA is governed by the laws of the State of Illinois.
+
+IN WITNESS WHEREOF, the authorized representative of Agency has signed this BAA as of the date above.
+
+Agency: {{AGENCY_NAME}}
+Authorized Signature: {{AGENCY_SIGNATURE}}
+Date: {{CONTRACT_DATE}}`;
+
+/** Render agency Service Agreement preview (no signature yet). */
+export const renderAgencyServiceAgreement = (agency) =>
+    AGENCY_SERVICE_AGREEMENT_RAW
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/** Render agency HIPAA BAA preview (no signature yet). */
+export const renderAgencyHipaaBaa = (agency) =>
+    AGENCY_HIPAA_BAA_RAW
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", BLANK_SIGNATURE_LINE);
+
+/** Render a signed agency compliance document for audit-trail storage. */
+export const renderSignedAgencyDocument = (documentType, agency, signature) => {
+    const raw = {
+        service_agreement: AGENCY_SERVICE_AGREEMENT_RAW,
+        hipaa_baa: AGENCY_HIPAA_BAA_RAW,
+    }[documentType];
+
+    if (!raw) throw new Error(`Unknown agency document type: ${documentType}`);
+
+    return raw
+        .replaceAll("{{AGENCY_NAME}}", agency.agencyName)
+        .replaceAll("{{CONTRACT_DATE}}", formatContractDate())
+        .replaceAll("{{AGENCY_SIGNATURE}}", signature);
+};

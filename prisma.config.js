@@ -1,5 +1,8 @@
 import { defineConfig } from "prisma/config";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { config } from "dotenv";
+
+config({ path: ".env" });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",

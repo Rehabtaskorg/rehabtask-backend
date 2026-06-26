@@ -431,7 +431,10 @@ export const getCurrentUser = async (userId) => {
                 select: {
                     fullName: true,
                     customerType: true,
-                    agencyName: true
+                    agencyName: true,
+                    onboardingComplete: true,
+                    onboardingStep: true,
+                    approvalStatus: true,
                 },
             },
             therapistProfile: {
@@ -773,7 +776,7 @@ export const refreshAccessToken = async ({ refreshToken }) => {
     });
 
     if (error) {
-        console.error("Token refresh error:", error);
+        logger.error("Token refresh error", { message: error.message });
         throw new AuthenticationError("Failed to refresh token", "TOKEN_REFRESH_FAILED");
     }
 

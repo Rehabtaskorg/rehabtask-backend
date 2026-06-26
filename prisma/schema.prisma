@@ -51,6 +51,24 @@ model CustomerProfile {
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
   stripeOnboardingComplete Boolean          @default(false) @map("stripe_onboarding_complete")
+  // Agency-specific fields
+  dbaName                  String?          @map("dba_name") @db.VarChar(255)
+  ein                      String?          @db.VarChar(20)
+  billingEmail             String?          @map("billing_email") @db.VarChar(255)
+  // Shared address fields (agency business address / individual home address)
+  addressLine1             String?          @map("address_line_1") @db.VarChar(255)
+  addressLine2             String?          @map("address_line_2") @db.VarChar(255)
+  city                     String?          @db.VarChar(100)
+  state                    String?          @db.VarChar(50)
+  zipCode                  String?          @map("zip_code") @db.VarChar(10)
+  // Individual customer-specific fields
+  dateOfBirth              DateTime?        @map("date_of_birth") @db.Date
+  primaryDiagnosis         String?          @map("primary_diagnosis") @db.VarChar(255)
+  referringProviderName    String?          @map("referring_provider_name") @db.VarChar(255)
+  // Onboarding tracking (shared by agency and individual)
+  onboardingStep           Int              @default(1) @map("onboarding_step")
+  onboardingComplete       Boolean          @default(false) @map("onboarding_complete")
+  approvalStatus           ApprovalStatus   @default(pending) @map("approval_status")
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -61,11 +79,17 @@ model CustomerProfile {
   requests                 TherapyRequest[]
   reviews                  Review[]
   customerRefunds          CustomerRefund[]
+  agencyLicenseDocuments   LicenseDocument[] @relation("AgencyDocuments")
+  customerLicenseDocuments LicenseDocument[] @relation("CustomerDocuments")
+  agencyComplianceSignatures ComplianceSignature[] @relation("AgencyComplianceSignatures")
+  customerConsentSignatures  CustomerConsentSignature[]
 
   @@index([userId])
   @@index([customerType])
   @@index([stripeCustomerId])
   @@index([stripeAccountId])
+  @@index([approvalStatus])
+  @@index([onboardingComplete])
   @@map("customer_profiles")
 }
 
@@ -187,28 +211,34 @@ model VisitType {
 }
 
 model LicenseDocument {
-  id            String           @id @default(uuid()) @db.Uuid
-  therapistId   String           @map("therapist_id") @db.Uuid
-  documentUrl   String           @map("document_url")
-  documentType  String           @map("document_type") @db.VarChar(50)
-  fileName      String           @map("file_name") @db.VarChar(255)
-  fileSize      Int              @map("file_size")
-  uploadedAt    DateTime         @default(now()) @map("uploaded_at") @db.Timestamptz(3)
-  bucket        String?          @default("license-documents") @db.VarChar(50)
-  deletedAt     DateTime?        @map("deleted_at") @db.Timestamptz(3)
-  isDeleted     Boolean          @default(false) @map("is_deleted")
-  mimeType      String?          @map("mime_type") @db.VarChar(100)
+  id            String            @id @default(uuid()) @db.Uuid
+  therapistId   String?           @map("therapist_id") @db.Uuid
+  agencyId      String?           @map("agency_id") @db.Uuid
+  customerId    String?           @map("customer_id") @db.Uuid
+  documentUrl   String            @map("document_url")
+  documentType  String            @map("document_type") @db.VarChar(50)
+  fileName      String            @map("file_name") @db.VarChar(255)
+  fileSize      Int               @map("file_size")
+  uploadedAt    DateTime          @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  bucket        String?           @default("license-documents") @db.VarChar(50)
+  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz(3)
+  isDeleted     Boolean           @default(false) @map("is_deleted")
+  mimeType      String?           @map("mime_type") @db.VarChar(100)
   reject_reason String?
-  status        String?          @default("pending") @db.VarChar(20)
-  uploadIp      String?          @map("upload_ip") @db.VarChar(45)
-  userId        String?          @map("user_id") @db.Uuid
-  verifiedAt    DateTime?        @map("verified_at") @db.Timestamptz(3)
-  verifiedBy    String?          @map("verified_by") @db.Uuid
-  therapist     TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
-  user          User?            @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
-  verifier      User?            @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
+  status        String?           @default("pending") @db.VarChar(20)
+  uploadIp      String?           @map("upload_ip") @db.VarChar(45)
+  userId        String?           @map("user_id") @db.Uuid
+  verifiedAt    DateTime?         @map("verified_at") @db.Timestamptz(3)
+  verifiedBy    String?           @map("verified_by") @db.Uuid
+  therapist     TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  agency        CustomerProfile?  @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Cascade)
+  customer      CustomerProfile?  @relation("CustomerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
+  user          User?             @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
+  verifier      User?             @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
 
   @@index([therapistId])
+  @@index([agencyId])
+  @@index([customerId])
   @@index([userId], map: "idx_license_documents_user_active")
   @@index([status, uploadedAt])
   @@index([therapistId, status])
@@ -216,17 +246,36 @@ model LicenseDocument {
 }
 
 model ComplianceSignature {
-  id           String           @id @default(uuid()) @db.Uuid
-  therapistId  String           @map("therapist_id") @db.Uuid
-  documentType String           @map("document_type") @db.VarChar(50)
-  signature    String           @db.VarChar(255)
-  signedText   String           @map("signed_text") @db.Text
-  signedAt     DateTime         @default(now()) @map("signed_at") @db.Timestamptz(3)
-  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  id           String            @id @default(uuid()) @db.Uuid
+  therapistId  String?           @map("therapist_id") @db.Uuid
+  agencyId     String?           @map("agency_id") @db.Uuid
+  documentType String            @map("document_type") @db.VarChar(50)
+  signature    String            @db.VarChar(255)
+  signedText   String            @map("signed_text") @db.Text
+  signedAt     DateTime          @default(now()) @map("signed_at") @db.Timestamptz(3)
+  therapist    TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+  agency       CustomerProfile?  @relation("AgencyComplianceSignatures", fields: [agencyId], references: [id], onDelete: Cascade)
 
-  @@unique([therapistId, documentType])
   @@index([therapistId])
+  @@index([agencyId])
   @@map("compliance_signatures")
+}
+
+model CustomerConsentSignature {
+  id                         String          @id @default(uuid()) @db.Uuid
+  customerId                 String          @map("customer_id") @db.Uuid
+  documentType               String          @map("document_type") @db.VarChar(50)
+  signature                  String          @db.VarChar(255)
+  signedText                 String          @map("signed_text") @db.Text
+  representativeName         String?         @map("representative_name") @db.VarChar(255)
+  representativeRelationship String?         @map("representative_relationship") @db.VarChar(100)
+  representativeAuthority    String?         @map("representative_authority") @db.VarChar(100)
+  signedAt                   DateTime        @default(now()) @map("signed_at") @db.Timestamptz(3)
+  customer                   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, documentType])
+  @@index([customerId])
+  @@map("customer_consent_signatures")
 }
 
 model Availability {

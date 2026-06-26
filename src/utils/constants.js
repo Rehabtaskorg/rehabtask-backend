@@ -13,6 +13,7 @@ export const USER_ROLES = {
 
 export const CUSTOMER_TYPES = {
     AGENCY: "agency",
+    INDIVIDUAL: "individual",
 };
 
 export const APPROVAL_STATUS = {
@@ -133,6 +134,8 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
 
 
 export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
+export const AGENCY_DOCUMENTS_BUCKET = "agency-documents";
+export const INDIVIDUAL_DOCUMENTS_BUCKET = "individual-documents";
 
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({
@@ -140,13 +143,21 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
     identity: ["government_id_front", "government_id_back"],
     compliance: ["w9"],
+    agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
+    individual: ["therapy_order"],
 });
 
-/** documentType values accepted by ComplianceSignature — e-signed onboarding documents, not file uploads. */
 export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
     INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
     HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
     BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
+    SERVICE_AGREEMENT: "service_agreement",
+    HIPAA_BAA: "hipaa_baa",
+});
+
+export const INDIVIDUAL_CONSENT_DOCUMENT_TYPES = Object.freeze({
+    HIPAA_CONSENT: "hipaa_consent",
+    TREATMENT_CONSENT: "treatment_consent",
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
