@@ -55,6 +55,7 @@ import {
     customerRefundReminder,
     customerRefundTransferred,
     customerRefundReturnedToCard,
+    customerRefundPayoutFailed,
     attemptedVisitTherapistPayout,
     stripeRequirementsAlert,
     customerStripeRequirementsAlert,
@@ -397,6 +398,10 @@ export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, s
 
 export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {
     return dispatch(customer.user.email, customerRefundReturnedToCard, { customer, refundAmount });
+};
+
+export const sendCustomerRefundPayoutFailed = async ({ customer, refundAmount, reason }) => {
+    return dispatch(customer.user.email, customerRefundPayoutFailed, { customer, refundAmount, reason });
 };
 
 /**

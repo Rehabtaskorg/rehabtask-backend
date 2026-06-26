@@ -4,6 +4,7 @@ import { stripe, stripeConfig } from "../config/stripe.js";
 import {
     sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer,
     sendCustomerRefundAvailable, sendCustomerRefundTransferred, sendCustomerRefundReturnedToCard,
+    sendCustomerRefundPayoutFailed,
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { getCommissionRate } from "./commission.service.js";
@@ -1228,6 +1229,7 @@ const getCustomerPaymentHistory = async (customerId) => {
                     id: true,
                     amount: true,
                     status: true,
+                    reason: true,
                     transferredAt: true,
                     fallbackRefundAt: true,
                     expiresAt: true,
@@ -2097,7 +2099,57 @@ const processPendingRefundsForCustomer = async (customerId) => {
 };
 
 /**
+ * Handle a payout.failed event for a customer Connect account.
+ * Reverts all transferred CustomerRefund rows back to pending_connect and notifies the customer.
+ *
+ * @param {object} customer - CustomerProfile with nested user { email }
+ * @param {string} failureMessage - Human-readable failure description from Stripe payout object
  */
+const handleCustomerPayoutFailed = async (customer, failureMessage) => {
+    const transferredRefunds = await prisma.customerRefund.findMany({
+        where: {
+            customerId: customer.id,
+            status: "transferred",
+        },
+        include: {
+            customer: { include: { user: { select: { email: true } } } },
+        },
+    });
+
+    if (transferredRefunds.length === 0) {
+        logger.warn("[PaymentService] payout.failed for customer but no transferred refunds found", {
+            customerId: customer.id,
+        });
+        return;
+    }
+
+    const totalAmount = transferredRefunds.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+
+    await prisma.customerRefund.updateMany({
+        where: {
+            id: { in: transferredRefunds.map((r) => r.id) },
+        },
+        data: {
+            status: "pending_connect",
+            stripeTransferId: null,
+            transferredAt: null,
+            reason: failureMessage ?? "Bank transfer failed",
+        },
+    });
+
+    logger.warn("[PaymentService] Customer payout failed — reverted refunds to pending_connect", {
+        customerId: customer.id,
+        refundCount: transferredRefunds.length,
+        totalAmount,
+        reason: failureMessage,
+    });
+
+    sendCustomerRefundPayoutFailed({
+        customer: transferredRefunds[0].customer,
+        refundAmount: parseFloat(totalAmount.toFixed(2)),
+        reason: failureMessage,
+    }).catch(() => { });
+};
 
 /**
  * Create a per-session refund. Used by:
@@ -2251,5 +2303,6 @@ export {
     getCustomerRefundHistory,
     transferPendingRefund,
     processPendingRefundsForCustomer,
+    handleCustomerPayoutFailed,
     createPerSessionRefund,
 }
