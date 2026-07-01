@@ -136,6 +136,8 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
 export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
 export const AGENCY_DOCUMENTS_BUCKET = "agency-documents";
 export const INDIVIDUAL_DOCUMENTS_BUCKET = "individual-documents";
+export const PROFILE_IMAGES_BUCKET = "profile-images";
+export const MESSAGE_ATTACHMENTS_BUCKET = "message-attachments";
 
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({

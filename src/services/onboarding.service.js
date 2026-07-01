@@ -1,11 +1,11 @@
 import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, COMPLIANCE_DOCUMENT_TYPES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET, INDIVIDUAL_CONSENT_DOCUMENT_TYPES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendTherapistApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
+import { getSignedUrl } from "./storage.service.js";
 import {
     renderIndependentContractorAgreement,
     renderHipaaAcknowledgment,
@@ -60,9 +60,7 @@ const computeOnboardingSteps = (therapist) => {
     };
 };
 
-/**
- * Get therapist onboarding status and progress
- */
+
 export const getOnboardingStatus = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -196,9 +194,7 @@ export const getOnboardingData = async (userId) => {
     };
 };
 
-/**
- * Save personal information (Step 1)
- */
+
 export const savePersonalInfo = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -237,9 +233,7 @@ export const savePersonalInfo = async (userId, data) => {
     };
 };
 
-/**
- * Save professional profile (Step 2)
- */
+
 export const saveProfessionalProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -277,9 +271,7 @@ export const saveProfessionalProfile = async (userId, data) => {
     };
 };
 
-/**
- * Save credentials (Step 2)
- */
+
 export const saveCredentials = async (userId, data, uploadIp = null) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -383,13 +375,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
     };
 };
 
-/**
- * Save availability (Step 3)
- * 
- * Now also creates an initial WorkArea record from geocoded zip code data
- * sent by the FE. This ensures the therapist is searchable immediately after admin approval,
- * without needing to manually add work area via profile
- */
+
 export const saveAvailability = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -479,12 +465,7 @@ export const saveAvailability = async (userId, data) => {
     };
 };
 
-/**
- * Save insurance documentation (Step 5)
- *
- * Reconciliation is scoped to insurance documentType values only — license
- * documents share the same table and must not be touched by this step.
- */
+
 export const saveInsurance = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -542,13 +523,7 @@ export const saveInsurance = async (userId, data) => {
     };
 };
 
-/**
- * Save identity verification documents (Step 6)
- *
- * Storage only — no OCR or automated verification. Reconciliation is scoped
- * to identity documentType values only — license/insurance documents share
- * the same table and must not be touched by this step.
- */
+
 export const saveIdentityVerification = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -605,12 +580,7 @@ export const saveIdentityVerification = async (userId, data) => {
     };
 };
 
-/**
- * Get the Compliance Forms step's content for a therapist: the rendered
- * preview text for the 3 e-signature documents (name/date merged, no
- * signature yet), the W-9 upload state, and which sub-steps are already
- * signed — so the frontend can resume mid-sequence on a returning visit.
- */
+
 export const getComplianceContent = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -655,17 +625,6 @@ export const getComplianceContent = async (userId) => {
     };
 };
 
-/**
- * Record a therapist's signature on one of the 3 Compliance Forms
- * e-signature documents (Independent Contractor Agreement, HIPAA
- * Acknowledgment, Background Check Authorization). Re-renders the document
- * server-side from the raw template — never trusts client-sent text — and
- * snapshots the exact signed text, so the record proves what was actually
- * agreed to even if the template wording changes later.
- *
- * Advances onboardingStep to 8 once W-9 is uploaded and all 3 documents
- * are signed (mirrors getOnboardingStatus's steps.compliance check).
- */
 export const signComplianceDocument = async (userId, { documentType, signature }) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -711,9 +670,7 @@ export const signComplianceDocument = async (userId, { documentType, signature }
     };
 };
 
-/**
- * Submit background check consent (Step 4)
- */
+
 export const submitBackgroundCheck = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -749,11 +706,7 @@ export const submitBackgroundCheck = async (userId, data) => {
     };
 };
 
-/**
- * Advance onboardingStep to 9 (Final Review) after Stripe is finished or
- * skipped. Stripe is never a hard requirement, so this never validates
- * anything — it only records that the therapist has reached the last step.
- */
+
 export const advanceToFinalReview = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -779,9 +732,7 @@ export const advanceToFinalReview = async (userId) => {
     };
 };
 
-/**
- * Complete onboarding (after Stripe connection)
- */
+
 export const completeOnboarding = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -839,9 +790,7 @@ export const completeOnboarding = async (userId) => {
     };
 };
 
-/**
- * Generate signed URL for private document
- */
+
 export const getDocumentSignedUrl = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
         where: { id: documentId },
@@ -864,26 +813,16 @@ export const getDocumentSignedUrl = async (userId, documentId) => {
     }
 
     // Generate signed URL (60 second expiry)
-    const { data, error } = await supabaseAdmin.storage
-        .from(document.bucket)
-        .createSignedUrl(document.documentUrl, 60);
-
-    if (error) {
-        logger.error("Supabase signed URL error", { error: error.message });
-        throw new BadRequestError("Failed to generate document URL");
-    }
+    const { signedUrl } = await getSignedUrl(document.bucket, document.documentUrl, 60);
 
     return {
-        signedUrl: data.signedUrl,
+        signedUrl,
         expiresIn: 60,
         fileName: document.fileName,
-        fileSize: document.fileSize
+        fileSize: document.fileSize,
     };
 };
 
-/**
- * Get all documents for a therapist
- */
 export const getTherapistDocuments = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -1063,11 +1002,7 @@ export const saveAgencyBusinessProfile = async (userId, data) => {
     };
 };
 
-/**
- * Reconcile and save agency upload documents (Step 3).
- * Soft-deletes any active agency docs not in the submitted list, then
- * advances onboardingStep to 3 once all required types are present.
- */
+
 export const saveAgencyUploadDocuments = async (userId, data) => {
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
@@ -1120,10 +1055,7 @@ export const saveAgencyUploadDocuments = async (userId, data) => {
     };
 };
 
-/**
- * Soft-delete a single agency LicenseDocument and remove its storage object.
- * Ownership is verified by checking agencyId matches the caller's customerProfile.
- */
+
 export const deleteAgencyDocument = async (userId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
         where: { id: documentId },
@@ -1148,10 +1080,7 @@ export const deleteAgencyDocument = async (userId, documentId) => {
     return { message: "Document deleted successfully" };
 };
 
-/**
- * Return the rendered preview text for one agency compliance document.
- * Content is rendered server-side from the template — client never provides text.
- */
+
 export const getAgencyComplianceContent = async (userId, documentType) => {
     const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
     if (!ALLOWED.includes(documentType)) {
@@ -1168,11 +1097,7 @@ export const getAgencyComplianceContent = async (userId, documentType) => {
     return { documentType, content };
 };
 
-/**
- * Record an agency's signature on one compliance document (Service Agreement or HIPAA BAA).
- * Re-renders the document server-side for the audit-trail snapshot.
- * Advances onboardingStep to 4 once W-9 is uploaded and both docs are signed.
- */
+
 export const signAgencyComplianceDocument = async (userId, { documentType, signature }) => {
     const ALLOWED = [COMPLIANCE_DOCUMENT_TYPES.SERVICE_AGREEMENT, COMPLIANCE_DOCUMENT_TYPES.HIPAA_BAA];
     if (!ALLOWED.includes(documentType)) {
@@ -1228,12 +1153,7 @@ export const signAgencyComplianceDocument = async (userId, { documentType, signa
     };
 };
 
-/**
- * Complete agency onboarding (Step 5 — Activation).
- * Validates all 4 prerequisite steps are done before committing.
- * Sets approvalStatus = "approved" + onboardingComplete = true instantly —
- * no admin review gate (confirmed product decision).
- */
+
 export const completeAgencyOnboarding = async (userId) => {
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
