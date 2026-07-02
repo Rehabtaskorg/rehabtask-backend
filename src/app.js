@@ -54,7 +54,6 @@ if (env.NODE_ENV === "development") {
     })
 }
 
-// Health check endpoint
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",
@@ -62,6 +61,17 @@ app.get("/health", (req, res) => {
         environment: env.NODE_ENV,
         uptime: process.uptime(),
     });
+})
+
+app.get("/debug/gcs", async (req, res) => {
+    try {
+        const { Storage } = await import("@google-cloud/storage");
+        const gcs = new Storage();
+        const projectId = await gcs.authClient.getProjectId();
+        res.json({ resolvedProjectId: projectId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 })
 
 // API Rate Limiting (General)
