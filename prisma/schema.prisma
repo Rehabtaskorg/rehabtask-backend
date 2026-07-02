@@ -256,6 +256,8 @@ model ComplianceSignature {
   therapist    TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   agency       CustomerProfile?  @relation("AgencyComplianceSignatures", fields: [agencyId], references: [id], onDelete: Cascade)
 
+  @@unique([therapistId, documentType], name: "compliance_signatures_therapist_document_type_key", map: "compliance_signatures_therapist_document_type_key")
+  @@unique([agencyId, documentType], name: "compliance_signatures_agency_document_type_key", map: "compliance_signatures_agency_document_type_key")
   @@index([therapistId])
   @@index([agencyId])
   @@map("compliance_signatures")
