@@ -638,7 +638,7 @@ export const signComplianceDocument = async (userId, { documentType, signature }
     const signedText = renderSignedDocument(documentType, therapist, signature);
 
     await prisma.complianceSignature.upsert({
-        where: { therapistId_documentType: { therapistId: therapist.id, documentType } },
+        where: { compliance_signatures_therapist_document_type_key: { therapistId: therapist.id, documentType } },
         update: { signature, signedText, signedAt: new Date() },
         create: { therapistId: therapist.id, documentType, signature, signedText },
     });
