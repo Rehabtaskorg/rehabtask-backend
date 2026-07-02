@@ -133,11 +133,11 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
 });
 
 
-export const THERAPIST_DOCUMENTS_BUCKET = "therapist-documents";
-export const AGENCY_DOCUMENTS_BUCKET = "agency-documents";
-export const INDIVIDUAL_DOCUMENTS_BUCKET = "individual-documents";
-export const PROFILE_IMAGES_BUCKET = "profile-images";
-export const MESSAGE_ATTACHMENTS_BUCKET = "message-attachments";
+export const THERAPIST_DOCUMENTS_BUCKET = process.env.THERAPIST_DOCUMENTS_BUCKET;
+export const AGENCY_DOCUMENTS_BUCKET = process.env.AGENCY_DOCUMENTS_BUCKET;
+export const INDIVIDUAL_DOCUMENTS_BUCKET = process.env.INDIVIDUAL_DOCUMENTS_BUCKET;
+export const PROFILE_IMAGES_BUCKET = process.env.PROFILE_IMAGES_BUCKET;
+export const MESSAGE_ATTACHMENTS_BUCKET = process.env.MESSAGE_ATTACHMENTS_BUCKET;
 
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({

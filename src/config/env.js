@@ -48,6 +48,13 @@ const envSchema = z.object({
     // Google Maps
     GOOGLE_MAPS_API_KEY: z.string(),
 
+    // GCS Buckets
+    PROFILE_IMAGES_BUCKET: z.string().min(1),
+    THERAPIST_DOCUMENTS_BUCKET: z.string().min(1),
+    AGENCY_DOCUMENTS_BUCKET: z.string().min(1),
+    INDIVIDUAL_DOCUMENTS_BUCKET: z.string().min(1),
+    MESSAGE_ATTACHMENTS_BUCKET: z.string().min(1),
+
     // Sentry
     SENTRY_DSN: z.string().optional(),
 
@@ -117,6 +124,11 @@ export const {
     EMAIL_FROM,
     ADMIN_EMAIL,
     GOOGLE_MAPS_API_KEY,
+    PROFILE_IMAGES_BUCKET,
+    THERAPIST_DOCUMENTS_BUCKET,
+    AGENCY_DOCUMENTS_BUCKET,
+    INDIVIDUAL_DOCUMENTS_BUCKET,
+    MESSAGE_ATTACHMENTS_BUCKET,
     SENTRY_DSN,
     BETTERSTACK_LOG_TOKEN,
     POSTHOG_API_KEY,
