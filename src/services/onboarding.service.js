@@ -637,11 +637,20 @@ export const signComplianceDocument = async (userId, { documentType, signature }
 
     const signedText = renderSignedDocument(documentType, therapist, signature);
 
-    await prisma.complianceSignature.upsert({
-        where: { compliance_signatures_therapist_document_type_key: { therapistId: therapist.id, documentType } },
-        update: { signature, signedText, signedAt: new Date() },
-        create: { therapistId: therapist.id, documentType, signature, signedText },
+    const existing = await prisma.complianceSignature.findFirst({
+        where: { therapistId: therapist.id, documentType },
     });
+
+    if (existing) {
+        await prisma.complianceSignature.update({
+            where: { id: existing.id },
+            data: { signature, signedText, signedAt: new Date() },
+        });
+    } else {
+        await prisma.complianceSignature.create({
+            data: { therapistId: therapist.id, documentType, signature, signedText },
+        });
+    }
 
     const allSignatures = await prisma.complianceSignature.findMany({
         where: { therapistId: therapist.id },
