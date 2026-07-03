@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { initializeApp, getApps, getApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { env } from "./env.js";
 
 let tenantAuth = null;
@@ -12,10 +13,8 @@ let tenantAuth = null;
 export function getIdentityPlatformAuth() {
     if (tenantAuth) return tenantAuth;
 
-    if (!admin.apps.length) {
-        admin.initializeApp();
-    }
+    const app = getApps().length ? getApp() : initializeApp();
 
-    tenantAuth = admin.auth().tenantManager().authForTenant(env.IDENTITY_PLATFORM_TENANT_ID);
+    tenantAuth = getAuth(app).tenantManager().authForTenant(env.IDENTITY_PLATFORM_TENANT_ID);
     return tenantAuth;
 }
