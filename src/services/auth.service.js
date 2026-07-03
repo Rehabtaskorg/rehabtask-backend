@@ -208,6 +208,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
             auth.deleteUser(authUid).catch(() => {});
         }
 
+        logger.error("[Auth] registerCustomer unexpected error", { email: normalizedEmail, code: error?.code, message: error?.message, stack: error?.stack });
         throw new BadRequestError("Failed to process registration. Please try again.");
     }
 };
