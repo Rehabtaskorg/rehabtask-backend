@@ -48,6 +48,10 @@ const envSchema = z.object({
     // Google Maps
     GOOGLE_MAPS_API_KEY: z.string(),
 
+    // Identity Platform
+    IDENTITY_PLATFORM_TENANT_ID: z.string().min(1),
+    FIREBASE_WEB_API_KEY: z.string().min(1),
+
     // GCS Buckets
     PROFILE_IMAGES_BUCKET: z.string().min(1),
     THERAPIST_DOCUMENTS_BUCKET: z.string().min(1),
@@ -124,6 +128,8 @@ export const {
     EMAIL_FROM,
     ADMIN_EMAIL,
     GOOGLE_MAPS_API_KEY,
+    IDENTITY_PLATFORM_TENANT_ID,
+    FIREBASE_WEB_API_KEY,
     PROFILE_IMAGES_BUCKET,
     THERAPIST_DOCUMENTS_BUCKET,
     AGENCY_DOCUMENTS_BUCKET,

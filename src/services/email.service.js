@@ -51,6 +51,9 @@ import {
     subscriptionPaymentActionRequired,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
+    emailVerification,
+    passwordReset,
+    subAdminInvite,
     customerRefundAvailable,
     customerRefundReminder,
     customerRefundTransferred,
@@ -374,6 +377,27 @@ export const sendSubscriptionDowngraded = async ({ customer }) => {
  */
 export const sendExistingAccountNotification = async ({ email, resetLink }) => {
     return dispatch(email, existingAccountNotification, { email, resetLink });
+};
+
+/**
+ * @param {{email: string, verificationLink: string}} params
+ */
+export const sendEmailVerificationEmail = async ({ email, verificationLink }) => {
+    return dispatch(email, emailVerification, { verificationLink });
+};
+
+/**
+ * @param {{email: string, resetLink: string}} params
+ */
+export const sendPasswordResetEmail = async ({ email, resetLink }) => {
+    return dispatch(email, passwordReset, { resetLink });
+};
+
+/**
+ * @param {{email: string, inviteLink: string}} params
+ */
+export const sendSubAdminInviteEmail = async ({ email, inviteLink }) => {
+    return dispatch(email, subAdminInvite, { inviteLink });
 };
 
 // ── Customer Refund Emails ──

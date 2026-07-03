@@ -1,20 +1,17 @@
 import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendAccountDeactivated } from "./email.service.js";
 
-export const listUsers = async ({
-    role,
-    isActive,
-    search,
-    page = 1,
-    limit = 20
-} = {}) => {
+/**
+ * @param {{role?: string, isActive?: boolean, search?: string, page?: number, limit?: number}} params
+ */
+export const listUsers = async ({ role, isActive, search, page = 1, limit = 20 } = {}) => {
     const where = {};
     if (role) where.role = role;
-    if (typeof isActive === 'boolean') where.isActive = isActive;
+    if (typeof isActive === "boolean") where.isActive = isActive;
     if (search) {
         where.OR = [
             { email: { contains: search, mode: "insensitive" } },
@@ -34,57 +31,47 @@ export const listUsers = async ({
                 emailVerified: true,
                 deactivatedAt: true,
                 createdAt: true,
-                customerProfile: {
-                    select: { id: true, fullName: true, customerType: true, agencyName: true },
-                },
-                therapistProfile: {
-                    select: {
-                        id: true,
-                        fullName: true,
-                        approvalStatus: true,
-                        approvedAt: true,
-                        primaryLicenseType: true,
-                    },
-                },
-                subAdminProfile: {
-                    select: { id: true, permissions: true, isActive: true },
-                },
+                customerProfile: { select: { id: true, fullName: true, customerType: true, agencyName: true } },
+                therapistProfile: { select: { id: true, fullName: true, approvalStatus: true, approvedAt: true, primaryLicenseType: true } },
+                subAdminProfile: { select: { id: true, permissions: true, isActive: true } },
             },
             orderBy: { createdAt: "desc" },
             skip: (page - 1) * limit,
             take: limit,
         }),
-        prisma.user.count({ where })
+        prisma.user.count({ where }),
     ]);
 
     return {
         users,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    }
-}
+    };
+};
 
+/**
+ * @param {string} userId
+ */
 export const getUserDetail = async (userId) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: {
-            customerProfile: true,
-            therapistProfile: true,
-            subAdminProfile: true,
-        },
+        include: { customerProfile: true, therapistProfile: true, subAdminProfile: true },
     });
     if (!user) throw new NotFoundError("User not found");
     return user;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {string} adminId
+ * @param {string} callerRole
+ */
 export const deactivateUser = async (userId, adminId, callerRole) => {
-    if (userId === adminId) {
-        throw new BadRequestError("You cannot deactivate your own account");
-    }
+    if (userId === adminId) throw new BadRequestError("You cannot deactivate your own account");
+
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundError("User not found");
     if (!user.isActive) throw new ConflictError("User is already deactivated");
 
-    // Sub-admins cannot deactivate admin or other sub-admin accounts
     if (callerRole === USER_ROLES.SUB_ADMIN && (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.SUB_ADMIN)) {
         throw new AuthorizationError("Sub-admins cannot deactivate admin accounts");
     }
@@ -94,12 +81,11 @@ export const deactivateUser = async (userId, adminId, callerRole) => {
         data: { isActive: false, deactivatedAt: new Date() },
     });
 
-    // Revoke Supabase session so existing tokens are invalidated
-    await supabaseAdmin.auth.admin.signOut(userId).catch(() => {});
+    const auth = getIdentityPlatformAuth();
+    auth.revokeRefreshTokens(userId).catch(() => {});
 
     logger.info("[AdminUserService] User deactivated", { userId, byAdmin: adminId });
 
-    // Notify user via email (non-blocking)
     const userWithProfile = await prisma.user.findUnique({
         where: { id: userId },
         include: { customerProfile: true, therapistProfile: true },
@@ -107,8 +93,12 @@ export const deactivateUser = async (userId, adminId, callerRole) => {
     sendAccountDeactivated({ user: userWithProfile }).catch(() => {});
 
     return updated;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {string} adminId
+ */
 export const reactivateUser = async (userId, adminId) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundError("User not found");
@@ -121,8 +111,13 @@ export const reactivateUser = async (userId, adminId) => {
 
     logger.info("[AdminUserService] User reactivated", { userId, byAdmin: adminId });
     return updated;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {object} updates
+ * @param {string} adminId
+ */
 export const updateUser = async (userId, updates, adminId) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -132,18 +127,15 @@ export const updateUser = async (userId, updates, adminId) => {
 
     const { email, fullName, phone, customerType, agencyName, primaryLicenseType, professionalSummary } = updates;
 
-    // Update email in both Supabase and Prisma
     if (email && email !== user.email) {
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) throw new ConflictError("A user with this email already exists");
 
-        const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { email });
-        if (error) throw new BadRequestError(`Failed to update email: ${error.message}`);
-
+        const auth = getIdentityPlatformAuth();
+        await auth.updateUser(userId, { email });
         await prisma.user.update({ where: { id: userId }, data: { email } });
     }
 
-    // Update customer profile fields
     const customerFields = {};
     if (fullName !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.fullName = fullName;
     if (phone !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.phone = phone;
@@ -151,13 +143,9 @@ export const updateUser = async (userId, updates, adminId) => {
     if (agencyName !== undefined && user.role === USER_ROLES.CUSTOMER) customerFields.agencyName = agencyName;
 
     if (Object.keys(customerFields).length > 0 && user.customerProfile) {
-        await prisma.customerProfile.update({
-            where: { userId },
-            data: customerFields,
-        });
+        await prisma.customerProfile.update({ where: { userId }, data: customerFields });
     }
 
-    // Update therapist profile fields
     const therapistFields = {};
     if (fullName !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.fullName = fullName;
     if (phone !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.phone = phone;
@@ -165,13 +153,9 @@ export const updateUser = async (userId, updates, adminId) => {
     if (professionalSummary !== undefined && user.role === USER_ROLES.THERAPIST) therapistFields.professionalSummary = professionalSummary;
 
     if (Object.keys(therapistFields).length > 0 && user.therapistProfile) {
-        await prisma.therapistProfile.update({
-            where: { userId },
-            data: therapistFields,
-        });
+        await prisma.therapistProfile.update({ where: { userId }, data: therapistFields });
     }
 
-    // Return updated user
     const updated = await prisma.user.findUnique({
         where: { id: userId },
         include: { customerProfile: true, therapistProfile: true, subAdminProfile: true },
@@ -179,4 +163,4 @@ export const updateUser = async (userId, updates, adminId) => {
 
     logger.info("[AdminUserService] User updated", { userId, byAdmin: adminId, fields: Object.keys(updates) });
     return updated;
-}
+};

@@ -1,73 +1,47 @@
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { COOKIE_MAX_AGE } from "../utils/constants.js";
-import { supabase } from "../config/supabase.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import {
-    registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset, refreshAccessToken,
-    changePassword, resendVerificationEmail, completeOAuthOnboarding, markEmailVerified,
+    registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset,
+    refreshAccessToken, changePassword, resendVerificationEmail, completeOAuthOnboarding, markEmailVerified,
 } from "../services/auth.service.js";
-
-/**
- * Whether cookies should use secure/cross-origin settings
- * Driven by COOKIE_SECURE env var so it works indepentely of NODE_ENV
- * Set COOKIE_SECURE=true on any deployment that serves over HTTPS (staging, production)
- * Leave unset for local dev (HTTP localhost)
- */
 
 const isSecureContext = process.env.COOKIE_SECURE === "true";
 
-const getAccessTokenCookieOptions = () => {
-    return {
-        httpOnly: true,
-        secure: isSecureContext,
-        sameSite: isSecureContext ? "none" : "lax", // "none" for cross-origin
-        maxAge: COOKIE_MAX_AGE.ONE_HOUR,
-        path: "/",
-    };
-};
+const getAccessTokenCookieOptions = () => ({
+    httpOnly: true,
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "none" : "lax",
+    maxAge: COOKIE_MAX_AGE.ONE_HOUR,
+    path: "/",
+});
 
 const getRefreshTokenCookieOptions = () => ({
     httpOnly: true,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS,
     path: "/",
 });
 
-/**
- * Role cookie — readable by Next.js middleware for route protection.
- * NOT httpOnly by design: middleware needs to read it on the server edge.
- * Lifetime matches the refresh token (7 days) so the user stays "known"
- * to the middleware for the full session duration. The actual auth check
- * still happens via the httpOnly access/refresh tokens.
- */
 const getRoleCookieOptions = () => ({
     httpOnly: false,
     secure: isSecureContext,
     sameSite: isSecureContext ? "none" : "lax",
-    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS, // 7 days — matches refresh token
+    maxAge: COOKIE_MAX_AGE.SEVEN_DAYS,
     path: "/",
 });
 
 /**
- * Register customer controller
+ * @type {import("express").RequestHandler}
  */
 export const registerCustomerController = async (req, res, next) => {
     try {
         const { email, password, fullName, phone, customerType, agencyName } = req.body;
+        const result = await registerCustomer({ email, password, fullName, phone, customerType, agencyName });
 
-        const result = await registerCustomer({ email, password, fullName, phone, customerType, agencyName })
+        const response = { success: true, message: result.message };
 
-        const response = {
-            success: true,
-            message: result.message
-        };
-
-        /**
-         * If the user was successfully created (result.user.exists)
-         * we include the non-sensitive user data in the response
-         * If result.user is null (email already exists), we omit the data
-         * block to prevent information leaking, but still return 201
-         */
         if (result.user) {
             response.data = {
                 user: {
@@ -75,8 +49,8 @@ export const registerCustomerController = async (req, res, next) => {
                     email: result.user.email,
                     role: result.user.role,
                     emailVerified: result.user.emailVerified,
-                    hasLinkedRecords: result.user.hasLinkedRecords
-                }
+                    hasLinkedRecords: result.user.hasLinkedRecords,
+                },
             };
         }
 
@@ -84,21 +58,17 @@ export const registerCustomerController = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Register therapist controller
+ * @type {import("express").RequestHandler}
  */
 export const registerTherapistController = async (req, res, next) => {
     try {
         const { email, password, fullName, phone } = req.body;
-
         const result = await registerTherapist({ email, password, fullName, phone });
 
-        const response = {
-            success: true,
-            message: result.message,
-        };
+        const response = { success: true, message: result.message };
 
         if (result.user) {
             response.data = {
@@ -107,7 +77,7 @@ export const registerTherapistController = async (req, res, next) => {
                     email: result.user.email,
                     role: result.user.role,
                     emailVerified: result.user.emailVerified,
-                }
+                },
             };
         }
 
@@ -115,44 +85,37 @@ export const registerTherapistController = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Login
+ * @type {import("express").RequestHandler}
  */
 export const loginController = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-
         const result = await login({ email, password });
 
-        // Set Supabase session tokens in httpOnly cookies
         res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
-        // Role cookie — readable by Next.js middleware for route protection
         res.cookie("app_role", result.user.role, getRoleCookieOptions());
 
         res.status(200).json({
             success: true,
             message: "Login successful",
-            data: {
-                user: result.user
-            }
+            data: { user: result.user },
         });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Logout
+ * @type {import("express").RequestHandler}
  */
 export const logoutController = async (req, res, next) => {
     try {
         await logout();
 
-        // Clear all auth cookies — attributes must match the original Set-Cookie to ensure deletion
-        const isSecureContext = process.env.COOKIE_SECURE === "true";
         const clearOptions = {
             path: "/",
             httpOnly: true,
@@ -164,217 +127,153 @@ export const logoutController = async (req, res, next) => {
         res.clearCookie("sb_refresh_token", clearOptions);
         res.clearCookie("app_role", { path: "/", secure: isSecureContext, sameSite: isSecureContext ? "none" : "lax" });
 
-        res.status(200).json({
-            success: true,
-            message: "Logged out successfully"
-        });
+        res.status(200).json({ success: true, message: "Logged out successfully" });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Get current user controller
+ * @type {import("express").RequestHandler}
  */
 export const getCurrentUserController = async (req, res, next) => {
     try {
         const user = await getCurrentUser(req.user.id);
-
-        res.status(200).json({
-            success: true,
-            data: {
-                user
-            }
-        });
+        res.status(200).json({ success: true, data: { user } });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Handle email verification callback from frontend
+ * @type {import("express").RequestHandler}
  */
 export const verifyEmailController = async (req, res, next) => {
     try {
-        const { userId, fullName } = req.body;
+        const { userId, email, fullName } = req.body;
 
-        if (!userId) {
-            return res.status(400).json({
-                success: false,
-                message: "Missing userId"
-            });
+        if (!userId && !email) {
+            return res.status(400).json({ success: false, message: "Missing userId or email" });
         }
 
-        const result = await markEmailVerified({ userId, fullName });
-
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
+        const result = await markEmailVerified({ userId, email, fullName });
+        res.status(200).json({ success: true, message: result.message, data: { user: result.user } });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Request password reset controller
+ * @type {import("express").RequestHandler}
  */
 export const requestPasswordResetController = async (req, res, next) => {
     try {
         const { email } = req.body;
-
         const result = await requestPasswordReset({ email });
-
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
+        res.status(200).json({ success: true, message: result.message });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Change password controller (for authenticated users)
+ * @type {import("express").RequestHandler}
  */
 export const changePasswordController = async (req, res, next) => {
     try {
         const { currentPassword, newPassword } = req.body;
-
-        const result = await changePassword({
-            userId: req.user.id,
-            currentPassword,
-            newPassword
-        });
-
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
+        const result = await changePassword({ userId: req.user.id, currentPassword, newPassword });
+        res.status(200).json({ success: true, message: result.message });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Complete OAuth onboarding controller
+ * @type {import("express").RequestHandler}
  */
 export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
         const { role, fullName, phone, customerType, agencyName, location } = req.body;
 
-        // Build profile data object based on role
         const profileData = {
             fullName,
             phone,
-            ...(role === "customer" && {
-                customerType,
-                agencyName,
-                location
-            }),
+            ...(role === "customer" && { customerType, agencyName, location }),
         };
 
-        const result = await completeOAuthOnboarding({
-            userId: req.user.id,
-            role,
-            profileData
-        });
+        const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData });
 
         res.status(200).json({
             success: true,
             message: result.message,
-            data: {
-                user: result.user,
-            }
+            data: { user: result.user },
         });
     } catch (error) {
         next(error);
     }
-}
+};
+
 /**
- * Process OAuth session from frontend
- * Called after frontend receives tokens from Supabase
+ * Process an OAuth ID token from the frontend.
+ * Verifies the token via Identity Platform, then finds or creates the Prisma user record.
+ *
+ * @type {import("express").RequestHandler}
  */
 export const processOAuthController = async (req, res, next) => {
     try {
         const { accessToken, refreshToken } = req.body;
 
         if (!accessToken || !refreshToken) {
-            return res.status(400).json({
-                success: false,
-                message: "Missing OAuth tokens"
-            });
+            return res.status(400).json({ success: false, message: "Missing OAuth tokens" });
         }
 
-        // Verify the session with Supabase and get user
-        console.log("[processOAuth] Verifying token prefix:", accessToken?.slice(0, 20));
-        const { data: { user: supabaseUser }, error: userError } = await supabase.auth.getUser(accessToken);
-        console.log("[processOAuth] getUser result — user:", supabaseUser?.id ?? "null", "error:", userError?.message ?? "none", "status:", userError?.status ?? "none");
-
-        if (userError || !supabaseUser) {
-            console.error("[processOAuth] Token rejected by Supabase:", userError?.message);
-            return res.status(401).json({
-                success: false,
-                message: "Invalid OAuth session"
-            });
+        const auth = getIdentityPlatformAuth();
+        let decoded;
+        try {
+            decoded = await auth.verifyIdToken(accessToken);
+        } catch {
+            return res.status(401).json({ success: false, message: "Invalid OAuth session" });
         }
 
-        // Check if user exists in our database
+        const uid = decoded.uid;
+        const normalizedEmail = decoded.email?.toLowerCase().trim();
+
         let user = await prisma.user.findUnique({
-            where: { id: supabaseUser.id },
-            include: {
-                customerProfile: true,
-                therapistProfile: true,
-            },
+            where: { id: uid },
+            include: { customerProfile: true, therapistProfile: true },
         });
 
-        // If user doesn't exist by Supabase UUID, check by email before creating.
-        // This handles the case where a Prisma record exists from a different auth
-        // environment (e.g. staging vs production Supabase projects) or from a
-        // prior email/password registration where the UUID differs.
-        // Google guarantees the email is verified so this link is safe.
-        if (!user) {
-            const normalizedEmail = supabaseUser.email.toLowerCase().trim();
-
+        if (!user && normalizedEmail) {
             const existingByEmail = await prisma.user.findUnique({
                 where: { email: normalizedEmail },
                 include: { customerProfile: true, therapistProfile: true },
             });
 
             if (existingByEmail) {
-                // Account exists under a different UUID — link by updating the id
-                // to match the current Supabase auth user so future lookups hit by UUID.
                 user = await withAdminAccess(async (db) => {
                     return db.user.update({
                         where: { email: normalizedEmail },
-                        data: {
-                            id: supabaseUser.id,
-                            emailVerified: true,
-                        },
+                        data: { id: uid, emailVerified: true },
                         include: { customerProfile: true, therapistProfile: true },
                     });
                 });
             } else {
-                // Genuinely new user — create the record.
                 const existingPatient = await prisma.patient.findFirst({
                     where: { email: normalizedEmail, userId: null },
-                    include: {
-                        agency: { select: { id: true, fullName: true, agencyName: true } }
-                    }
+                    include: { agency: { select: { id: true, fullName: true, agencyName: true } } },
                 });
 
                 user = await withAdminAccess(async (db) => {
                     return db.user.create({
                         data: {
-                            id: supabaseUser.id,
+                            id: uid,
                             email: normalizedEmail,
                             passwordHash: "",
                             role: "customer",
                             emailVerified: true,
                             isActive: true,
-                            ...(existingPatient && {
-                                patientProfile: { connect: { id: existingPatient.id } }
-                            })
+                            ...(existingPatient && { patientProfile: { connect: { id: existingPatient.id } } }),
                         },
                         include: { customerProfile: true, therapistProfile: true },
                     });
@@ -384,10 +283,9 @@ export const processOAuthController = async (req, res, next) => {
             const needsOnboarding = user.role === "customer"
                 ? !user.customerProfile
                 : user.role === "therapist"
-                    ? !user.therapistProfile
-                    : false;
+                ? !user.therapistProfile
+                : false;
 
-            // Set session cookies
             res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
             res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
             res.cookie("app_role", user.role, getRoleCookieOptions());
@@ -402,13 +300,12 @@ export const processOAuthController = async (req, res, next) => {
                         role: user.role,
                         emailVerified: user.emailVerified,
                         needsOnboarding,
-                    }
-                }
+                    },
+                },
             });
         }
 
-        // Existing user - check if account is deactivated
-        if (!user.isActive) {
+        if (!user?.isActive) {
             return res.status(401).json({
                 success: false,
                 code: "ACCOUNT_DEACTIVATED",
@@ -416,14 +313,12 @@ export const processOAuthController = async (req, res, next) => {
             });
         }
 
-        // Existing user - check if they need onboarding
         const needsOnboarding = user.role === "customer"
             ? !user.customerProfile
             : user.role === "therapist"
-                ? !user.therapistProfile
-                : false;
+            ? !user.therapistProfile
+            : false;
 
-        // Set session cookies
         res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
         res.cookie("app_role", user.role, getRoleCookieOptions());
@@ -438,37 +333,30 @@ export const processOAuthController = async (req, res, next) => {
                     role: user.role,
                     emailVerified: user.emailVerified,
                     isActive: user.isActive,
-                    needsOnboarding
-                }
-            }
+                    needsOnboarding,
+                },
+            },
         });
-
     } catch (error) {
-        console.error("Process OAuth error:", error);
         next(error);
     }
-}
+};
 
 /**
- * Resend verification email controller
+ * @type {import("express").RequestHandler}
  */
 export const resendVerificationEmailController = async (req, res, next) => {
     try {
         const { email } = req.body;
-
         const result = await resendVerificationEmail({ email });
-
-        res.status(200).json({
-            success: true,
-            message: result.message
-        });
+        res.status(200).json({ success: true, message: result.message });
     } catch (error) {
         next(error);
     }
-}
+};
 
 /**
- * Refresh token controller
+ * @type {import("express").RequestHandler}
  */
 export const refreshTokenController = async (req, res, next) => {
     try {
@@ -484,20 +372,15 @@ export const refreshTokenController = async (req, res, next) => {
 
         const result = await refreshAccessToken({ refreshToken });
 
-        // Update cookies with new tokens
         res.cookie("sb_access_token", result.session.access_token, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", result.session.refresh_token, getRefreshTokenCookieOptions());
 
-        // Re-set the role cookie so the middleware stays in sync
         if (result.role) {
             res.cookie("app_role", result.role, getRoleCookieOptions());
         }
 
-        res.status(200).json({
-            success: true,
-            message: "Token refreshed successfully",
-        });
+        res.status(200).json({ success: true, message: "Token refreshed successfully" });
     } catch (error) {
         next(error);
     }
-}
+};

@@ -1191,6 +1191,39 @@ export const cancellationRejectedToTherapist = ({ customer, therapist, booking, 
     `),
 });
 
+export const emailVerification = ({ verificationLink }) => ({
+    subject: 'Verify your RehabTask email address',
+    html: layout(`
+        ${heading('Verify Your Email Address')}
+        ${text('Thanks for signing up for RehabTask. Please verify your email address to activate your account.')}
+        ${button(verificationLink, 'Verify Email Address')}
+        ${hr()}
+        ${muted('This link expires in 24 hours. If you did not create a RehabTask account, you can safely ignore this email.')}
+    `),
+});
+
+export const passwordReset = ({ resetLink }) => ({
+    subject: 'Reset your RehabTask password',
+    html: layout(`
+        ${heading('Reset Your Password')}
+        ${text('We received a request to reset the password for your RehabTask account.')}
+        ${button(resetLink, 'Reset Password')}
+        ${hr()}
+        ${muted('This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email. Your password will not change.')}
+    `),
+});
+
+export const subAdminInvite = ({ inviteLink }) => ({
+    subject: 'You have been invited to RehabTask as a sub-admin',
+    html: layout(`
+        ${heading('You\'ve Been Invited')}
+        ${text('You have been invited to join RehabTask as a sub-administrator. Click the button below to accept your invitation and set up your account.')}
+        ${button(inviteLink, 'Accept Invitation')}
+        ${hr()}
+        ${muted('This invitation link expires in 24 hours. If you were not expecting this invitation, you can safely ignore this email.')}
+    `),
+});
+
 export const cancellationAutoDeclinedToTherapist = ({ customer, therapist, booking }) => ({
     subject: 'Your cancellation request expired',
     html: layout(`
