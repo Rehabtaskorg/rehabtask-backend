@@ -42,7 +42,7 @@ model User {
 
 model CustomerProfile {
   id                       String           @id @default(uuid()) @db.Uuid
-  userId                   String           @unique @map("user_id") @db.Uuid
+  userId                   String           @unique @map("user_id") @db.VarChar(128)
   customerType             CustomerType     @map("customer_type")
   fullName                 String           @map("full_name") @db.VarChar(255)
   agencyName               String?          @map("agency_name") @db.VarChar(255)
@@ -109,7 +109,7 @@ model Patient {
   dateOfBirth        DateTime?        @map("date_of_birth") @db.Date
   certificationStart DateTime?        @map("certification_start") @db.Date
   certificationEnd   DateTime?        @map("certification_end") @db.Date
-  userId             String?          @unique @map("user_id") @db.Uuid
+  userId             String?          @unique @map("user_id") @db.VarChar(128)
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -128,7 +128,7 @@ model Patient {
 
 model TherapistProfile {
   id                       String                 @id @default(uuid()) @db.Uuid
-  userId                   String                 @unique @map("user_id") @db.Uuid
+  userId                   String                 @unique @map("user_id") @db.VarChar(128)
   fullName                 String                 @map("full_name") @db.VarChar(255)
   phone                    String?                @db.VarChar(20)
   dateOfBirth              DateTime?              @map("date_of_birth") @db.Date
@@ -227,9 +227,9 @@ model LicenseDocument {
   reject_reason String?
   status        String?           @default("pending") @db.VarChar(20)
   uploadIp      String?           @map("upload_ip") @db.VarChar(45)
-  userId        String?           @map("user_id") @db.Uuid
+  userId        String?           @map("user_id") @db.VarChar(128)
   verifiedAt    DateTime?         @map("verified_at") @db.Timestamptz(3)
-  verifiedBy    String?           @map("verified_by") @db.Uuid
+  verifiedBy    String?           @map("verified_by") @db.VarChar(128)
   therapist     TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   agency        CustomerProfile?  @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Cascade)
   customer      CustomerProfile?  @relation("CustomerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
@@ -583,8 +583,8 @@ model ProcessedWebhookEvent {
 
 model DirectConversation {
   id        String   @id @default(uuid()) @db.Uuid
-  user1Id   String   @map("user1_id") @db.Uuid
-  user2Id   String   @map("user2_id") @db.Uuid
+  user1Id   String   @map("user1_id") @db.VarChar(128)
+  user2Id   String   @map("user2_id") @db.VarChar(128)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -601,8 +601,8 @@ model DirectConversation {
 
 model Message {
   id          String @id @default(uuid()) @db.Uuid
-  senderId    String @map("sender_id") @db.Uuid
-  recipientId String @map("recipient_id") @db.Uuid
+  senderId    String @map("sender_id") @db.VarChar(128)
+  recipientId String @map("recipient_id") @db.VarChar(128)
 
   requestId      String? @map("request_id") @db.Uuid
   offerId        String? @map("offer_id") @db.Uuid
@@ -707,9 +707,9 @@ model RequestOption {
 model Dispute {
   id              String        @id @default(uuid()) @db.Uuid
   ticketId        String        @unique @map("ticket_id") @db.VarChar(20)
-  userId          String        @map("user_id") @db.Uuid
+  userId          String        @map("user_id") @db.VarChar(128)
   bookingId       String?       @map("booking_id") @db.Uuid
-  assignedAdminId String?       @map("assigned_admin_id") @db.Uuid
+  assignedAdminId String?       @map("assigned_admin_id") @db.VarChar(128)
   title           String?       @db.VarChar(255)
   type            DisputeType
   description     String        @db.Text
@@ -733,7 +733,7 @@ model Dispute {
 
 model Notification {
   id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
+  userId     String    @map("user_id") @db.VarChar(128)
   type       String    @db.VarChar(100)
   title      String    @db.VarChar(255)
   message    String    @db.Text
@@ -755,11 +755,11 @@ model Notification {
 
 model SubAdminProfile {
   id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @unique @map("user_id") @db.Uuid
+  userId           String   @unique @map("user_id") @db.VarChar(128)
   fullName         String?  @map("full_name") @db.VarChar(255)
   permissions      String[]
   isActive         Boolean  @default(true) @map("is_active")
-  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
+  createdByAdminId String   @map("created_by_admin_id") @db.VarChar(128)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   user             User     @relation("SubAdminUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -775,7 +775,7 @@ model CommissionConfig {
   tier             TherapistPlan? // null = legacy global record; non-null = tier-specific rate
   rate             Decimal        @db.Decimal(5, 4)
   effectiveFrom    DateTime       @default(now()) @map("effective_from") @db.Timestamptz(3)
-  createdByAdminId String         @map("created_by_admin_id") @db.Uuid
+  createdByAdminId String         @map("created_by_admin_id") @db.VarChar(128)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   createdByAdmin   User           @relation(fields: [createdByAdminId], references: [id])
 
@@ -787,7 +787,7 @@ model CommissionConfig {
 
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
-  actorId    String?  @map("actor_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.VarChar(128)
   action     String   @db.VarChar(100)
   entityType String   @map("entity_type") @db.VarChar(50)
   entityId   String   @map("entity_id") @db.Uuid
@@ -806,7 +806,7 @@ model SystemConfig {
   value       String
   description String?
   dataType    String   @map("data_type") @db.VarChar(20)
-  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.VarChar(128)
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
   updater     User?    @relation(fields: [updatedBy], references: [id])
 
@@ -963,7 +963,7 @@ model MessageAttachment {
   id             String @id @default(uuid()) @db.Uuid
   messageId      String @map("message_id") @db.Uuid
   conversationId String @map("conversation_id") @db.Uuid
-  uploadedById   String @map("uploaded_by_id") @db.Uuid
+  uploadedById   String @map("uploaded_by_id") @db.VarChar(128)
 
   fileName    String @map("file_name") @db.VarChar(255)
   fileSize    Int    @map("file_size")
