@@ -237,6 +237,7 @@ export const resendSubAdminInvite = async (userId) => {
     const auth = getIdentityPlatformAuth();
     const inviteLink = await auth.generateSignInWithEmailLink(user.email, {
         url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(user.email)}`,
+        handleCodeInApp: true,
     });
 
     sendSubAdminInviteEmail({ email: user.email, inviteLink }).catch((err) => {
