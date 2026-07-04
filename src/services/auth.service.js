@@ -112,11 +112,13 @@ const signInWithPassword = async (email, password) => {
         throw { _ipCode: body?.error?.message };
     }
 
+    const payload = JSON.parse(Buffer.from(body.idToken.split(".")[1], "base64url").toString());
+
     return {
         uid: body.localId,
         idToken: body.idToken,
         refreshToken: body.refreshToken,
-        emailVerified: body.emailVerified === true,
+        emailVerified: payload.email_verified === true,
     };
 };
 
