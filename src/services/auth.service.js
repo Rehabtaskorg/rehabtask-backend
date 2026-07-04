@@ -36,7 +36,7 @@ const generateVerificationLink = async (email) => {
         throw new BadRequestError("Identity Platform did not return an oobCode");
     }
 
-    const base = `${frontendUrl()}/__/auth/action`;
+    const base = `${frontendUrl()}/action-handler`;
     const continueUrl = `${frontendUrl()}/verify-callback`;
     return `${base}?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
 };
