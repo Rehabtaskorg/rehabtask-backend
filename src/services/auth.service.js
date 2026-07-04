@@ -16,36 +16,6 @@ import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.
 const frontendUrl = () => (env.FRONTEND_URL || "").replace(/\/$/, "");
 
 /**
- * Exchange a custom token for an ID token via the Identity Platform REST API.
- * Used when we need an ID token but don't have the user's password (e.g. resend verification).
- *
- * @param {string} uid
- * @returns {Promise<string>} idToken
- */
-const getIdTokenForUid = async (uid) => {
-    const auth = getIdentityPlatformAuth();
-    const customToken = await auth.createCustomToken(uid);
-
-    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${env.FIREBASE_WEB_API_KEY}`;
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            token: customToken,
-            tenantId: env.IDENTITY_PLATFORM_TENANT_ID,
-            returnSecureToken: true,
-        }),
-    });
-
-    const body = await res.json();
-    if (!res.ok) {
-        throw new BadRequestError(`Failed to exchange custom token: ${body?.error?.message}`);
-    }
-
-    return body.idToken;
-};
-
-/**
  * Generate an email verification link via the Identity Platform REST API.
  * Bypasses callbackUri (project-level, single-value) by constructing the link
  * directly from the raw oobCode — giving each environment its own handler URL.
@@ -54,27 +24,13 @@ const getIdTokenForUid = async (uid) => {
  * @param {string} idToken - The user's Identity Platform ID token (required by sendOobCode)
  * @returns {Promise<string>} Full verification URL pointing to this environment's action handler
  */
-const generateVerificationLink = async (email, idToken) => {
-    const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${env.FIREBASE_WEB_API_KEY}`;
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            requestType: "VERIFY_EMAIL",
-            idToken,
-            returnOobLink: true,
-            tenantId: env.IDENTITY_PLATFORM_TENANT_ID,
-        }),
+const generateVerificationLink = async (email) => {
+    const auth = getIdentityPlatformAuth();
+    const firebaseLink = await auth.generateEmailVerificationLink(email, {
+        url: `${frontendUrl()}/verify-callback`,
     });
 
-    const body = await res.json();
-    if (!res.ok) {
-        throw new BadRequestError(`Failed to generate verification link: ${body?.error?.message}`);
-    }
-
-    const oobCode = body.oobLink
-        ? new URL(body.oobLink).searchParams.get("oobCode")
-        : null;
+    const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
 
     if (!oobCode) {
         throw new BadRequestError("Identity Platform did not return an oobCode");
@@ -205,8 +161,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         authUid = authUser.uid;
 
-        const { idToken } = await signInWithPassword(normalizedEmail, password);
-        const verificationLink = await generateVerificationLink(normalizedEmail, idToken);
+        const verificationLink = await generateVerificationLink(normalizedEmail);
 
         sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
             logger.error("[Auth] Failed to send verification email", { email: normalizedEmail, error: err.message });
@@ -314,8 +269,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
 
         authUid = authUser.uid;
 
-        const { idToken } = await signInWithPassword(normalizedEmail, password);
-        const verificationLink = await generateVerificationLink(normalizedEmail, idToken);
+        const verificationLink = await generateVerificationLink(normalizedEmail);
 
         sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
             logger.error("[Auth] Failed to send verification email", { email: normalizedEmail, error: err.message });
@@ -642,8 +596,7 @@ export const resendVerificationEmail = async ({ email }) => {
 
     if (user) {
         try {
-            const idToken = await getIdTokenForUid(user.id);
-            const verificationLink = await generateVerificationLink(normalizedEmail, idToken);
+            const verificationLink = await generateVerificationLink(normalizedEmail);
             sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
                 logger.error("[Auth] Failed to send verification email", { email: normalizedEmail, error: err.message });
             });
