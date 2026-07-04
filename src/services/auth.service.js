@@ -89,6 +89,7 @@ const sendResetLink = async (email, type = "reset") => {
     try {
         const resetLink = await auth.generatePasswordResetLink(email, {
             url: `${frontendUrl()}/reset-password`,
+            handleCodeInApp: true,
         });
 
         const send = type === "existing"
@@ -134,6 +135,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
 
         const verificationLink = await auth.generateEmailVerificationLink(normalizedEmail, {
             url: `${frontendUrl()}/verify-callback`,
+            handleCodeInApp: true,
         });
 
         sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
@@ -244,6 +246,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
 
         const verificationLink = await auth.generateEmailVerificationLink(normalizedEmail, {
             url: `${frontendUrl()}/verify-callback`,
+            handleCodeInApp: true,
         });
 
         sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
@@ -573,6 +576,7 @@ export const resendVerificationEmail = async ({ email }) => {
     try {
         const verificationLink = await auth.generateEmailVerificationLink(normalizedEmail, {
             url: `${frontendUrl()}/verify-callback`,
+            handleCodeInApp: true,
         });
         sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
             logger.error("[Auth] Failed to send verification email", { email: normalizedEmail, error: err.message });

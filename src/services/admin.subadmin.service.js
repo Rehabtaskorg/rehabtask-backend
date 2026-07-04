@@ -110,6 +110,7 @@ export const createSubAdmin = async (email, permissions, adminId) => {
 
     const inviteLink = await auth.generateSignInWithEmailLink(email, {
         url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`,
+        handleCodeInApp: true,
     });
 
     sendSubAdminInviteEmail({ email, inviteLink }).catch((err) => {
