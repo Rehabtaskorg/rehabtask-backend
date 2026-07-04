@@ -7,7 +7,7 @@ datasource db {
 }
 
 model User {
-  id                         String               @id @db.Uuid
+  id                         String               @id @db.VarChar(128)
   email                      String               @unique @db.VarChar(255)
   passwordHash               String               @default("") @map("password_hash")
   role                       UserRole
