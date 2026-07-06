@@ -33,7 +33,7 @@ export const listUsersQuerySchema = z.object({
 });
 
 export const userIdParamSchema = z.object({
-    userId: z.uuid("Invalid user ID"),
+    userId: z.string().min(1, "Invalid user ID"),
 });
 
 export const updateUserSchema = z.object({
@@ -66,11 +66,11 @@ export const listTherapistsQuerySchema = z.object({
 });
 
 export const therapistUserIdParamSchema = z.object({
-    therapistUserId: z.uuid("Invalid therapist user ID"),
+    therapistUserId: z.string().min(1, "Invalid therapist user ID"),
 });
 
 export const therapistDocumentParamSchema = z.object({
-    therapistUserId: z.uuid("Invalid therapist user ID"),
+    therapistUserId: z.string().min(1, "Invalid therapist user ID"),
     documentId: z.uuid("Invalid document ID"),
 });
 
@@ -85,7 +85,7 @@ export const rejectTherapistSchema = z.object({
 
 export const adminListDisputesQuerySchema = z.object({
     status: z.enum(["open", "under_review", "resolved", "closed"]).optional(),
-    assignedAdminId: z.uuid().optional(),
+    assignedAdminId: z.string().min(1).optional(),
     unassigned: z.enum(["true", "false"]).optional(),
     page: z
         .string()
@@ -106,7 +106,7 @@ export const disputeIdParamSchema = z.object({
 });
 
 export const assignDisputeSchema = z.object({
-    assignedAdminId: z.uuid("Invalid admin user ID"),
+    assignedAdminId: z.string().min(1, "Invalid admin user ID"),
 });
 
 export const adminUpdateDisputeSchema = z.object({
