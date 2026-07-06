@@ -108,27 +108,51 @@ export const createSubAdmin = async (email, permissions, adminId) => {
         throw new BadRequestError(`Failed to create auth user: ${err.message}`);
     }
 
-    const inviteLink = await auth.generateSignInWithEmailLink(email, {
-        url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`,
-        handleCodeInApp: true,
-    });
+    let inviteLink;
+    try {
+        inviteLink = await auth.generateSignInWithEmailLink(email, {
+            url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`,
+            handleCodeInApp: true,
+        });
+    } catch (err) {
+        await auth.deleteUser(authUser.uid).catch((cleanupErr) => {
+            logger.error("[AdminSubAdminService] Failed to clean up auth user after invite link failure", {
+                uid: authUser.uid,
+                error: cleanupErr.message,
+            });
+        });
+        logger.error("[AdminSubAdminService] Failed to generate invite link", { email, error: err.message });
+        throw new BadRequestError(`Failed to generate invite link: ${err.message}`);
+    }
 
     sendSubAdminInviteEmail({ email, inviteLink }).catch((err) => {
         logger.error("[AdminSubAdminService] Failed to send invite email", { email, error: err.message });
     });
 
-    const user = await prisma.user.create({
-        data: {
-            id: authUser.uid,
-            email,
-            role: USER_ROLES.SUB_ADMIN,
-            isActive: true,
-            subAdminProfile: {
-                create: { permissions, isActive: true, createdByAdminId: adminId },
+    let user;
+    try {
+        user = await prisma.user.create({
+            data: {
+                id: authUser.uid,
+                email,
+                role: USER_ROLES.SUB_ADMIN,
+                isActive: true,
+                subAdminProfile: {
+                    create: { permissions, isActive: true, createdByAdminId: adminId },
+                },
             },
-        },
-        include: { subAdminProfile: true },
-    });
+            include: { subAdminProfile: true },
+        });
+    } catch (err) {
+        await auth.deleteUser(authUser.uid).catch((cleanupErr) => {
+            logger.error("[AdminSubAdminService] Failed to clean up auth user after DB failure", {
+                uid: authUser.uid,
+                error: cleanupErr.message,
+            });
+        });
+        logger.error("[AdminSubAdminService] Failed to create sub-admin in DB", { email, error: err.message });
+        throw err;
+    }
 
     logger.info("[AdminSubAdminService] Sub-admin created", { userId: user.id, email, byAdmin: adminId });
     return user;
