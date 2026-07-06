@@ -110,10 +110,14 @@ export const createSubAdmin = async (email, permissions, adminId) => {
 
     let inviteLink;
     try {
-        inviteLink = await auth.generateSignInWithEmailLink(email, {
+        const firebaseLink = await auth.generateSignInWithEmailLink(email, {
             url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`,
             handleCodeInApp: true,
         });
+        const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
+        if (!oobCode) throw new Error("Identity Platform did not return an oobCode");
+        const continueUrl = `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`;
+        inviteLink = `${env.FRONTEND_URL}/action-handler?mode=signIn&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
     } catch (err) {
         await auth.deleteUser(authUser.uid).catch((cleanupErr) => {
             logger.error("[AdminSubAdminService] Failed to clean up auth user after invite link failure", {
@@ -259,10 +263,14 @@ export const resendSubAdminInvite = async (userId) => {
     if (user.emailVerified) throw new ConflictError("Sub-admin has already accepted their invite");
 
     const auth = getIdentityPlatformAuth();
-    const inviteLink = await auth.generateSignInWithEmailLink(user.email, {
+    const firebaseLink = await auth.generateSignInWithEmailLink(user.email, {
         url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(user.email)}`,
         handleCodeInApp: true,
     });
+    const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
+    if (!oobCode) throw new BadRequestError("Identity Platform did not return an oobCode");
+    const continueUrl = `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(user.email)}`;
+    const inviteLink = `${env.FRONTEND_URL}/action-handler?mode=signIn&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
 
     sendSubAdminInviteEmail({ email: user.email, inviteLink }).catch((err) => {
         logger.error("[AdminSubAdminService] Failed to resend invite email", { userId, error: err.message });
