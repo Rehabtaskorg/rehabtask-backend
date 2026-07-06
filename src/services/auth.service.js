@@ -115,10 +115,12 @@ const exchangeRefreshToken = async (refreshToken) => {
 const sendResetLink = async (email, type = "reset") => {
     const auth = getIdentityPlatformAuth();
     try {
-        const resetLink = await auth.generatePasswordResetLink(email, {
+        const firebaseLink = await auth.generatePasswordResetLink(email, {
             url: `${frontendUrl()}/reset-password`,
-            handleCodeInApp: true,
         });
+
+        const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
+        const resetLink = `${frontendUrl()}/action-handler?mode=resetPassword&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(`${frontendUrl()}/reset-password`)}`;
 
         const send = type === "existing"
             ? sendExistingAccountNotification({ email, resetLink })
