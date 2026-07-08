@@ -137,8 +137,7 @@ jobs:
           BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "BRANCH_TAG=$BRANCH" >> $GITHUB_ENV
 
-      - name: Capture current serving revision (production only)
-        if: github.ref_name == 'main'
+      - name: Capture current serving revision
         run: |
           PREVIOUS_REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
@@ -217,6 +216,7 @@ jobs:
               --network=default \
               --subnet=default \
               --vpc-egress=private-ranges-only \
+              --no-traffic \
               --timeout=300 \
               --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
               --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,IDENTITY_PLATFORM_TENANT_ID=IDENTITY_PLATFORM_TENANT_ID_STAGING:latest,FIREBASE_WEB_API_KEY=FIREBASE_WEB_API_KEY:latest,PROFILE_IMAGES_BUCKET=PROFILE_IMAGES_BUCKET_STAGING:latest,THERAPIST_DOCUMENTS_BUCKET=THERAPIST_DOCUMENTS_BUCKET_STAGING:latest,AGENCY_DOCUMENTS_BUCKET=AGENCY_DOCUMENTS_BUCKET_STAGING:latest,INDIVIDUAL_DOCUMENTS_BUCKET=INDIVIDUAL_DOCUMENTS_BUCKET_STAGING:latest,MESSAGE_ATTACHMENTS_BUCKET=MESSAGE_ATTACHMENTS_BUCKET_STAGING:latest" \
@@ -236,6 +236,7 @@ jobs:
               --network=default \
               --subnet=default \
               --vpc-egress=private-ranges-only \
+              --no-traffic \
               --timeout=300 \
               --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
               --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,IDENTITY_PLATFORM_TENANT_ID=IDENTITY_PLATFORM_TENANT_ID_DEV:latest,FIREBASE_WEB_API_KEY=FIREBASE_WEB_API_KEY:latest,PROFILE_IMAGES_BUCKET=PROFILE_IMAGES_BUCKET_DEV:latest,THERAPIST_DOCUMENTS_BUCKET=THERAPIST_DOCUMENTS_BUCKET_DEV:latest,AGENCY_DOCUMENTS_BUCKET=AGENCY_DOCUMENTS_BUCKET_DEV:latest,INDIVIDUAL_DOCUMENTS_BUCKET=INDIVIDUAL_DOCUMENTS_BUCKET_DEV:latest,MESSAGE_ATTACHMENTS_BUCKET=MESSAGE_ATTACHMENTS_BUCKET_DEV:latest" \
@@ -255,16 +256,14 @@ jobs:
               --format="value(status.conditions[0].status)")
             if [[ "$STATUS" == "True" ]]; then
               echo "Revision $REVISION is healthy."
-              if [[ "${{ env.IS_PROD }}" == "true" ]]; then
-                echo "Switching production traffic to $REVISION..."
-                gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
-                  --region=${{ env.REGION }} \
-                  --to-latest
-                echo "Traffic switched."
-              fi
+              echo "Switching traffic to $REVISION..."
+              gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+                --region=${{ env.REGION }} \
+                --to-revisions=$REVISION=100
+              echo "Traffic switched."
               exit 0
             fi
-            if [[ "$NUDGED" == "false" && "$i" -ge 3 ]]; then
+            if [[ "$NUDGED" == "false" && "$i" -ge 6 ]]; then
               echo "Revision not ready after $i attempts — nudging VPC interface re-establishment..."
               gcloud run services update ${{ env.SERVICE_NAME }} \
                 --region=${{ env.REGION }} \
@@ -288,8 +287,8 @@ jobs:
             sleep 20
           done
           echo "Revision failed health check after nudge."
-          if [[ "${{ env.IS_PROD }}" == "true" ]] && [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
-            echo "Rolling back production to ${{ env.PREVIOUS_REVISION }}..."
+          if [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
+            echo "Rolling back to ${{ env.PREVIOUS_REVISION }}..."
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --to-revisions=${{ env.PREVIOUS_REVISION }}=100
