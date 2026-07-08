@@ -243,6 +243,16 @@ jobs:
               --quiet
           fi
 
+      - name: Re-apply VPC egress after deploy
+        run: |
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --network=default \
+            --subnet=default \
+            --vpc-egress=private-ranges-only \
+            --no-traffic \
+            --quiet
+
       - name: Health check and VPC retry
         run: |
           REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
