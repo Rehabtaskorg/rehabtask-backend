@@ -159,7 +159,7 @@ model TherapistProfile {
   backgroundCheckDate      DateTime?              @map("background_check_date") @db.Timestamptz(3)
   backgroundCheckStatus    BackgroundCheckStatus? @default(pending) @map("background_check_status")
   approvalStatus           ApprovalStatus         @default(review) @map("approval_status")
-  approvedBy               String?                @map("approved_by") @db.Uuid
+  approvedBy               String?                @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?                @map("rejection_reason")
   onboardingStep           Int                    @default(1) @map("onboarding_step")
@@ -716,7 +716,7 @@ model Dispute {
   status          DisputeStatus @default(open)
   resolution      String?       @db.Text
   resolvedAt      DateTime?     @map("resolved_at") @db.Timestamptz(3)
-  resolvedBy      String?       @map("resolved_by") @db.Uuid
+  resolvedBy      String?       @map("resolved_by") @db.VarChar(128)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
