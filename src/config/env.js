@@ -59,12 +59,6 @@ const envSchema = z.object({
     INDIVIDUAL_DOCUMENTS_BUCKET: z.string().min(1),
     MESSAGE_ATTACHMENTS_BUCKET: z.string().min(1),
 
-    // Sentry
-    SENTRY_DSN: z.string().optional(),
-
-    // Better Stack
-    BETTERSTACK_LOG_TOKEN: z.string().optional(),
-
     // PostHog (server-side analytics)
     POSTHOG_API_KEY: z.string().optional(),
 });
@@ -135,7 +129,5 @@ export const {
     AGENCY_DOCUMENTS_BUCKET,
     INDIVIDUAL_DOCUMENTS_BUCKET,
     MESSAGE_ATTACHMENTS_BUCKET,
-    SENTRY_DSN,
-    BETTERSTACK_LOG_TOKEN,
     POSTHOG_API_KEY,
 } = env;
