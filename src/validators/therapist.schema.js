@@ -132,7 +132,7 @@ export const searchTherapistsSchema = z.object({
 });
 
 export const therapistIdParamSchema = z.object({
-    therapistId: z.uuid("Invalid therapist ID"),
+    therapistId: z.string().min(1, "Invalid therapist ID"),
 });
 
 export const reviewsPaginationSchema = z.object({

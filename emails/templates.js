@@ -966,6 +966,29 @@ export const customerRefundReturnedToCard = ({ customer, refundAmount }) => ({
     `),
 });
 
+export const customerRefundPayoutFailed = ({ customer, refundAmount, reason }) => ({
+    subject: `Action required — your refund of ${formatCurrency(refundAmount)} could not be delivered`,
+    html: layout(`
+        ${heading('Refund Delivery Failed')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`We attempted to send your refund of ${formatCurrency(refundAmount)} to your linked bank account, but the transfer was unsuccessful.`)}
+        ${hr()}
+        <p style="color:#ef4444;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(refundAmount)}</p>
+        <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Could Not Be Delivered</p>
+        ${hr()}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('Your refund is still available. Please update your bank account details and we will automatically retry the transfer.')}
+        ${button(`${FRONTEND_URL}/customer/payout-setup`, 'Update Bank Account')}
+        ${hr()}
+        ${muted('If you have questions about this refund, please contact our support team.')}
+    `),
+});
+
 // Stripe requirements alert — sent when account.updated webhook fires with new requirements
 export const stripeRequirementsAlert = ({ therapist, pastDueCount, currentlyDueCount, currentDeadline, hasUpcomingRequirements, futureDeadline }) => {
     const isPastDue = pastDueCount > 0;
@@ -1165,6 +1188,39 @@ export const cancellationRejectedToTherapist = ({ customer, therapist, booking, 
         ${hr()}
         ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
         ${muted('If you have further questions, please contact the customer directly through the platform.')}
+    `),
+});
+
+export const emailVerification = ({ verificationLink }) => ({
+    subject: 'Verify your RehabTask email address',
+    html: layout(`
+        ${heading('Verify Your Email Address')}
+        ${text('Thanks for signing up for RehabTask. Please verify your email address to activate your account.')}
+        ${button(verificationLink, 'Verify Email Address')}
+        ${hr()}
+        ${muted('This link expires in 24 hours. If you did not create a RehabTask account, you can safely ignore this email.')}
+    `),
+});
+
+export const passwordReset = ({ resetLink }) => ({
+    subject: 'Reset your RehabTask password',
+    html: layout(`
+        ${heading('Reset Your Password')}
+        ${text('We received a request to reset the password for your RehabTask account.')}
+        ${button(resetLink, 'Reset Password')}
+        ${hr()}
+        ${muted('This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email. Your password will not change.')}
+    `),
+});
+
+export const subAdminInvite = ({ inviteLink }) => ({
+    subject: 'You have been invited to RehabTask as a sub-admin',
+    html: layout(`
+        ${heading('You\'ve Been Invited')}
+        ${text('You have been invited to join RehabTask as a sub-administrator. Click the button below to accept your invitation and set up your account.')}
+        ${button(inviteLink, 'Accept Invitation')}
+        ${hr()}
+        ${muted('This invitation link expires in 24 hours. If you were not expecting this invitation, you can safely ignore this email.')}
     `),
 });
 

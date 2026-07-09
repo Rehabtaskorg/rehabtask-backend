@@ -57,13 +57,17 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_BACKEND }}
 
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: "574.0.0"
+
       - name: Set environment-specific variables
         run: |
           if [[ "${{ github.ref_name }}" == "main" ]]; then
             echo "SERVICE_NAME=rehabtask-backend" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-prod@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
             echo "IS_PROD=true" >> $GITHUB_ENV
-            echo "IS_STAGING=false" >> $GITHUB_ENV
             echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FRONTEND_URL=https://rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api.rehabtask.com" >> $GITHUB_ENV
@@ -81,11 +85,19 @@ jobs:
             echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_PROD }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_PROD }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_PROD }}" >> $GITHUB_ENV
+            echo "MIN_INSTANCES=1" >> $GITHUB_ENV
+            echo "MAX_INSTANCES=10" >> $GITHUB_ENV
+            echo "IDENTITY_PLATFORM_TENANT_SECRET=IDENTITY_PLATFORM_TENANT_ID_PROD" >> $GITHUB_ENV
+            echo "PROFILE_IMAGES_BUCKET_SECRET=PROFILE_IMAGES_BUCKET_PROD" >> $GITHUB_ENV
+            echo "THERAPIST_DOCUMENTS_BUCKET_SECRET=THERAPIST_DOCUMENTS_BUCKET_PROD" >> $GITHUB_ENV
+            echo "AGENCY_DOCUMENTS_BUCKET_SECRET=AGENCY_DOCUMENTS_BUCKET_PROD" >> $GITHUB_ENV
+            echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_PROD" >> $GITHUB_ENV
+            echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_PROD" >> $GITHUB_ENV
+            echo "POSTHOG_SECRET=POSTHOG_API_KEY" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "staging" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-staging" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
             echo "IS_PROD=false" >> $GITHUB_ENV
-            echo "IS_STAGING=true" >> $GITHUB_ENV
             echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FRONTEND_URL=https://staging.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-staging.rehabtask.com" >> $GITHUB_ENV
@@ -103,11 +115,19 @@ jobs:
             echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_STAGING }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_STAGING }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_STAGING }}" >> $GITHUB_ENV
+            echo "MIN_INSTANCES=0" >> $GITHUB_ENV
+            echo "MAX_INSTANCES=10" >> $GITHUB_ENV
+            echo "IDENTITY_PLATFORM_TENANT_SECRET=IDENTITY_PLATFORM_TENANT_ID_STAGING" >> $GITHUB_ENV
+            echo "PROFILE_IMAGES_BUCKET_SECRET=PROFILE_IMAGES_BUCKET_STAGING" >> $GITHUB_ENV
+            echo "THERAPIST_DOCUMENTS_BUCKET_SECRET=THERAPIST_DOCUMENTS_BUCKET_STAGING" >> $GITHUB_ENV
+            echo "AGENCY_DOCUMENTS_BUCKET_SECRET=AGENCY_DOCUMENTS_BUCKET_STAGING" >> $GITHUB_ENV
+            echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_STAGING" >> $GITHUB_ENV
+            echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_STAGING" >> $GITHUB_ENV
+            echo "POSTHOG_SECRET=" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "development" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-dev" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-dev@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
             echo "IS_PROD=false" >> $GITHUB_ENV
-            echo "IS_STAGING=false" >> $GITHUB_ENV
             echo "NODE_ENV=development" >> $GITHUB_ENV
             echo "FRONTEND_URL=https://dev.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-dev.rehabtask.com" >> $GITHUB_ENV
@@ -125,6 +145,15 @@ jobs:
             echo "STRIPE_PRICE_STANDARD_ANNUAL=${{ secrets.STRIPE_PRICE_STANDARD_ANNUAL_DEV }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_MONTHLY=${{ secrets.STRIPE_PRICE_PREMIUM_MONTHLY_DEV }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_PREMIUM_ANNUAL=${{ secrets.STRIPE_PRICE_PREMIUM_ANNUAL_DEV }}" >> $GITHUB_ENV
+            echo "MIN_INSTANCES=0" >> $GITHUB_ENV
+            echo "MAX_INSTANCES=10" >> $GITHUB_ENV
+            echo "IDENTITY_PLATFORM_TENANT_SECRET=IDENTITY_PLATFORM_TENANT_ID_DEV" >> $GITHUB_ENV
+            echo "PROFILE_IMAGES_BUCKET_SECRET=PROFILE_IMAGES_BUCKET_DEV" >> $GITHUB_ENV
+            echo "THERAPIST_DOCUMENTS_BUCKET_SECRET=THERAPIST_DOCUMENTS_BUCKET_DEV" >> $GITHUB_ENV
+            echo "AGENCY_DOCUMENTS_BUCKET_SECRET=AGENCY_DOCUMENTS_BUCKET_DEV" >> $GITHUB_ENV
+            echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_DEV" >> $GITHUB_ENV
+            echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_DEV" >> $GITHUB_ENV
+            echo "POSTHOG_SECRET=" >> $GITHUB_ENV
           fi
 
       - name: Sanitize branch name for image tag
@@ -132,8 +161,7 @@ jobs:
           BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "BRANCH_TAG=$BRANCH" >> $GITHUB_ENV
 
-      - name: Capture current serving revision (production only)
-        if: github.ref_name == 'main'
+      - name: Capture current serving revision
         run: |
           PREVIOUS_REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
@@ -168,83 +196,83 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Deploy to Cloud Run
+      - name: Step 1 — Deploy image without VPC (no traffic)
         run: |
           IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ env.BRANCH_TAG }}-${{ github.sha }}"
-          if [[ "${{ env.IS_PROD }}" == "true" ]]; then
-            # Check if service exists to determine if --no-traffic is safe
-            SERVICE_EXISTS=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format="value(name)" 2>/dev/null || echo "")
-            NO_TRAFFIC_FLAG=""
-            if [[ -n "$SERVICE_EXISTS" ]]; then
-              NO_TRAFFIC_FLAG="--no-traffic"
-            fi
-            gcloud run deploy ${{ env.SERVICE_NAME }} \
-              --image $IMAGE \
-              --platform managed \
-              --region ${{ env.REGION }} \
-              --port 8080 \
-              --min-instances 1 \
-              --max-instances 10 \
-              --memory 512Mi \
-              --cpu 1 \
-              --service-account ${{ env.RUNTIME_SA }} \
-              --allow-unauthenticated \
-              $NO_TRAFFIC_FLAG \
-              --timeout=300 \
-              --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
-              --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,BETTERSTACK_LOG_TOKEN=BETTERSTACK_LOG_TOKEN:latest,POSTHOG_API_KEY=POSTHOG_API_KEY:latest" \
-              --quiet
-          else
-            gcloud run deploy ${{ env.SERVICE_NAME }} \
-              --image $IMAGE \
-              --platform managed \
-              --region ${{ env.REGION }} \
-              --port 8080 \
-              --min-instances 0 \
-              --max-instances 10 \
-              --memory 512Mi \
-              --cpu 1 \
-              --service-account ${{ env.RUNTIME_SA }} \
-              --allow-unauthenticated \
-              --timeout=300 \
-              --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
-              --set-secrets "DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,SENTRY_DSN=SENTRY_DSN:latest,BETTERSTACK_LOG_TOKEN=BETTERSTACK_LOG_TOKEN:latest" \
-              --quiet
+          SECRETS="DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,IDENTITY_PLATFORM_TENANT_ID=${{ env.IDENTITY_PLATFORM_TENANT_SECRET }}:latest,FIREBASE_WEB_API_KEY=FIREBASE_WEB_API_KEY:latest,PROFILE_IMAGES_BUCKET=${{ env.PROFILE_IMAGES_BUCKET_SECRET }}:latest,THERAPIST_DOCUMENTS_BUCKET=${{ env.THERAPIST_DOCUMENTS_BUCKET_SECRET }}:latest,AGENCY_DOCUMENTS_BUCKET=${{ env.AGENCY_DOCUMENTS_BUCKET_SECRET }}:latest,INDIVIDUAL_DOCUMENTS_BUCKET=${{ env.INDIVIDUAL_DOCUMENTS_BUCKET_SECRET }}:latest,MESSAGE_ATTACHMENTS_BUCKET=${{ env.MESSAGE_ATTACHMENTS_BUCKET_SECRET }}:latest"
+          if [[ -n "${{ env.POSTHOG_SECRET }}" ]]; then
+            SECRETS="$SECRETS,POSTHOG_API_KEY=${{ env.POSTHOG_SECRET }}:latest"
           fi
+          if [[ "${{ env.IS_PROD }}" == "true" ]]; then
+            SERVICE_EXISTS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} \
+              --format="value(name)" 2>/dev/null || echo "")
+            NO_TRAFFIC_FLAG="--no-traffic"
+            if [[ -z "$SERVICE_EXISTS" ]]; then
+              NO_TRAFFIC_FLAG=""
+            fi
+          else
+            NO_TRAFFIC_FLAG="--no-traffic"
+          fi
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="$IMAGE" \
+            --platform=managed \
+            --region=${{ env.REGION }} \
+            --port=8080 \
+            --min-instances=${{ env.MIN_INSTANCES }} \
+            --max-instances=${{ env.MAX_INSTANCES }} \
+            --memory=512Mi \
+            --cpu=1 \
+            --service-account=${{ env.RUNTIME_SA }} \
+            $NO_TRAFFIC_FLAG \
+            --timeout=300 \
+            --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_STANDARD_MONTHLY=${{ env.STRIPE_PRICE_STANDARD_MONTHLY }},STRIPE_PRICE_STANDARD_ANNUAL=${{ env.STRIPE_PRICE_STANDARD_ANNUAL }},STRIPE_PRICE_PREMIUM_MONTHLY=${{ env.STRIPE_PRICE_PREMIUM_MONTHLY }},STRIPE_PRICE_PREMIUM_ANNUAL=${{ env.STRIPE_PRICE_PREMIUM_ANNUAL }}" \
+            --set-secrets "$SECRETS" \
+            --quiet
+          echo "Step 1 complete — revision created without VPC"
 
-      - name: Health check (staging and production)
-        if: env.IS_PROD == 'true' || env.IS_STAGING == 'true'
+      - name: Step 2 — Apply VPC egress via services update
+        run: |
+          echo "Waiting 30s before applying VPC config..."
+          sleep 30
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --network=default \
+            --subnet=default \
+            --vpc-egress=private-ranges-only \
+            --quiet
+          echo "Step 2 complete — VPC egress applied via update path"
+
+      - name: Health check and traffic switch
         run: |
           REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --format="value(status.latestCreatedRevisionName)")
-          echo "New revision: $REVISION"
-          for i in {1..10}; do
+          echo "Polling revision: $REVISION"
+          for i in {1..18}; do
             STATUS=$(gcloud run revisions describe $REVISION \
               --region=${{ env.REGION }} \
               --format="value(status.conditions[0].status)")
             if [[ "$STATUS" == "True" ]]; then
-              echo "Revision is healthy."
-              if [[ "${{ env.IS_PROD }}" == "true" ]]; then
-                echo "Switching production traffic..."
-                gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
-                  --region=${{ env.REGION }} \
-                  --to-latest
-                echo "Traffic switched to $REVISION"
-              fi
+              echo "Revision $REVISION is healthy."
+              gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+                --region=${{ env.REGION }} \
+                --to-revisions=$REVISION=100
+              echo "Traffic switched. Deploy complete."
               exit 0
             fi
-            echo "Attempt $i: Revision not ready. Waiting 15s..."
+            echo "Attempt $i: not ready. Waiting 20s..."
             sleep 20
           done
           echo "Revision failed health check."
-          if [[ "${{ env.IS_PROD }}" == "true" ]] && [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
+          if [[ -n "${{ env.PREVIOUS_REVISION }}" ]]; then
             echo "Rolling back to ${{ env.PREVIOUS_REVISION }}..."
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --to-revisions=${{ env.PREVIOUS_REVISION }}=100
-            echo "Rolled back to ${{ env.PREVIOUS_REVISION }}"
+            echo "Rolled back."
           else
-            echo "Deploy unhealthy — workflow failed. Manual intervention required."
+            echo "No previous revision — manual intervention required."
           fi
           exit 1

@@ -13,6 +13,7 @@ export const USER_ROLES = {
 
 export const CUSTOMER_TYPES = {
     AGENCY: "agency",
+    INDIVIDUAL: "individual",
 };
 
 export const APPROVAL_STATUS = {
@@ -91,32 +92,29 @@ export const TIME_MS = {
     NINETY_DAYS: 90 * 24 * 60 * 60 * 1000,
 };
 
-// Number of days added to the revision deadline on each therapist "Extend" action.
-// Uses max(currentDueBy, now) + this value so early extensions always move the deadline forward.
 export const REVISION_EXTEND_DAYS = 3;
 
 export const RATE_LIMIT = {
-    API_WINDOW_MS: 15 * 60 * 1000,  // 15 minutes
+    API_WINDOW_MS: 15 * 60 * 1000,  
     API_MAX_PROD: 100,
     API_MAX_DEV: 10000,
 
-    SENSITIVE_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
+    SENSITIVE_WINDOW_MS: 60 * 60 * 1000,  
     SENSITIVE_MAX_PROD: 10,
     SENSITIVE_MAX_DEV: 1000,
 
-    AUTH_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
-    AUTH_MAX_PROD: 10,
+    AUTH_WINDOW_MS: 60 * 60 * 1000, 
     AUTH_MAX_DEV: 1000,
 
-    SOCKET_WINDOW_MS: 15 * 60 * 1000,  // 15 minutes
+    SOCKET_WINDOW_MS: 15 * 60 * 1000,  
     SOCKET_MAX_PROD: 600,
     SOCKET_MAX_DEV: 10000,
 
-    UPLOAD_WINDOW_MS: 60 * 60 * 1000,  // 1 hour
+    UPLOAD_WINDOW_MS: 60 * 60 * 1000,  
     UPLOAD_MAX_PROD: 20,
     UPLOAD_MAX_DEV: 1000,
 
-    MESSAGE_WINDOW_MS: 60 * 1000,        // 1 minute
+    MESSAGE_WINDOW_MS: 60 * 1000,        
     MESSAGE_MAX_PROD: 20,
     MESSAGE_MAX_DEV: 1000,
 };
@@ -132,6 +130,36 @@ export const LICENSE_TYPE_TO_SERVICE_TYPE = Object.freeze({
     "Occupational Therapist": "Occupational Therapy",
     "Occupational Therapist Assistant": "Occupational Therapy",
     "Speech-Language Pathologist": "Speech Language Pathology (SLP)",
+});
+
+
+export const THERAPIST_DOCUMENTS_BUCKET = process.env.THERAPIST_DOCUMENTS_BUCKET;
+export const AGENCY_DOCUMENTS_BUCKET = process.env.AGENCY_DOCUMENTS_BUCKET;
+export const INDIVIDUAL_DOCUMENTS_BUCKET = process.env.INDIVIDUAL_DOCUMENTS_BUCKET;
+export const PROFILE_IMAGES_BUCKET = process.env.PROFILE_IMAGES_BUCKET;
+export const MESSAGE_ATTACHMENTS_BUCKET = process.env.MESSAGE_ATTACHMENTS_BUCKET;
+
+/** documentType values accepted per onboarding upload category. */
+export const DOCUMENT_CATEGORIES = Object.freeze({
+    license: ["license"],
+    insurance: ["general_liability", "professional_liability", "auto_insurance"],
+    identity: ["government_id_front", "government_id_back"],
+    compliance: ["w9"],
+    agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
+    individual: ["therapy_order"],
+});
+
+export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
+    INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
+    HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
+    BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
+    SERVICE_AGREEMENT: "service_agreement",
+    HIPAA_BAA: "hipaa_baa",
+});
+
+export const INDIVIDUAL_CONSENT_DOCUMENT_TYPES = Object.freeze({
+    HIPAA_CONSENT: "hipaa_consent",
+    TREATMENT_CONSENT: "treatment_consent",
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds

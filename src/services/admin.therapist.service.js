@@ -1,9 +1,9 @@
 import { APPROVAL_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
+import { getSignedUrl } from "./storage.service.js";
 export const listTherapists = async ({
     approvalStatus,
     search,
@@ -162,17 +162,10 @@ export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
         throw new BadRequestError("Document does not belong to this therapist");
     }
 
-    const { data, error } = await supabaseAdmin.storage
-        .from(document.bucket)
-        .createSignedUrl(document.documentUrl, 60);
-
-    if (error) {
-        logger.error("[AdminTherapistService] Signed URL error", { documentId, error: error.message });
-        throw new BadRequestError("Failed to generate document URL");
-    }
+    const { signedUrl } = await getSignedUrl(document.bucket, document.documentUrl, 60);
 
     return {
-        signedUrl: data.signedUrl,
+        signedUrl,
         expiresIn: 60,
         fileName: document.fileName,
         fileSize: document.fileSize,

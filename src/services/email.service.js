@@ -51,10 +51,14 @@ import {
     subscriptionPaymentActionRequired,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
+    emailVerification,
+    passwordReset,
+    subAdminInvite,
     customerRefundAvailable,
     customerRefundReminder,
     customerRefundTransferred,
     customerRefundReturnedToCard,
+    customerRefundPayoutFailed,
     attemptedVisitTherapistPayout,
     stripeRequirementsAlert,
     customerStripeRequirementsAlert,
@@ -375,6 +379,27 @@ export const sendExistingAccountNotification = async ({ email, resetLink }) => {
     return dispatch(email, existingAccountNotification, { email, resetLink });
 };
 
+/**
+ * @param {{email: string, verificationLink: string}} params
+ */
+export const sendEmailVerificationEmail = async ({ email, verificationLink }) => {
+    return dispatch(email, emailVerification, { verificationLink });
+};
+
+/**
+ * @param {{email: string, resetLink: string}} params
+ */
+export const sendPasswordResetEmail = async ({ email, resetLink }) => {
+    return dispatch(email, passwordReset, { resetLink });
+};
+
+/**
+ * @param {{email: string, inviteLink: string}} params
+ */
+export const sendSubAdminInviteEmail = async ({ email, inviteLink }) => {
+    return dispatch(email, subAdminInvite, { inviteLink });
+};
+
 // ── Customer Refund Emails ──
 
 export const sendCustomerRefundAvailable = async ({ customer, therapist, refundAmount, bookingId }) => {
@@ -397,6 +422,10 @@ export const sendAttemptedVisitTherapistPayout = async ({ therapist, customer, s
 
 export const sendCustomerRefundReturnedToCard = async ({ customer, refundAmount }) => {
     return dispatch(customer.user.email, customerRefundReturnedToCard, { customer, refundAmount });
+};
+
+export const sendCustomerRefundPayoutFailed = async ({ customer, refundAmount, reason }) => {
+    return dispatch(customer.user.email, customerRefundPayoutFailed, { customer, refundAmount, reason });
 };
 
 /**

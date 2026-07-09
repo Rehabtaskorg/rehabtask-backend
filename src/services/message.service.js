@@ -1,4 +1,4 @@
-import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
+import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js"
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -58,11 +58,16 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
         throw new BadRequestError("Message content cannot be empty", "EMPTY_MESSAGE");
     }
 
-    // Verify caller is a participant in this conversation
-    const conversation = await prisma.directConversation.findUnique({
-        where: { id: conversationId },
-        select: { id: true, user1Id: true, user2Id: true },
-    });
+    const [conversation, sender] = await Promise.all([
+        prisma.directConversation.findUnique({
+            where: { id: conversationId },
+            select: { id: true, user1Id: true, user2Id: true },
+        }),
+        prisma.user.findUnique({
+            where: { id: senderId },
+            select: { role: true, customerProfile: { select: { onboardingComplete: true } } },
+        }),
+    ]);
 
     if (!conversation) {
         throw new BadRequestError("Conversation not found", "CONVERSATION_NOT_FOUND");
@@ -71,6 +76,10 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
     const isParticipant = conversation.user1Id === senderId || conversation.user2Id === senderId;
     if (!isParticipant) {
         throw new AuthorizationError("You are not a participant in this conversation");
+    }
+
+    if (sender?.role === USER_ROLES.CUSTOMER && !sender.customerProfile?.onboardingComplete) {
+        throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
     }
 
     const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
@@ -503,7 +512,10 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
     const [sender, recipient] = await Promise.all([
         prisma.user.findUnique({
             where: { id: senderId },
-            select: { id: true, role: true },
+            select: {
+                id: true, role: true,
+                customerProfile: { select: { customerType: true, onboardingComplete: true } },
+            },
         }),
         prisma.user.findUnique({
             where: { id: recipientId },
@@ -519,7 +531,9 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
 
     // Access control
     if (sender.role === USER_ROLES.CUSTOMER) {
-        // Customer can message any approved therapist
+        if (!sender.customerProfile?.onboardingComplete) {
+            throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
+        }
         if (recipient.role !== "therapist") {
             throw new BadRequestError("Customers can only direct message therapists");
         }

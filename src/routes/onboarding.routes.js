@@ -1,25 +1,36 @@
 import express from "express";
 import {
+    advanceToFinalReviewController,
     completeOnboardingController,
     deleteDocumentController,
+    getComplianceContentController,
     getDocumentSignedUrlController,
+    getOnboardingDataController,
     getOnboardingStatusController,
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveIdentityVerificationController,
+    saveInsuranceController,
+    savePersonalInfoController,
     saveProfessionalProfileController,
-    submitBackgroundCheckController
+    signComplianceController,
+    submitBackgroundCheckController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
+    personalInfoSchema,
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
+    insuranceSchema,
+    identitySchema,
+    signComplianceSchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
-import { handleMulterError, uploadDocument, uploadImage } from "../middleware/upload.middleware.js";
-import { uploadLicenseDocumentController, uploadProfilePhotoController } from "../controllers/upload.controller.js";
+import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
+import { uploadDocumentController, uploadProfilePhotoController } from "../controllers/upload.controller.js";
 
 const router = express.Router();
 
@@ -31,6 +42,20 @@ router.use(authenticate);
  * GET /api/therapist/onboarding status
  */
 router.get("/status", getOnboardingStatusController);
+
+/**
+ * GET /api/therapist/onboarding/data
+ */
+router.get("/data", getOnboardingDataController);
+
+/**
+ * POST /api/therapist/onboarding/personal-info
+ */
+router.post(
+    "/personal-info",
+    validate(personalInfoSchema),
+    savePersonalInfoController
+);
 
 /**
  * POST /api/therapist/onboarding/profile
@@ -60,6 +85,38 @@ router.post(
 );
 
 /**
+ * POST /api/therapist/onboarding/insurance
+ */
+router.post(
+    "/insurance",
+    validate(insuranceSchema),
+    saveInsuranceController
+);
+
+/**
+ * POST /api/therapist/onboarding/identity
+ */
+router.post(
+    "/identity",
+    validate(identitySchema),
+    saveIdentityVerificationController
+);
+
+/**
+ * GET /api/therapist/onboarding/compliance/content
+ */
+router.get("/compliance/content", getComplianceContentController);
+
+/**
+ * POST /api/therapist/onboarding/compliance/sign
+ */
+router.post(
+    "/compliance/sign",
+    validate(signComplianceSchema),
+    signComplianceController
+);
+
+/**
  * POST /api/therapist/onboarding/background-check
  */
 router.post(
@@ -67,6 +124,11 @@ router.post(
     validate(backgroundCheckSchema),
     submitBackgroundCheckController
 );
+
+/**
+ * POST /api/therapist/onboarding/advance-to-review
+ */
+router.post("/advance-to-review", advanceToFinalReviewController);
 
 /**
  * POST /api/therapist/onboarding/complete
@@ -78,9 +140,9 @@ router.post("/complete", completeOnboardingController);
  */
 router.post(
     "/upload-document",
-    uploadDocument,
+    uploadDocumentMiddleware,
     handleMulterError,
-    uploadLicenseDocumentController
+    uploadDocumentController
 );
 
 /**

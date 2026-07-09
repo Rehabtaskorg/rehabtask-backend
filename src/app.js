@@ -54,7 +54,6 @@ if (env.NODE_ENV === "development") {
     })
 }
 
-// Health check endpoint
 app.get("/health", (req, res) => {
     res.json({
         status: "ok",
@@ -63,6 +62,7 @@ app.get("/health", (req, res) => {
         uptime: process.uptime(),
     });
 })
+
 
 // API Rate Limiting (General)
 app.use("/api", apiRateLimiter);

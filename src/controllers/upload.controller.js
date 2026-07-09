@@ -1,4 +1,4 @@
-import { uploadLicenseDocument, uploadProfilePhoto } from "../services/upload.service.js";
+import { uploadDocument, uploadProfilePhoto } from "../services/upload.service.js";
 import { BadRequestError } from "../utils/errors.js";
 
 /**
@@ -14,9 +14,11 @@ const getClientIp = (req) => {
 
 /**
  * POST /api/therapist/onboarding/upload-document
- * Upload license docuemnt via backend (server-side Supabase upload)
+ * Upload an onboarding document via backend (server-side Supabase upload).
+ * Shared across all document-bearing onboarding steps — category + documentType
+ * in the request body decide which step the document belongs to.
  */
-export const uploadLicenseDocumentController = async (req, res, next) => {
+export const uploadDocumentController = async (req, res, next) => {
     try {
         if (!req.file) {
             throw new BadRequestError("No file uploaded");
@@ -25,11 +27,13 @@ export const uploadLicenseDocumentController = async (req, res, next) => {
         const file = req.file;
         const uploadIp = getClientIp(req);
         const userId = req.user.id;
+        const category = req.body.category || "license";
         const documentType = req.body.documentType || "license";
 
-        const result = await uploadLicenseDocument({
+        const result = await uploadDocument({
             userId,
             file,
+            category,
             documentType,
             uploadIp
         });

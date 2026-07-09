@@ -1,23 +1,17 @@
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
+import { gcs } from "../config/gcs.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { getUnreadCount } from "./message.service.js";
 import { getIO } from "../socket/index.js";
-import { TIME_MS } from "../utils/constants.js";
+import { TIME_MS, MESSAGE_ATTACHMENTS_BUCKET } from "../utils/constants.js";
 
-const BUCKET = "message-attachments";
 const MAX_ATTACHMENTS_PER_HOUR = 20;
+const SIGNED_URL_TTL_SECONDS = 300;
 
-/**
- * Sanitize filename — remove path traversal and special chars
- */
 const sanitizeFileName = (name) =>
     name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
 
-/**
- * Verify the user is a participant of the conversation
- */
 const verifyParticipant = async (userId, conversationId) => {
     const conversation = await prisma.directConversation.findFirst({
         where: {
@@ -25,47 +19,30 @@ const verifyParticipant = async (userId, conversationId) => {
             OR: [{ user1Id: userId }, { user2Id: userId }],
         },
     });
-    if (!conversation) {
-        throw new AuthorizationError("Access denied to this conversation");
-    }
+    if (!conversation) throw new AuthorizationError("Access denied to this conversation");
     return conversation;
 };
 
 /**
- * Upload attachments with an optional text message.
- *
- * Flow:
- * 1. Verify user is conversation participant
- * 2. Rate-limit check
- * 3. Create the Message row (text content or empty string)
- * 4. Upload each file to Supabase storage
- * 5. Create MessageAttachment rows
- * 6. Broadcast via socket
- *
- * @param {string} senderId - User ID of the sender
- * @param {string} conversationId - DirectConversation ID
- * @param {Array} files - Multer file objects
- * @param {string} content - Optional text content
- * @returns {Object} { message, attachments }
+ * @param {string} senderId
+ * @param {string} conversationId
+ * @param {import("multer").File[]} files
+ * @param {string} [content]
+ * @param {string|null} [replyToId]
+ * @param {string|null} [bookingId]
+ * @returns {Promise<{ message: object }>}
  */
 export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null, bookingId = null) => {
-    if (!files || files.length === 0) {
-        throw new BadRequestError("At least one file is required");
-    }
+    if (!files || files.length === 0) throw new BadRequestError("At least one file is required");
 
-    // 1. Verify participation
     const conversation = await verifyParticipant(senderId, conversationId);
     const recipientId = conversation.user1Id === senderId
         ? conversation.user2Id
         : conversation.user1Id;
 
-    // 2. Rate limit: max attachments per hour
     const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentCount = await prisma.messageAttachment.count({
-        where: {
-            uploadedById: senderId,
-            createdAt: { gte: oneHourAgo },
-        },
+        where: { uploadedById: senderId, createdAt: { gte: oneHourAgo } },
     });
     if (recentCount + files.length > MAX_ATTACHMENTS_PER_HOUR) {
         throw new BadRequestError(
@@ -73,7 +50,6 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
         );
     }
 
-    // 3. Create the message row
     const message = await prisma.message.create({
         data: {
             senderId,
@@ -95,28 +71,24 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
         },
     });
 
-    // 4. Upload files to Supabase and create attachment records
     const attachments = [];
     for (const file of files) {
         const safeName = sanitizeFileName(file.originalname);
         const uniqueId = Math.random().toString(36).slice(2, 10);
         const storagePath = `${conversationId}/${message.id}/${Date.now()}_${uniqueId}_${safeName}`;
 
-        const { error: uploadError } = await supabaseAdmin.storage
-            .from(BUCKET)
-            .upload(storagePath, file.buffer, {
+        try {
+            await gcs.bucket(MESSAGE_ATTACHMENTS_BUCKET).file(storagePath).save(file.buffer, {
                 contentType: file.mimetype,
-                upsert: false,
-                cacheControl: "3600",
+                resumable: false,
+                metadata: { cacheControl: "private, max-age=3600" },
             });
-
-        if (uploadError) {
-            logger.error("[AttachmentService] Supabase upload failed", {
-                error: uploadError.message,
+        } catch (err) {
+            logger.error("GCS attachment upload failed", {
+                error: err.message,
                 file: safeName,
                 conversationId,
             });
-            // Continue with other files — don't fail the entire message for one bad upload
             continue;
         }
 
@@ -129,7 +101,7 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
                 fileSize: file.size,
                 mimeType: file.mimetype,
                 storagePath,
-                bucket: BUCKET,
+                bucket: MESSAGE_ATTACHMENTS_BUCKET,
             },
         });
 
@@ -137,12 +109,10 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
     }
 
     if (attachments.length === 0) {
-        // All uploads failed — clean up the empty message
         await prisma.message.delete({ where: { id: message.id } });
         throw new BadRequestError("All file uploads failed. Please try again.");
     }
 
-    // 5. Broadcast to conversation room
     const payload = {
         ...message,
         attachments,
@@ -162,33 +132,30 @@ export const uploadMessageAttachments = async (senderId, conversationId, files, 
 };
 
 /**
- * Get a signed download URL for an attachment.
- * Verifies the requester is a participant of the conversation.
+ * @param {string} userId
+ * @param {string} attachmentId
+ * @returns {Promise<{ signedUrl: string, expiresIn: number, fileName: string, fileSize: number, mimeType: string }>}
  */
 export const getAttachmentSignedUrl = async (userId, attachmentId) => {
     const attachment = await prisma.messageAttachment.findUnique({
         where: { id: attachmentId },
     });
+    if (!attachment) throw new BadRequestError("Attachment not found");
 
-    if (!attachment) {
-        throw new BadRequestError("Attachment not found");
-    }
-
-    // Verify participant
     await verifyParticipant(userId, attachment.conversationId);
 
-    const { data, error } = await supabaseAdmin.storage
-        .from(attachment.bucket)
-        .createSignedUrl(attachment.storagePath, 300); // 5 minutes
-
-    if (error) {
-        logger.error("[AttachmentService] Signed URL generation failed", { error: error.message });
-        throw new BadRequestError("Failed to generate download URL");
-    }
+    const [url] = await gcs
+        .bucket(attachment.bucket)
+        .file(attachment.storagePath)
+        .getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + SIGNED_URL_TTL_SECONDS * 1000,
+        });
 
     return {
-        signedUrl: data.signedUrl,
-        expiresIn: 300,
+        signedUrl: url,
+        expiresIn: SIGNED_URL_TTL_SECONDS,
         fileName: attachment.fileName,
         fileSize: attachment.fileSize,
         mimeType: attachment.mimeType,
@@ -196,12 +163,9 @@ export const getAttachmentSignedUrl = async (userId, attachmentId) => {
 };
 
 /**
- * Get all attachments for a conversation (paginated).
- * Used by the sidebar and the "View All" modal.
- *
- * When bookingId is provided, only attachments whose parent message is linked
- * to that booking are returned — preventing cross-booking file leakage when
- * the same therapist/customer pair has multiple bookings.
+ * @param {string} userId
+ * @param {string} conversationId
+ * @param {{ limit?: number, cursor?: string, bookingId?: string }} [options]
  */
 export const getConversationAttachments = async (userId, conversationId, { limit = 20, cursor, bookingId } = {}) => {
     await verifyParticipant(userId, conversationId);
@@ -218,12 +182,8 @@ export const getConversationAttachments = async (userId, conversationId, { limit
     const attachments = await prisma.messageAttachment.findMany({
         where: {
             conversationId,
-            ...(bookingId && {
-                message: { bookingId },
-            }),
-            ...(cursorDate && {
-                createdAt: { lt: cursorDate },
-            }),
+            ...(bookingId && { message: { bookingId } }),
+            ...(cursorDate && { createdAt: { lt: cursorDate } }),
         },
         orderBy: { createdAt: "desc" },
         take: limit,

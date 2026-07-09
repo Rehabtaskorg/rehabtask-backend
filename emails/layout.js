@@ -34,7 +34,7 @@ export const layout = (content, preview) => `
   <div style="background-color:#ffffff;margin:40px auto;padding:40px 32px;max-width:600px;border-radius:8px;">
     ${content}
     <p style="color:#8898aa;font-size:12px;line-height:18px;margin-top:40px;border-top:1px solid #e6ebf1;padding-top:20px;text-align:center;">
-      RehabTask — Steadfast Rehabilitation Services<br/>
+      RehabTask<br/>
       <a href="${FRONTEND_URL}/help" style="color:#8898aa;">Help Center</a>
       &middot;
       <a href="${FRONTEND_URL}/contact" style="color:#8898aa;">Contact Us</a>

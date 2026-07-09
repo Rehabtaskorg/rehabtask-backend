@@ -6,6 +6,7 @@ import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendCustomerStripeRequirementsAlert } from "../services/email.service.js";
+import { handleCustomerPayoutFailed } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
@@ -653,13 +654,29 @@ const handlePayoutFailed = async (payout, accountId, stripeEventId) => {
 
         if (therapist) {
             logger.warn(`[Webhook] Payout failed for therapist: ${therapist.fullName}`, { reason: payout.failure_message });
-
             sendPayoutFailed({
                 therapist,
                 amount: payout.amount / 100,
                 reason: payout.failure_message,
             }).catch(() => { });
+            return;
         }
+
+        const customer = await prisma.customerProfile.findUnique({
+            where: { stripeAccountId: accountId },
+            include: { user: { select: { email: true } } },
+        });
+
+        if (customer) {
+            logger.warn(`[Webhook] Payout failed for customer: ${customer.fullName}`, {
+                failureCode: payout.failure_code,
+                reason: payout.failure_message,
+            });
+            await handleCustomerPayoutFailed(customer, payout.failure_message);
+            return;
+        }
+
+        logger.warn("[Webhook] payout.failed received for unknown Stripe account", { accountId });
     } catch (error) {
         if (error.code === "P2002") {
             logger.info("[Webhook] Duplicate payout.failed — already processed", { accountId });

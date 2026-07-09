@@ -1,10 +1,10 @@
 import { USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { env } from "../config/env.js";
-import { sendAccountDeactivated } from "./email.service.js";
+import { sendAccountDeactivated, sendSubAdminInviteEmail } from "./email.service.js";
 
 export const VALID_PERMISSIONS = [
     "users",
@@ -27,12 +27,13 @@ const validatePermissions = (permissions) => {
     }
 };
 
+/**
+ * @param {{isActive?: boolean, page?: number, limit?: number}} params
+ */
 export const listSubAdmins = async ({ isActive, page = 1, limit = 20 } = {}) => {
     const profileWhere = isActive !== undefined ? { isActive } : {};
     const where = {
-        subAdminProfile: Object.keys(profileWhere).length > 0
-            ? { ...profileWhere }
-            : { isNot: null },
+        subAdminProfile: Object.keys(profileWhere).length > 0 ? { ...profileWhere } : { isNot: null },
     };
 
     const [subAdmins, total] = await Promise.all([
@@ -68,84 +69,110 @@ export const listSubAdmins = async ({ isActive, page = 1, limit = 20 } = {}) => 
         subAdmins,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
-}
+};
 
+/**
+ * @param {string} userId
+ */
 export const getSubAdminDetail = async (userId) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: {
-            subAdminProfile: {
-                include: {
-                    createdByAdmin: { select: { id: true, email: true } },
-                },
-            },
+            subAdminProfile: { include: { createdByAdmin: { select: { id: true, email: true } } } },
         },
     });
     if (!user || !user.subAdminProfile) throw new NotFoundError("Sub-admin not found");
     return user;
-}
+};
 
 /**
- * Invite a brand-new sub-admin by email
- * Creates a Supabase auth invite + User + SubAdminProfile
+ * Invite a brand-new sub-admin by email.
+ * Creates an Identity Platform auth user, generates a sign-in link, and sends the invite via Resend.
+ *
+ * @param {string} email
+ * @param {string[]} permissions
+ * @param {string} adminId
  */
 export const createSubAdmin = async (email, permissions, adminId) => {
     validatePermissions(permissions);
 
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-        throw new ConflictError("A user with this email already exists");
+    if (existing) throw new ConflictError("A user with this email already exists");
+
+    const auth = getIdentityPlatformAuth();
+    let authUser;
+    try {
+        authUser = await auth.createUser({ email, emailVerified: false });
+    } catch (err) {
+        logger.error("[AdminSubAdminService] Identity Platform user creation failed", { email, error: err.message });
+        throw new BadRequestError(`Failed to create auth user: ${err.message}`);
     }
 
-    const { data: inviteData, error: inviteError } =
-        await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            data: { role: USER_ROLES.SUB_ADMIN },
-            redirectTo: `${env.FRONTEND_URL}/invite/accept`,
+    let inviteLink;
+    try {
+        const firebaseLink = await auth.generateSignInWithEmailLink(email, {
+            url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`,
+            handleCodeInApp: true,
         });
-
-    if (inviteError) {
-        logger.error("[AdminSubAdminService] Supabase invite failed", {
-            email,
-            error: inviteError.message,
+        const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
+        if (!oobCode) throw new Error("Identity Platform did not return an oobCode");
+        const continueUrl = `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(email)}`;
+        inviteLink = `${env.FRONTEND_URL}/action-handler?mode=signIn&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
+    } catch (err) {
+        await auth.deleteUser(authUser.uid).catch((cleanupErr) => {
+            logger.error("[AdminSubAdminService] Failed to clean up auth user after invite link failure", {
+                uid: authUser.uid,
+                error: cleanupErr.message,
+            });
         });
-        throw new BadRequestError(`Failed to send invite: ${inviteError.message}`);
+        logger.error("[AdminSubAdminService] Failed to generate invite link", { email, error: err.message });
+        throw new BadRequestError(`Failed to generate invite link: ${err.message}`);
     }
 
-    const user = await prisma.user.create({
-        data: {
-            id: inviteData.user.id,
-            email,
-            role: USER_ROLES.SUB_ADMIN,
-            isActive: true,
-            subAdminProfile: {
-                create: {
-                    permissions,
-                    isActive: true,
-                    createdByAdminId: adminId
+    sendSubAdminInviteEmail({ email, inviteLink }).catch((err) => {
+        logger.error("[AdminSubAdminService] Failed to send invite email", { email, error: err.message });
+    });
+
+    let user;
+    try {
+        user = await prisma.user.create({
+            data: {
+                id: authUser.uid,
+                email,
+                role: USER_ROLES.SUB_ADMIN,
+                isActive: true,
+                subAdminProfile: {
+                    create: { permissions, isActive: true, createdByAdminId: adminId },
                 },
             },
-        },
-        include: { subAdminProfile: true },
-    });
+            include: { subAdminProfile: true },
+        });
+    } catch (err) {
+        await auth.deleteUser(authUser.uid).catch((cleanupErr) => {
+            logger.error("[AdminSubAdminService] Failed to clean up auth user after DB failure", {
+                uid: authUser.uid,
+                error: cleanupErr.message,
+            });
+        });
+        logger.error("[AdminSubAdminService] Failed to create sub-admin in DB", { email, error: err.message });
+        throw err;
+    }
 
-    logger.info("[AdminSubAdminService] Sub-admin created", {
-        userId: user.id,
-        email,
-        byAdmin: adminId,
-    });
+    logger.info("[AdminSubAdminService] Sub-admin created", { userId: user.id, email, byAdmin: adminId });
     return user;
-}
+};
 
 /**
- * Promote an existing user to sub_admin role
+ * Promote an existing user to sub_admin role.
+ *
+ * @param {string} userId
+ * @param {string[]} permissions
+ * @param {string} adminId
  */
 export const promoteToSubAdmin = async (userId, permissions, adminId) => {
     validatePermissions(permissions);
 
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { subAdminProfile: true },
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { subAdminProfile: true } });
     if (!user) throw new NotFoundError("User not found");
     if (user.role === USER_ROLES.ADMIN) throw new BadRequestError("Cannot modify an admin account");
     if (user.subAdminProfile) throw new ConflictError("User already has a sub-admin profile");
@@ -154,39 +181,36 @@ export const promoteToSubAdmin = async (userId, permissions, adminId) => {
         where: { id: userId },
         data: {
             role: USER_ROLES.SUB_ADMIN,
-            subAdminProfile: {
-                create: {
-                    permissions,
-                    isActive: true,
-                    createdByAdminId: adminId
-                },
-            },
+            subAdminProfile: { create: { permissions, isActive: true, createdByAdminId: adminId } },
         },
         include: { subAdminProfile: true },
     });
 
-    logger.info("[AdminSubAdminService] User promoted to sub-admin", {
-        userId,
-        byAdmin: adminId,
-    });
+    logger.info("[AdminSubAdminService] User promoted to sub-admin", { userId, byAdmin: adminId });
     return updated;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {string[]} permissions
+ * @param {string} adminId
+ */
 export const updateSubAdminPermissions = async (userId, permissions, adminId) => {
     validatePermissions(permissions);
 
     const profile = await prisma.subAdminProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundError("Sub-admin profile not found");
 
-    const updated = await prisma.subAdminProfile.update({
-        where: { userId },
-        data: { permissions },
-    });
+    const updated = await prisma.subAdminProfile.update({ where: { userId }, data: { permissions } });
 
     logger.info("[AdminSubAdminService] Permissions updated", { userId, byAdmin: adminId });
     return updated;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {string} adminId
+ */
 export const deactivateSubAdmin = async (userId, adminId) => {
     if (userId === adminId) throw new BadRequestError("You cannot deactivate your own account");
 
@@ -199,19 +223,20 @@ export const deactivateSubAdmin = async (userId, adminId) => {
         prisma.user.update({ where: { id: userId }, data: { isActive: false, deactivatedAt: new Date() } }),
     ]);
 
-    // Revoke Supabase session so existing tokens are invalidated
-    await supabaseAdmin.auth.admin.signOut(userId).catch(() => {});
+    const auth = getIdentityPlatformAuth();
+    auth.revokeRefreshTokens(userId).catch(() => { });
 
-    // Send deactivation notification email
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (user) {
-        sendAccountDeactivated({ user }).catch(() => {});
-    }
+    if (user) sendAccountDeactivated({ user }).catch(() => { });
 
     logger.info("[AdminSubAdminService] Sub-admin deactivated", { userId, byAdmin: adminId });
     return updatedProfile;
-}
+};
 
+/**
+ * @param {string} userId
+ * @param {string} adminId
+ */
 export const reactivateSubAdmin = async (userId, adminId) => {
     const profile = await prisma.subAdminProfile.findUnique({ where: { userId } });
     if (!profile) throw new NotFoundError("Sub-admin profile not found");
@@ -224,22 +249,33 @@ export const reactivateSubAdmin = async (userId, adminId) => {
 
     logger.info("[AdminSubAdminService] Sub-admin reactivated", { userId, byAdmin: adminId });
     return updatedProfile;
-}
+};
 
+/**
+ * Resend the invite email to a sub-admin who has not yet accepted.
+ * Regenerates the sign-in link — does not recreate the auth user.
+ *
+ * @param {string} userId
+ */
 export const resendSubAdminInvite = async (userId) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { subAdminProfile: true },
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { subAdminProfile: true } });
     if (!user || !user.subAdminProfile) throw new NotFoundError("Sub-admin not found");
     if (user.emailVerified) throw new ConflictError("Sub-admin has already accepted their invite");
 
-    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(user.email, {
-        data: { role: USER_ROLES.SUB_ADMIN },
-        redirectTo: `${env.FRONTEND_URL}/invite/accept`,
+    const auth = getIdentityPlatformAuth();
+    const firebaseLink = await auth.generateSignInWithEmailLink(user.email, {
+        url: `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(user.email)}`,
+        handleCodeInApp: true,
     });
-    if (error) throw new BadRequestError(`Failed to resend invite: ${error.message}`);
+    const oobCode = new URL(firebaseLink).searchParams.get("oobCode");
+    if (!oobCode) throw new BadRequestError("Identity Platform did not return an oobCode");
+    const continueUrl = `${env.FRONTEND_URL}/invite/accept?email=${encodeURIComponent(user.email)}`;
+    const inviteLink = `${env.FRONTEND_URL}/action-handler?mode=signIn&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
+
+    sendSubAdminInviteEmail({ email: user.email, inviteLink }).catch((err) => {
+        logger.error("[AdminSubAdminService] Failed to resend invite email", { userId, error: err.message });
+    });
 
     logger.info("[AdminSubAdminService] Invite resent", { userId });
     return { resent: true };
-}
+};

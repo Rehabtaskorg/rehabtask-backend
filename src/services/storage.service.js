@@ -1,116 +1,68 @@
-import { supabaseAdmin } from "../config/supabase.js";
+import { gcs } from "../config/gcs.js";
 import { BadRequestError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
 
 /**
- * Upload file to Supabase storage using service role
- * Generic upload function for any bucket
- * 
- * @param {Object} params
- * @param {Object} params.file - Multer file object with buffer
- * @param {string} params.bucket - Storage bucket name
- * @param {string} params.folder - Folder path (usually userId)
- * @param {string} params.prefix - File prefix (e.g., 'profile', 'license')
- * @returns {Promise<Object>} Upload result with path and URL
+ * @param {{ file: import("multer").File, bucket: string, folder: string, prefix?: string }} params
+ * @returns {Promise<{ path: string, fileName: string, fileSize: number }>}
  */
 export const uploadFileToStorage = async ({ file, bucket, folder, prefix = "" }) => {
-    try {
-        // Generate unique filename
-        const fileExtension = path.extname(file.originalname);
-        const timestamp = Date.now();
-        const uniqueId = randomUUID();
-        const sanitizedFileName = file.originalname
-            .replace(/[^a-zA-Z0-9.-]/g, '_')
-            .substring(0, 100);
+    const fileExtension = path.extname(file.originalname);
+    const timestamp = Date.now();
+    const uniqueId = randomUUID();
+    const sanitizedFileName = file.originalname
+        .replace(/[^a-zA-Z0-9.-]/g, "_")
+        .substring(0, 100);
 
-        // Construct file path
-        const fileName = prefix
-            ? `${prefix}_${timestamp}_${uniqueId}${fileExtension}`
-            : `${timestamp}_${uniqueId}_${sanitizedFileName}`;
+    const fileName = prefix
+        ? `${prefix}_${timestamp}_${uniqueId}${fileExtension}`
+        : `${timestamp}_${uniqueId}_${sanitizedFileName}`;
 
-        const filePath = `${folder}/${fileName}`;
+    const filePath = `${folder}/${fileName}`;
 
-        // Upload to Supabase
-        const { data, error } = await supabaseAdmin.storage
-            .from(bucket)
-            .upload(filePath, file.buffer, {
-                contentType: file.mimetype,
-                upsert: false,
-                cacheControl: '3600'
-            });
+    const gcsFile = gcs.bucket(bucket).file(filePath);
 
-        if (error) {
-            console.error("Supabase storage upload error:", error);
-            throw new BadRequestError(`Upload failed: ${error.message}`);
-        }
+    await gcsFile.save(file.buffer, {
+        contentType: file.mimetype,
+        resumable: false,
+        metadata: { cacheControl: "private, max-age=3600" },
+    });
 
-        // Get public URL (for public buckets like profile-images)
-        const { data: { publicUrl } } = supabaseAdmin.storage
-            .from(bucket)
-            .getPublicUrl(filePath);
-
-        return {
-            path: filePath,
-            publicUrl,
-            fileName: file.originalname,
-            fileSize: file.size
-        }
-    } catch (error) {
-        console.error("Storage upload error:", error);
-        throw error;
-    }
-}
+    return {
+        path: filePath,
+        fileName: file.originalname,
+        fileSize: file.size,
+    };
+};
 
 /**
- * Delete file from storage
- * 
- * @param {string} bucket - Bucket name
- * @param {string} filePath - File path to delete
+ * @param {string} bucket
+ * @param {string} filePath
+ * @returns {Promise<{ success: true }>}
  */
 export const deleteFileFromStorage = async (bucket, filePath) => {
     try {
-        const { error } = await supabaseAdmin.storage
-            .from(bucket)
-            .remove([filePath]);
-
-        if (error) {
-            console.error(`Failed to delete ${filePath} from ${bucket}:`, error);
-            throw new BadRequestError(`Delete failed: ${error.message}`);
-        }
-
+        await gcs.bucket(bucket).file(filePath).delete();
         return { success: true };
-    } catch (error) {
-        console.error("Storage deletion error:", error);
-        throw error;
+    } catch (err) {
+        if (err.code === 404) return { success: true };
+        throw new BadRequestError(`Delete failed: ${err.message}`);
     }
 };
 
 /**
- * Generate signed URL for private files
- * 
- * @param {string} bucket - Bucket name
- * @param {string} filePath - File path
- * @param {number} expiresIn - Expiry in seconds (default 60)
- * @returns {Promise<Object>} Signed URL data
+ * @param {string} bucket
+ * @param {string} filePath
+ * @param {number} [expiresIn=60]
+ * @returns {Promise<{ signedUrl: string, expiresIn: number }>}
  */
 export const getSignedUrl = async (bucket, filePath, expiresIn = 60) => {
-    try {
-        const { data, error } = await supabaseAdmin.storage
-            .from(bucket)
-            .createSignedUrl(filePath, expiresIn);
+    const [url] = await gcs.bucket(bucket).file(filePath).getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: Date.now() + expiresIn * 1000,
+    });
 
-        if (error) {
-            console.error("Failed to generate signed URL:", error);
-            throw new BadRequestError(`Failed to generate URL: ${error.message}`);
-        }
-
-        return {
-            signedUrl: data.signedUrl,
-            expiresIn
-        };
-    } catch (error) {
-        console.error("Signed URL error:", error);
-        throw error;
-    }
+    return { signedUrl: url, expiresIn };
 };

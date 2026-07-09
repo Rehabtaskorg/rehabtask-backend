@@ -1,104 +1,98 @@
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
+import { gcs } from "../config/gcs.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
-import { TIME_MS, APPROVAL_STATUS } from "../utils/constants.js";
+import {
+    TIME_MS,
+    APPROVAL_STATUS,
+    THERAPIST_DOCUMENTS_BUCKET,
+    AGENCY_DOCUMENTS_BUCKET,
+    INDIVIDUAL_DOCUMENTS_BUCKET,
+    PROFILE_IMAGES_BUCKET,
+    DOCUMENT_CATEGORIES,
+} from "../utils/constants.js";
+import { logger } from "../config/logger.js";
+
+const UPLOAD_RATE_LIMIT = 10;
+
+const buildDocumentPath = (userId, folder, originalName) => {
+    const timestamp = Date.now();
+    const uniqueId = randomUUID();
+    const sanitized = originalName.replace(/[^a-zA-Z0-9.-]/g, "_").substring(0, 100);
+    return `${userId}/${folder}/${timestamp}_${uniqueId}_${sanitized}`;
+};
+
+const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, max-age=3600") => {
+    await gcs.bucket(bucketName).file(filePath).save(file.buffer, {
+        contentType: file.mimetype,
+        resumable: false,
+        metadata: { cacheControl },
+    });
+};
+
+const checkUploadRateLimit = async (userId) => {
+    const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
+    const recentUploads = await prisma.licenseDocument.count({
+        where: { userId, uploadedAt: { gte: oneHourAgo }, isDeleted: false },
+    });
+    if (recentUploads >= UPLOAD_RATE_LIMIT) {
+        throw new BadRequestError(
+            `Upload rate limit exceeded. You can upload up to ${UPLOAD_RATE_LIMIT} documents per hour.`
+        );
+    }
+};
+
+const getProfilePhotoPublicUrl = (filePath) =>
+    `https://storage.googleapis.com/${PROFILE_IMAGES_BUCKET}/${filePath}`;
 
 /**
- * Upload license document to Supabase storage and create database record
- * Uses service role to bypass RLS policies
+ * @param {{ userId: string, file: import("multer").File, category?: string, documentType: string, uploadIp?: string }} params
  */
-export const uploadLicenseDocument = async ({ userId, file, documentType = "license", uploadIp = null }) => {
+export const uploadDocument = async ({ userId, file, category = "license", documentType, uploadIp = null }) => {
+    const allowedTypes = DOCUMENT_CATEGORIES[category];
+    if (!allowedTypes) throw new BadRequestError(`Unknown document category: ${category}`);
+    if (!allowedTypes.includes(documentType)) {
+        throw new BadRequestError(`Invalid documentType "${documentType}" for category "${category}"`);
+    }
+
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: {
-            therapistProfile: true
-        }
+        include: { therapistProfile: true },
     });
-
-    if (!user) {
-        throw new NotFoundError("User not found");
-    }
-
-    if (!user.therapistProfile) {
-        throw new NotFoundError("Therapist profile not found");
-    }
+    if (!user) throw new NotFoundError("User not found");
+    if (!user.therapistProfile) throw new NotFoundError("Therapist profile not found");
 
     const therapistId = user.therapistProfile.id;
 
-    // Check rate limit: Max 10 uploads per hour
-    const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
-    const recentUploads = await prisma.licenseDocument.count({
-        where: {
-            userId,
-            uploadedAt: { gte: oneHourAgo },
-            isDeleted: false
-        }
-    });
-
-    if (recentUploads >= 10) {
-        throw new BadRequestError(
-            "Upload rate limit exceeded. You can upload up to 10 documents per hour."
-        );
-    }
+    await checkUploadRateLimit(userId);
 
     const activeDocuments = await prisma.licenseDocument.count({
-        where: {
-            therapistId,
-            isDeleted: false
-        }
+        where: { therapistId, documentType: { in: allowedTypes }, isDeleted: false },
     });
-
     if (activeDocuments >= 5) {
-        throw new BadRequestError(
-            "Maximum of 5 active documents reached. Please delete an existing document before uploading."
-        );
+        throw new BadRequestError("Maximum of 5 active documents reached. Please delete an existing document before uploading.");
     }
 
-    const timestamp = Date.now();
-    const uniqueId = randomUUID();
-    const sanitizedFileName = file.originalname
-        .replace(/[^a-zA-Z0-9.-]/g, '_')
-        .substring(0, 100);
+    const filePath = buildDocumentPath(userId, category, file.originalname);
+    await saveToGcs(THERAPIST_DOCUMENTS_BUCKET, filePath, file);
 
-    // Path structure: userId/timestamp_uniqueId_filename
-    const filePath = `${userId}/${timestamp}_${uniqueId}_${sanitizedFileName}`;
-
-    // Upload to Supabase using service role (bypasses RLS)
-    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from("license-documents")
-        .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-            upsert: false, // Don't overwrite if exists
-            cacheControl: "3600"
-        });
-
-    if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
-        throw new BadRequestError(
-            `Failed to upload file: ${uploadError.message}`
-        );
-    }
-
-    // Create DB record
     const document = await prisma.licenseDocument.create({
         data: {
             therapistId,
             userId,
             documentUrl: filePath,
-            bucket: "license-documents",
+            bucket: THERAPIST_DOCUMENTS_BUCKET,
             documentType,
             fileName: file.originalname,
             mimeType: file.mimetype,
             fileSize: file.size,
             status: APPROVAL_STATUS.PENDING,
             uploadIp,
-            isDeleted: false
-        }
+            isDeleted: false,
+        },
     });
 
-    // Return metadata (no public URL for private documents)
     return {
         id: document.id,
         path: filePath,
@@ -107,72 +101,164 @@ export const uploadLicenseDocument = async ({ userId, file, documentType = "lice
         mimeType: document.mimeType,
         documentType: document.documentType,
         status: document.status,
-        uploadedAt: document.uploadedAt
+        uploadedAt: document.uploadedAt,
     };
 };
 
 /**
- * Upload profile photo to Supabase storage
- * Uses service role to bypass RLS policies
+ * @param {{ userId: string, file: import("multer").File, documentType: string, uploadIp?: string }} params
  */
-export const uploadProfilePhoto = async ({ userId, file }) => {
+export const uploadAgencyDocument = async ({ userId, file, documentType, uploadIp = null }) => {
+    const allowedTypes = [...DOCUMENT_CATEGORIES.agency, ...DOCUMENT_CATEGORIES.compliance];
+    if (!allowedTypes.includes(documentType)) {
+        throw new BadRequestError(`Invalid documentType "${documentType}" for agency uploads`);
+    }
+
     const user = await prisma.user.findUnique({
-        where: { id: userId }
+        where: { id: userId },
+        include: { customerProfile: true },
+    });
+    if (!user) throw new NotFoundError("User not found");
+    if (!user.customerProfile) throw new NotFoundError("Customer profile not found");
+
+    const agencyId = user.customerProfile.id;
+
+    await checkUploadRateLimit(userId);
+
+    const activeDocuments = await prisma.licenseDocument.count({
+        where: { agencyId, documentType: { in: allowedTypes }, isDeleted: false },
+    });
+    if (activeDocuments >= 10) {
+        throw new BadRequestError("Maximum active agency documents reached. Please delete an existing document before uploading.");
+    }
+
+    const filePath = buildDocumentPath(userId, "agency", file.originalname);
+    await saveToGcs(AGENCY_DOCUMENTS_BUCKET, filePath, file);
+
+    const document = await prisma.licenseDocument.create({
+        data: {
+            agencyId,
+            userId,
+            documentUrl: filePath,
+            bucket: AGENCY_DOCUMENTS_BUCKET,
+            documentType,
+            fileName: file.originalname,
+            mimeType: file.mimetype,
+            fileSize: file.size,
+            status: APPROVAL_STATUS.PENDING,
+            uploadIp,
+            isDeleted: false,
+        },
     });
 
-    if (!user) {
-        throw new NotFoundError("User not found");
-    }
-
-    const fileExtension = path.extname(file.originalname);
-    const fileName = `${userId}${fileExtension}`;
-
-    // Upload to Supabase using service role
-    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from("profile-images")
-        .upload(fileName, file.buffer, {
-            contentType: file.mimetype,
-            upsert: true,
-            cacheControl: "3600"
-        });
-
-    if (uploadError) {
-        console.error("Supabase upload error:", uploadError);
-        throw new BadRequestError(
-            `Failed to upload file: ${uploadError.message}`
-        );
-    }
-
-    // Get public URL (profile-images is a public bucket)
-    const { data: { publicUrl } } = supabaseAdmin.storage
-        .from("profile-images")
-        .getPublicUrl(fileName);
-
     return {
-        path: fileName,
-        publicUrl,
-        fileName: file.originalname,
-        fileSize: file.size
+        id: document.id,
+        path: filePath,
+        fileName: document.fileName,
+        fileSize: document.fileSize,
+        mimeType: document.mimeType,
+        documentType: document.documentType,
+        status: document.status,
+        uploadedAt: document.uploadedAt,
     };
-}
+};
 
 /**
- * Delete file from Supabase storage
- * Only used for cleanup in error scenarios
- * 
- * @param {string} bucket - Bucket name
- * @param {string} filePath - File path in bucket
+ * @param {{ userId: string, file: import("multer").File, documentType: string, uploadIp?: string }} params
+ */
+export const uploadIndividualDocument = async ({ userId, file, documentType, uploadIp = null }) => {
+    const allowedTypes = DOCUMENT_CATEGORIES.individual;
+    if (!allowedTypes.includes(documentType)) {
+        throw new BadRequestError(`Invalid documentType "${documentType}" for individual uploads`);
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { customerProfile: true },
+    });
+    if (!user) throw new NotFoundError("User not found");
+    if (!user.customerProfile) throw new NotFoundError("Customer profile not found");
+
+    const customerId = user.customerProfile.id;
+
+    await checkUploadRateLimit(userId);
+
+    const activeDocuments = await prisma.licenseDocument.count({
+        where: { customerId, documentType, isDeleted: false },
+    });
+    if (activeDocuments >= 3) {
+        throw new BadRequestError("Maximum active documents for this type reached. Please delete an existing document before uploading.");
+    }
+
+    const filePath = buildDocumentPath(userId, "individual", file.originalname);
+    await saveToGcs(INDIVIDUAL_DOCUMENTS_BUCKET, filePath, file);
+
+    const document = await prisma.licenseDocument.create({
+        data: {
+            customerId,
+            userId,
+            documentUrl: filePath,
+            bucket: INDIVIDUAL_DOCUMENTS_BUCKET,
+            documentType,
+            fileName: file.originalname,
+            mimeType: file.mimetype,
+            fileSize: file.size,
+            status: APPROVAL_STATUS.PENDING,
+            uploadIp,
+            isDeleted: false,
+        },
+    });
+
+    return {
+        id: document.id,
+        path: filePath,
+        fileName: document.fileName,
+        fileSize: document.fileSize,
+        mimeType: document.mimeType,
+        documentType: document.documentType,
+        status: document.status,
+        uploadedAt: document.uploadedAt,
+    };
+};
+
+/**
+ * Uploads a therapist profile photo to the public-read profile-images bucket.
+ * Returns a permanent public URL — no expiry since the bucket is public-read
+ * and photos are served directly on the therapist marketplace.
+ *
+ * @param {{ userId: string, file: import("multer").File }} params
+ * @returns {Promise<{ path: string, publicUrl: string, fileName: string, fileSize: number }>}
+ */
+export const uploadProfilePhoto = async ({ userId, file }) => {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundError("User not found");
+
+    const fileExtension = path.extname(file.originalname);
+    const filePath = `${userId}${fileExtension}`;
+
+    await saveToGcs(PROFILE_IMAGES_BUCKET, filePath, file, "public, max-age=86400");
+
+    return {
+        path: filePath,
+        publicUrl: getProfilePhotoPublicUrl(filePath),
+        fileName: file.originalname,
+        fileSize: file.size,
+    };
+};
+
+/**
+ * Best-effort storage cleanup — swallows errors so callers are not blocked
+ * by a failed GCS delete on an otherwise successful operation.
+ *
+ * @param {string} bucket
+ * @param {string} filePath
  */
 export const deleteFileFromStorage = async (bucket, filePath) => {
     try {
-        const { error } = await supabaseAdmin.storage
-            .from(bucket)
-            .remove([filePath]);
-
-        if (error) {
-            console.error(`Failed to delete file ${filePath} from ${bucket}:`, error);
+        await gcs.bucket(bucket).file(filePath).delete();
+    } catch (err) {
+        if (err.code !== 404) {
+            logger.error("Storage deletion error", { filePath, bucket, error: err.message });
         }
-    } catch (error) {
-        console.error("Storage deletion error:", error);
     }
-}
+};

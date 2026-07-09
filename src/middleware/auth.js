@@ -1,20 +1,21 @@
-import { USER_ROLES } from "../utils/constants.js";
-import { APPROVAL_STATUS } from "../utils/constants.js";
-import { supabase } from "../config/supabase.js";
+import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { prisma } from "../config/prisma.js";
 import { AuthenticationError, AuthorizationError } from "../utils/errors.js";
 
 /**
- * Extract token from request
- * Checks both Authorization header and cookies
+ * Extract bearer token from Authorization header or httpOnly cookie.
+ *
+ * @param {import("express").Request} req
+ * @returns {string|null}
  */
-const extraToken = (req) => {
+const extractToken = (req) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
         return authHeader.substring(7);
     }
 
-    if (req.cookies && req.cookies.sb_access_token) {
+    if (req.cookies?.sb_access_token) {
         return req.cookies.sb_access_token;
     }
 
@@ -22,32 +23,42 @@ const extraToken = (req) => {
 };
 
 /**
- * Authenticate user with Supabase JWT
- * Verifies the JWT and loads user data from database
+ * Verify an Identity Platform ID token and return the decoded claims.
+ *
+ * @param {string} token
+ * @returns {Promise<import("firebase-admin/auth").DecodedIdToken>}
+ */
+const verifyToken = async (token) => {
+    const auth = getIdentityPlatformAuth();
+    return auth.verifyIdToken(token);
+};
+
+/**
+ * Authenticate request using Identity Platform JWT.
+ * Verifies the token, loads the user record, and attaches it to req.user.
+ *
+ * @type {import("express").RequestHandler}
  */
 export const authenticate = async (req, res, next) => {
     try {
-        const token = extraToken(req);
+        const token = extractToken(req);
 
         if (!token) {
             throw new AuthenticationError("Authentication required. Please log in.", "NO_TOKEN");
         }
 
-        // Verify token with supabase
-        console.log("[Auth] Verifying token for:", req.method, req.path, "token prefix:", token?.slice(0, 20));
-        const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
-        console.log("[Auth] getUser result — user:", supabaseUser?.id ?? "null", "error:", error?.message ?? "none");
-
-        if (error || !supabaseUser) {
-            console.error("[Auth] Token verification failed:", error?.message, "status:", error?.status);
+        let decodedToken;
+        try {
+            decodedToken = await verifyToken(token);
+        } catch {
             throw new AuthenticationError("Invalid or expired token", "INVALID_TOKEN");
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: supabaseUser.id },
+            where: { id: decodedToken.uid },
             include: {
                 customerProfile: true,
-                therapistProfile: true
+                therapistProfile: true,
             },
         });
 
@@ -59,16 +70,12 @@ export const authenticate = async (req, res, next) => {
             throw new AuthenticationError("Your account has been deactivated", "ACCOUNT_DEACTIVATED");
         }
 
-        // Attach user and Supabase user to request
         req.user = user;
-        req.supabaseUser = supabaseUser;
+        req.decodedToken = decodedToken;
         req.accessToken = token;
 
         next();
     } catch (error) {
-        // Only clear the access token — preserve the refresh token so the
-        // frontend interceptor can still call /auth/token/refresh and get
-        // a new access token. Clearing both causes premature logouts.
         if (error instanceof AuthenticationError && error.code !== "ACCOUNT_DEACTIVATED") {
             const isSecureContext = process.env.COOKIE_SECURE === "true";
             const clearOptions = {
@@ -84,46 +91,49 @@ export const authenticate = async (req, res, next) => {
 };
 
 /**
- * Optional authentication middleware
- * Attaches user to request if token is present, but doesn't require it
+ * Optional authentication — attaches user if a valid token is present,
+ * but does not reject the request if one is absent or invalid.
+ *
+ * @type {import("express").RequestHandler}
  */
 export const optionalAuthenticate = async (req, res, next) => {
     try {
-        const token = extraToken(req);
+        const token = extractToken(req);
 
-        if (!token) {
-            return next();
-        }
+        if (!token) return next();
 
-        const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
-
-        if (error || !supabaseUser) {
+        let decodedToken;
+        try {
+            decodedToken = await verifyToken(token);
+        } catch {
             return next();
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: supabaseUser.id },
+            where: { id: decodedToken.uid },
             include: {
                 customerProfile: true,
                 therapistProfile: true,
             },
         });
 
-        if (user && user.isActive) {
+        if (user?.isActive) {
             req.user = user;
-            req.supabaseUser = supabaseUser;
+            req.decodedToken = decodedToken;
             req.accessToken = token;
         }
 
         next();
-    } catch (_error) {
+    } catch {
         next();
     }
-}
+};
 
 /**
- * Authorize specific roles
- * Must be used after authenticate middleware
+ * Authorise by role. Must be used after authenticate.
+ *
+ * @param {string[]} roles
+ * @returns {import("express").RequestHandler}
  */
 export const authorize = (roles) => {
     return (req, res, next) => {
@@ -135,7 +145,7 @@ export const authorize = (roles) => {
             return next(
                 new AuthorizationError(
                     `Access denied. Required role(s): ${roles.join(", ")}`,
-                    `INSUFFICIENT_PERMISSIONS`
+                    "INSUFFICIENT_PERMISSIONS"
                 )
             );
         }
@@ -145,15 +155,16 @@ export const authorize = (roles) => {
 };
 
 /**
- * Require email verification
- * Must be used after authenticate middleware
+ * Require email verification. Must be used after authenticate.
+ *
+ * @type {import("express").RequestHandler}
  */
 export const requireEmailVerification = (req, res, next) => {
     if (!req.user) {
         return next(new AuthenticationError("Authentication required"));
     }
 
-    if (!req.user.emailVerified && !req.supabaseUser?.email_confirmed_at) {
+    if (!req.user.emailVerified && !req.decodedToken?.email_verified) {
         return next(
             new AuthenticationError(
                 "Please verify your email address to access this resource",
@@ -161,12 +172,14 @@ export const requireEmailVerification = (req, res, next) => {
             )
         );
     }
+
     next();
-}
+};
 
 /**
- * Require therapist approval
- * Must be used after authenticate middleware
+ * Require therapist approval. Must be used after authenticate.
+ *
+ * @type {import("express").RequestHandler}
  */
 export const requireTherapistApproval = (req, res, next) => {
     if (!req.user) {
@@ -184,8 +197,8 @@ export const requireTherapistApproval = (req, res, next) => {
     if (req.user.therapistProfile.approvalStatus !== APPROVAL_STATUS.APPROVED) {
         const statusMessages = {
             pending: "Your therapist account is pending approval",
-            rejected: "Your therapist account has been rejected. Please contact support."
-        }
+            rejected: "Your therapist account has been rejected. Please contact support.",
+        };
 
         return next(
             new AuthenticationError(
@@ -197,4 +210,4 @@ export const requireTherapistApproval = (req, res, next) => {
     }
 
     next();
-}
+};
