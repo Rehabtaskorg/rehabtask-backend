@@ -204,6 +204,8 @@ export const completeOAuthOnboardingController = async (req, res, next) => {
 
         const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData });
 
+        res.cookie("app_role", result.user.role, getRoleCookieOptions());
+
         res.status(200).json({
             success: true,
             message: result.message,
