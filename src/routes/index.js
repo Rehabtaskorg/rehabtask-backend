@@ -1,5 +1,6 @@
 import express from "express";
 
+import jobsRoutes from "./jobs.routes.js";
 import authRoutes from "./auth.routes.js";
 import requestRoutes from "./request.routes.js";
 import offerRoutes from "./offer.routes.js";
@@ -26,6 +27,7 @@ import publicRequestRoutes from "./publicRequest.routes.js";
 
 const router = express.Router();
 
+router.use("/internal/jobs", jobsRoutes);
 router.use("/auth", authRoutes);
 router.use("/requests", requestRoutes);
 router.use("/offers", offerRoutes);
