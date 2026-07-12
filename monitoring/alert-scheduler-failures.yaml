@@ -1,0 +1,41 @@
+displayName: "RehabTask — Cloud Scheduler Job Failure (prod)"
+documentation:
+  content: |
+    One or more Cloud Scheduler jobs targeting rehabtask-backend returned a
+    non-2xx response or failed to execute.
+
+    Immediate steps:
+    1. Go to Cloud Scheduler — https://console.cloud.google.com/cloudscheduler?project=rehabtask-db9bb
+    2. Check the failed job's "View logs" to see the HTTP response from the backend
+    3. Check Cloud Run logs for the corresponding /internal/jobs/* endpoint
+    4. Common causes: CLOUD_SCHEDULER_SECRET mismatch, Cloud Run cold start timeout, backend crash
+    5. Manually trigger the failed job from the console to retry immediately if needed
+  mimeType: text/markdown
+conditions:
+  - displayName: "Scheduler job failure count > 0"
+    conditionThreshold:
+      filter: >
+        resource.type="cloud_scheduler_job"
+        AND metric.type="cloudscheduler.googleapis.com/job/attempt_count"
+        AND metric.labels.status!="success"
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_COUNT
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields:
+            - resource.labels.job_id
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 3600s
+  notificationPrompts:
+    - OPENED
+combiner: OR
+enabled: true
+severity: WARNING
+notificationChannels:
+  - projects/rehabtask-db9bb/notificationChannels/2392196440619374297
+  - projects/rehabtask-db9bb/notificationChannels/9923110524739957432

@@ -1,0 +1,38 @@
+displayName: "RehabTask — Cloud SQL Connections > 400 (prod)"
+documentation:
+  content: |
+    Cloud SQL instance rehabtask-prod has exceeded 400 active connections.
+    Max connections for db-custom-1-4096 is ~500. At 400 you are 80% of the
+    way to connection exhaustion.
+
+    Immediate steps:
+    1. Go to Cloud SQL metrics — https://console.cloud.google.com/sql/instances/rehabtask-prod/metrics?project=rehabtask-db9bb
+    2. Check Cloud Run instance count — high connections usually means too many Cloud Run instances each holding a pool
+    3. Check Prisma connection pool config — pool size × max Cloud Run instances must stay below 450
+    4. If exhaustion is imminent — reduce Cloud Run max-instances or reduce Prisma pool size in DATABASE_URL
+  mimeType: text/markdown
+conditions:
+  - displayName: "Cloud SQL connections > 400"
+    conditionThreshold:
+      filter: >
+        resource.type="cloudsql_database"
+        AND resource.labels.database_id="rehabtask-db9bb:rehabtask-prod"
+        AND metric.type="cloudsql.googleapis.com/database/postgresql/num_backends"
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MEAN
+      comparison: COMPARISON_GT
+      thresholdValue: 400
+      duration: 60s
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 1800s
+  notificationPrompts:
+    - OPENED
+combiner: OR
+enabled: true
+severity: CRITICAL
+notificationChannels:
+  - projects/rehabtask-db9bb/notificationChannels/2392196440619374297
+  - projects/rehabtask-db9bb/notificationChannels/9923110524739957432
