@@ -61,6 +61,9 @@ const envSchema = z.object({
 
     // PostHog (server-side analytics)
     POSTHOG_API_KEY: z.string().optional(),
+
+    // Cloud Scheduler — shared secret for /internal/jobs/* endpoints
+    CLOUD_SCHEDULER_SECRET: z.string().min(32, "CLOUD_SCHEDULER_SECRET must be at least 32 characters"),
 });
 
 /**
@@ -130,4 +133,5 @@ export const {
     INDIVIDUAL_DOCUMENTS_BUCKET,
     MESSAGE_ATTACHMENTS_BUCKET,
     POSTHOG_API_KEY,
+    CLOUD_SCHEDULER_SECRET,
 } = env;

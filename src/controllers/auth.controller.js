@@ -285,8 +285,8 @@ export const processOAuthController = async (req, res, next) => {
             const needsOnboarding = user.role === "customer"
                 ? !user.customerProfile
                 : user.role === "therapist"
-                ? !user.therapistProfile
-                : false;
+                    ? !user.therapistProfile
+                    : false;
 
             res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
             res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
@@ -318,8 +318,8 @@ export const processOAuthController = async (req, res, next) => {
         const needsOnboarding = user.role === "customer"
             ? !user.customerProfile
             : user.role === "therapist"
-            ? !user.therapistProfile
-            : false;
+                ? !user.therapistProfile
+                : false;
 
         res.cookie("sb_access_token", accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", refreshToken, getRefreshTokenCookieOptions());
