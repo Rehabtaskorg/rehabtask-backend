@@ -1284,6 +1284,15 @@ export const sessionCancellationRejectedToRequester = ({ requester, session, rej
     `),
 });
 
+export const adminDirectMessage = ({ subject, message }) => ({
+    subject,
+    html: layout(`
+        ${text(message.replace(/\n/g, '<br />'))}
+        ${hr()}
+        ${muted('This message was sent by the RehabTask admin team. Please do not reply to this email.')}
+    `),
+});
+
 export const cancellationAutoApprovedToCustomer = ({ customer, therapist, booking, refundAmount, refundMethod }) => ({
     subject: 'Your cancellation has been automatically approved',
     html: layout(`

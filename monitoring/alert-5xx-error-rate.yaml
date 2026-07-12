@@ -1,0 +1,29 @@
+displayName: "RehabTask — 5xx Error Rate > 5% sustained (prod)"
+documentation:
+  content: |
+    The 5xx error rate on rehabtask-backend has exceeded 5% of total requests
+    for 5 consecutive minutes.
+
+    Immediate steps:
+    1. Go to GCP Error Reporting — https://console.cloud.google.com/errors?project=rehabtask-db9bb
+    2. Check Cloud Logging — filter: resource.labels.service_name="rehabtask-backend" severity=ERROR
+    3. Check Cloud SQL — CPU and connection count
+    4. If a bad deploy caused it — roll back via Cloud Run console (Traffic tab → previous revision)
+  mimeType: text/markdown
+conditions:
+  - displayName: "5xx rate > 5% for 5 consecutive minutes"
+    conditionPrometheusQueryLanguage:
+      query: |
+        sum(rate(run_googleapis_com:request_count{monitored_resource="cloud_run_revision",service_name="rehabtask-backend",response_code_class="5xx"}[5m]))
+        /
+        sum(rate(run_googleapis_com:request_count{monitored_resource="cloud_run_revision",service_name="rehabtask-backend"}[5m]))
+        > 0.05
+      duration: 300s
+      evaluationInterval: 60s
+alertStrategy:
+  autoClose: 1800s
+  notificationPrompts:
+    - OPENED
+combiner: OR
+enabled: true
+severity: CRITICAL

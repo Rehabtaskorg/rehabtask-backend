@@ -1,0 +1,39 @@
+displayName: "RehabTask — Instance Count Spike (prod)"
+documentation:
+  content: |
+    rehabtask-backend instance count exceeded 10 for 5 minutes. Max instances
+    is set to 10 — service is at scaling ceiling.
+
+    Immediate steps:
+    1. Check Cloud Run metrics for request volume and latency
+    2. Check Cloud Logging for errors driving retries
+    3. Consider raising max-instances in the deploy workflow if load is legitimate
+  mimeType: text/markdown
+conditions:
+  - displayName: "Instance count > 10 for 5 minutes"
+    conditionThreshold:
+      filter: >
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="rehabtask-backend"
+        AND metric.type="run.googleapis.com/container/instance_count"
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MEAN
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields:
+            - resource.labels.service_name
+      comparison: COMPARISON_GT
+      thresholdValue: 10
+      duration: 300s
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 1800s
+  notificationPrompts:
+    - OPENED
+combiner: OR
+enabled: true
+severity: WARNING
+notificationChannels:
+  - projects/rehabtask-db9bb/notificationChannels/2392196440619374297
+  - projects/rehabtask-db9bb/notificationChannels/9923110524739957432
