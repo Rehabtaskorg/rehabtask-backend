@@ -1,3 +1,8 @@
+# NOTE: This policy cannot be created until a Cloud Scheduler job failure has occurred
+# in the project, which registers the metric descriptor. All 20 jobs are live in Cloud
+# Scheduler but none have failed yet so the descriptor does not exist.
+# Once a natural failure occurs, run:
+#   gcloud monitoring policies create --policy-from-file=monitoring/alert-scheduler-failures.yaml --project=rehabtask-db9bb
 displayName: "RehabTask — Cloud Scheduler Job Failure (prod)"
 documentation:
   content: |
