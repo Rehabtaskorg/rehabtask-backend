@@ -17,7 +17,7 @@ conditions:
       filter: >
         resource.type="cloud_scheduler_job"
         AND metric.type="cloudscheduler.googleapis.com/job/attempt_count"
-        AND metric.labels.status!="success"
+        AND metric.labels.result="failed"
       aggregations:
         - alignmentPeriod: 300s
           perSeriesAligner: ALIGN_COUNT
