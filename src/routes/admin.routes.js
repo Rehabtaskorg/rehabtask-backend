@@ -13,7 +13,7 @@ import {
     adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, adminReleasePaymentSchema,
     createSubAdminSchema, promoteToSubAdminSchema, updateSubAdminPermissionsSchema,
     setCommissionRateSchema, adminListCommissionHistoryQuerySchema,
-    broadcastNotificationSchema, updateUserSchema, adminListAuditLogsQuerySchema,
+    sendEmailSchema, broadcastNotificationSchema, updateUserSchema, adminListAuditLogsQuerySchema,
     adminReportQuerySchema, adminUserReportQuerySchema,
 } from "../validators/admin.schema.js";
 
@@ -31,6 +31,7 @@ import {
     deactivateUserController,
     reactivateUserController,
     updateUserController,
+    sendEmailController,
 } from "../controllers/admin.user.controller.js";
 
 import {
@@ -123,6 +124,9 @@ router.get("/faqs", ...adminOrSubAdmin, requirePermission("faqs"), adminGetAllFa
 router.post("/faqs", ...adminOrSubAdmin, requirePermission("faqs"), validate(createFaqSchema), adminCreateFaqController);
 router.put("/faqs/:faqId", ...adminOrSubAdmin, requirePermission("faqs"), validate(updateFaqSchema), adminUpdateFaqController);
 router.delete("/faqs/:faqId", ...adminOrSubAdmin, requirePermission("faqs"), adminDeleteFaqController);
+
+// Direct email (admin-only — no sub-admin, no userId required)
+router.post("/email", ...adminOnly, validate(sendEmailSchema), sendEmailController);
 
 // User Management
 router.get("/users", ...adminOrSubAdmin, requirePermission("users"), validate(listUsersQuerySchema, "query"), listUsersController);

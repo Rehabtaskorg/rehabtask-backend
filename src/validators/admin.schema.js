@@ -36,6 +36,12 @@ export const userIdParamSchema = z.object({
     userId: z.string().min(1, "Invalid user ID"),
 });
 
+export const sendEmailSchema = z.object({
+    to: z.email("Invalid email address"),
+    subject: z.string().min(1, "Subject is required").max(200),
+    message: z.string().min(1, "Message is required").max(5000),
+});
+
 export const updateUserSchema = z.object({
     email: z.email("Invalid email").optional(),
     fullName: z.string().min(2).max(100).optional(),

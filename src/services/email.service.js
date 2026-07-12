@@ -68,6 +68,7 @@ import {
     cancellationApprovedToTherapist,
     cancellationRejectedToCustomer,
     cancellationRejectedToTherapist,
+    adminDirectMessage,
     cancellationAutoApprovedToCustomer,
     cancellationAutoDeclinedToTherapist,
     sessionCancellationRequestedToOtherParty,
@@ -486,6 +487,10 @@ export const sendSessionCancellationRequestedToOtherParty = async ({ recipient, 
 
 export const sendSessionCancellationApprovedToRequester = async ({ requester, session, refundAmount, refundMethod }) =>
     dispatch(requester.user.email, sessionCancellationApprovedToRequester, { requester, session, refundAmount, refundMethod });
+
+export const sendAdminDirectMessage = async ({ to, subject, message }) => {
+    return dispatch(to, adminDirectMessage, { subject, message });
+};
 
 export const sendSessionCancellationRejectedToRequester = async ({ requester, session, rejectionReason }) =>
     dispatch(requester.user.email, sessionCancellationRejectedToRequester, { requester, session, rejectionReason });
