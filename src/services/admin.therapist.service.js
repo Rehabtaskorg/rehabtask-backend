@@ -101,7 +101,12 @@ export const approveTherapist = async (therapistUserId, adminId) => {
             approvedBy: adminId,
             rejectionReason: null,
         },
-        include: { user: { select: { email: true } } },
+        select: {
+            id: true,
+            fullName: true,
+            stripeOnboardingComplete: true,
+            user: { select: { email: true } },
+        },
     });
 
     sendTherapistApproved({ therapist }).catch(() => { });
