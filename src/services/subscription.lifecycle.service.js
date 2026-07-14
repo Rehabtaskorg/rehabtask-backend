@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, BOOKING_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { NotFoundError } from "../utils/errors.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
@@ -24,16 +24,16 @@ import { parseStripeDate, releaseScheduleIfPending } from "./subscription.helper
  */
 export const createTrialSubscription = async (customerId, tx = prisma) => {
     const trialEndsAt = new Date(Date.now() + TRIAL_DURATION_DAYS * TIME_MS.TWENTY_FOUR_HOURS);
-    const { requestLimit, therapistLimit } = PLAN_CONFIG.standard;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[PLAN_TYPES.PRO];
 
     return tx.subscription.create({
         data: {
             customerId,
-            planType: "standard",
+            planType: PLAN_TYPES.PRO,
             status: SUBSCRIPTION_STATUS.TRIALING,
             trialEndsAt,
-            therapistLimit,
-            requestLimit,
+            visitLimit: visitLimit ?? 999999,
+            jobPostingLimit: jobPostingLimit ?? 999999,
         },
     });
 };
@@ -54,14 +54,14 @@ export const getActiveSubscription = async (customerId) => {
 
     if (subscription) return subscription;
 
-    const { requestLimit, therapistLimit } = PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[PLAN_TYPES.FREE];
     return prisma.subscription.create({
         data: {
             customerId,
-            planType: "free",
+            planType: PLAN_TYPES.FREE,
             status: SUBSCRIPTION_STATUS.ACTIVE,
-            therapistLimit,
-            requestLimit,
+            visitLimit: visitLimit ?? 999999,
+            jobPostingLimit: jobPostingLimit ?? 999999,
         },
     });
 };
@@ -75,16 +75,18 @@ export const getActiveSubscription = async (customerId) => {
 export const getSubscriptionWithUsage = async (customerId) => {
     const subscription = await getActiveSubscription(customerId);
 
-    const [activeRequestCount, activeTherapistBookings] = await Promise.all([
-        prisma.therapyRequest.count({
-            where: { customerId, status: { in: ["created", "offers_received"] } },
-        }),
-        prisma.booking.groupBy({
-            by: ["therapistId"],
+    const periodStart = subscription.currentPeriodStart ?? subscription.createdAt;
+
+    const [visitCount, activeJobPostings] = await Promise.all([
+        prisma.booking.count({
             where: {
                 customerId,
-                status: { in: [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.IN_PROGRESS] },
+                status: BOOKING_STATUS.CONFIRMED,
+                createdAt: { gte: periodStart },
             },
+        }),
+        prisma.therapyRequest.count({
+            where: { customerId, status: { in: ["created", "offers_received"] } },
         }),
     ]);
 
@@ -104,10 +106,7 @@ export const getSubscriptionWithUsage = async (customerId) => {
 
     return {
         subscription: { ...subscription, scheduledDowngradePlan },
-        usage: {
-            activeRequests: activeRequestCount,
-            activeTherapists: activeTherapistBookings.length,
-        },
+        usage: { visitCount, activeJobPostings },
     };
 };
 
@@ -118,9 +117,9 @@ export const getSubscriptionWithUsage = async (customerId) => {
  * @param {string} planType
  * @param {string} billingInterval
  */
-export const createCheckoutSession = async (customerId, userId, planType, billingInterval) => {
+export const createCheckoutSession = async (customerId, userId, planType) => {
     const { stripeCustomerId } = await getOrCreateStripeCustomer(userId);
-    const priceId = getStripePriceId(planType, billingInterval);
+    const priceId = getStripePriceId(planType);
 
     const existingMethods = await stripe.paymentMethods.list({
         customer: stripeCustomerId,
@@ -132,7 +131,7 @@ export const createCheckoutSession = async (customerId, userId, planType, billin
         customer: stripeCustomerId,
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        metadata: { customerId, planType, billingInterval },
+        metadata: { customerId, planType },
         ...(existingMethods.data.length > 0 && { payment_method_collection: "if_required" }),
         success_url: `${process.env.FRONTEND_URL}/customer/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.FRONTEND_URL}/customer/subscription`,
@@ -235,14 +234,14 @@ export const resumeSubscription = async (customerId) => {
  * @param {string} planType
  * @param {string} billingInterval
  */
-export const previewUpgrade = async (customerId, planType, billingInterval) => {
+export const previewUpgrade = async (customerId, planType) => {
     const subscription = await prisma.subscription.findFirst({
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
 
     if (!subscription) throw new NotFoundError("No active paid subscription to preview upgrade for");
 
-    const newPriceId = getStripePriceId(planType, billingInterval);
+    const newPriceId = getStripePriceId(planType);
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
     const subscriptionItemId = stripeSubscription.items.data[0]?.id;
     if (!subscriptionItemId) throw new NotFoundError("Could not find subscription item in Stripe");
@@ -272,7 +271,7 @@ export const previewUpgrade = async (customerId, planType, billingInterval) => {
         currency: preview.currency,
         currentPlan: subscription.planType,
         targetPlan: planType,
-        billingInterval,
+        billingInterval: "monthly",
         periodEnd: parseStripeDate(stripeSubscription.items.data[0]?.current_period_end),
     };
 };
@@ -295,7 +294,7 @@ export const previewUpgrade = async (customerId, planType, billingInterval) => {
  * @param {string} planType
  * @param {string} billingInterval
  */
-export const upgradeSubscription = async (customerId, planType, billingInterval) => {
+export const upgradeSubscription = async (customerId, planType) => {
     const subscription = await prisma.subscription.findFirst({
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
@@ -308,7 +307,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
 
     await releaseScheduleIfPending(subscription);
 
-    const newPriceId = getStripePriceId(planType, billingInterval);
+    const newPriceId = getStripePriceId(planType);
     const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
     const subscriptionItemId = stripeSubscription.items.data[0]?.id;
     if (!subscriptionItemId) throw new NotFoundError("Could not find subscription item in Stripe");
@@ -319,7 +318,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
             items: [{ id: subscriptionItemId, price: newPriceId }],
             proration_behavior: "always_invoice",
             payment_behavior: "allow_incomplete",
-            metadata: { planType, billingInterval },
+            metadata: { planType },
             expand: ["latest_invoice.payment_intent"],
         });
     } catch (stripeError) {
@@ -379,18 +378,17 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
     }
 
     const subscriptionItem = updated.items?.data?.[0];
-    const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG[PLAN_TYPES.FREE];
 
     const updatedSub = await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
             planType,
-            billingInterval: billingInterval || subscription.billingInterval,
             stripePriceId: newPriceId,
             currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
-            therapistLimit: therapistLimit ?? 999999,
-            requestLimit: requestLimit ?? 999999,
+            visitLimit: visitLimit ?? 999999,
+            jobPostingLimit: jobPostingLimit ?? 999999,
             cancelledAt: null,
             cancelReason: null,
         },
@@ -405,7 +403,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
         action: "subscription.upgraded",
         entityType: "subscription",
         entityId: subscription.id,
-        changes: { from: subscription.planType, to: planType, billingInterval },
+        changes: { from: subscription.planType, to: planType },
     });
 
     logger.info("[Subscription] Plan upgraded", { customerId, from: subscription.planType, to: planType });
@@ -421,7 +419,7 @@ export const upgradeSubscription = async (customerId, planType, billingInterval)
  * @param {string} planType
  * @param {string} billingInterval
  */
-export const downgradeSubscription = async (customerId, planType, billingInterval) => {
+export const downgradeSubscription = async (customerId, planType) => {
     const subscription = await prisma.subscription.findFirst({
         where: { customerId, status: { in: ["active"] }, stripeSubscriptionId: { not: null } },
     });
@@ -431,11 +429,11 @@ export const downgradeSubscription = async (customerId, planType, billingInterva
     const currentRank = PLAN_CONFIG[subscription.planType]?.rank ?? 0;
     const targetRank = PLAN_CONFIG[planType]?.rank ?? 0;
     if (targetRank >= currentRank) throw new Error("Can only downgrade to a lower plan. Use upgrade for higher plans.");
-    if (planType === "free") throw new Error("To move to Free, cancel your subscription instead.");
+    if (planType === PLAN_TYPES.FREE) throw new Error("To move to Free, cancel your subscription instead.");
 
     await releaseScheduleIfPending(subscription);
 
-    const newPriceId = getStripePriceId(planType, billingInterval);
+    const newPriceId = getStripePriceId(planType);
     const currentPeriodEnd = Math.floor(new Date(subscription.currentPeriodEnd).getTime() / 1000);
 
     // Stripe does not allow phases + from_subscription in the same create call.
