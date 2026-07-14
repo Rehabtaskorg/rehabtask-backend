@@ -21,13 +21,8 @@ export const getSubscriptionController = async (req, res, next) => {
 
 export const createCheckoutController = async (req, res, next) => {
     try {
-        const { planType, billingInterval } = req.body;
-        const result = await createCheckoutSession(
-            req.user.customerProfile.id,
-            req.user.id,
-            planType,
-            billingInterval
-        );
+        const { planType } = req.body;
+        const result = await createCheckoutSession(req.user.customerProfile.id, req.user.id, planType);
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -63,8 +58,8 @@ export const resumeSubscriptionController = async (req, res, next) => {
 
 export const previewUpgradeController = async (req, res, next) => {
     try {
-        const { planType, billingInterval } = req.body;
-        const result = await previewUpgrade(req.user.customerProfile.id, planType, billingInterval);
+        const { planType } = req.body;
+        const result = await previewUpgrade(req.user.customerProfile.id, planType);
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -73,11 +68,8 @@ export const previewUpgradeController = async (req, res, next) => {
 
 export const upgradeSubscriptionController = async (req, res, next) => {
     try {
-        const { planType, billingInterval } = req.body;
-        const result = await upgradeSubscription(req.user.customerProfile.id, planType, billingInterval);
-        if (result.status === "requires_action") {
-            return res.json({ success: true, data: result });
-        }
+        const { planType } = req.body;
+        const result = await upgradeSubscription(req.user.customerProfile.id, planType);
         res.json({ success: true, data: result });
     } catch (error) {
         if (error.statusCode === 402 || error.code === "PAYMENT_FAILED") {
@@ -93,8 +85,8 @@ export const upgradeSubscriptionController = async (req, res, next) => {
 
 export const downgradeSubscriptionController = async (req, res, next) => {
     try {
-        const { planType, billingInterval } = req.body;
-        const result = await downgradeSubscription(req.user.customerProfile.id, planType, billingInterval);
+        const { planType } = req.body;
+        const result = await downgradeSubscription(req.user.customerProfile.id, planType);
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);

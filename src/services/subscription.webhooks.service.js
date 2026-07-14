@@ -1,5 +1,5 @@
 // TODO: [BUG] This file is 425 lines — exceeds the 300-line service limit. Split in follow-up PR.
-import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { sendSubscriptionActivated, sendSubscriptionPaymentFailed, sendSubscriptionUpgraded, sendSubscriptionPaymentActionRequired } from "./email.service.js";
@@ -30,7 +30,7 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
 
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const subscriptionItem = stripeSubscription.items?.data?.[0];
-    const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG[PLAN_TYPES.FREE];
 
     const existing = await prisma.subscription.findFirst({
         where: { customerId },
@@ -42,7 +42,7 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         stripeCustomerId: session.customer,
         stripePriceId: subscriptionItem?.price?.id || null,
         planType,
-        billingInterval: billingInterval || null,
+        billingInterval: "monthly",
         status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
         currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
@@ -50,8 +50,8 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         gracePeriodEndsAt: null,
         cancelledAt: null,
         cancelReason: null,
-        therapistLimit: therapistLimit ?? 999999,
-        requestLimit: requestLimit ?? 999999,
+        visitLimit: visitLimit ?? 999999,
+        jobPostingLimit: jobPostingLimit ?? 999999,
     };
 
     try {
@@ -147,9 +147,9 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         if (planConfig) {
             updateData.planType = stripePlanType;
             updateData.stripePriceId = stripeSub.items.data[0]?.price?.id;
-            updateData.billingInterval = stripeSub.metadata?.billingInterval || subscription.billingInterval;
-            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
-            updateData.requestLimit = planConfig.requestLimit ?? 999999;
+            updateData.billingInterval = "monthly";
+            updateData.visitLimit = planConfig.visitLimit ?? 999999;
+            updateData.jobPostingLimit = planConfig.jobPostingLimit ?? 999999;
             updateData.cancelledAt = null;
             updateData.cancelReason = null;
 
@@ -413,9 +413,9 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
             const planConfig = PLAN_CONFIG[detected.planType];
             planUpdate = {
                 planType: detected.planType,
-                billingInterval: detected.billingInterval,
-                therapistLimit: planConfig.therapistLimit ?? 999999,
-                requestLimit: planConfig.requestLimit ?? 999999,
+                billingInterval: "monthly",
+                visitLimit: planConfig.visitLimit ?? 999999,
+                jobPostingLimit: planConfig.jobPostingLimit ?? 999999,
                 cancelReason: null,
                 stripeScheduleId: null,
             };

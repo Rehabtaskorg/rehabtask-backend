@@ -10,7 +10,7 @@ import {
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { requestChangeSchema } from "../validators/offer.schema.js";
-import { enforceTherapistLimit } from "../middleware/subscriptionLimits.js";
+import { enforceVisitLimit } from "../middleware/subscriptionLimits.js";
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ router.post("/:offerId/withdraw", authenticate, authorize([USER_ROLES.THERAPIST]
 
 
 // Customer routes
-router.post("/:offerId/accept", authenticate, authorize([USER_ROLES.CUSTOMER]), enforceTherapistLimit, acceptOfferController);
+router.post("/:offerId/accept", authenticate, authorize([USER_ROLES.CUSTOMER]), enforceVisitLimit, acceptOfferController);
 router.post("/:offerId/decline", authenticate, authorize([USER_ROLES.CUSTOMER]), declineOfferController);
 router.post("/:offerId/request-change", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(requestChangeSchema), requestOfferChangeController);
 

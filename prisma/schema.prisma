@@ -301,7 +301,6 @@ model Subscription {
   stripeCustomerId     String?            @map("stripe_customer_id") @db.VarChar(255)
   stripePriceId        String?            @map("stripe_price_id") @db.VarChar(255)
   planType             SubscriptionPlan   @map("plan_type")
-  billingInterval      BillingInterval?   @map("billing_interval")
   status               SubscriptionStatus
   currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
   currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
@@ -310,8 +309,8 @@ model Subscription {
   cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
   cancelReason         String?            @map("cancel_reason")
   stripeScheduleId     String?            @map("stripe_schedule_id") @db.VarChar(255)
-  therapistLimit       Int                @map("therapist_limit")
-  requestLimit         Int                @map("request_limit")
+  visitLimit           Int                @map("visit_limit")
+  jobPostingLimit      Int                @map("job_posting_limit")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer             CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -837,8 +836,9 @@ enum ApprovalStatus {
 
 enum SubscriptionPlan {
   free
-  standard
-  premium
+  pro
+  enterprise
+  unlimited
 }
 
 enum TherapistPlan {
@@ -858,7 +858,6 @@ enum SubscriptionStatus {
 
 enum BillingInterval {
   monthly
-  annual
 }
 
 enum RequestStatus {

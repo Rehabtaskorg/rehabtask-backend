@@ -55,6 +55,13 @@ export const OFFER_STATUS = {
     CANCELLED: "cancelled",
 };
 
+export const PLAN_TYPES = {
+    FREE: "free",
+    PRO: "pro",
+    ENTERPRISE: "enterprise",
+    UNLIMITED: "unlimited",
+};
+
 export const SUBSCRIPTION_STATUS = {
     ACTIVE: "active",
     INACTIVE: "inactive",

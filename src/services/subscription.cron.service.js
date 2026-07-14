@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { sendTrialExpired, sendSubscriptionDowngraded } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -20,17 +20,17 @@ export const runTrialExpiry = async () => {
 
     if (expired.length === 0) return;
 
-    const { requestLimit, therapistLimit } = PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[PLAN_TYPES.FREE];
 
     for (const sub of expired) {
         await prisma.subscription.update({
             where: { id: sub.id },
             data: {
                 status: SUBSCRIPTION_STATUS.ACTIVE,
-                planType: "free",
+                planType: PLAN_TYPES.FREE,
                 trialEndsAt: null,
-                therapistLimit,
-                requestLimit,
+                visitLimit: visitLimit ?? 999999,
+                jobPostingLimit: jobPostingLimit ?? 999999,
             },
         });
 
@@ -38,7 +38,7 @@ export const runTrialExpiry = async () => {
             action: "subscription.trial_expired",
             entityType: "subscription",
             entityId: sub.id,
-            changes: { customerId: sub.customerId, previousPlan: "standard", downgradedTo: "free" },
+            changes: { customerId: sub.customerId, previousPlan: sub.planType, downgradedTo: PLAN_TYPES.FREE },
         });
 
         try {
@@ -70,20 +70,20 @@ export const runGracePeriodExpiry = async () => {
 
     if (expired.length === 0) return;
 
-    const { requestLimit, therapistLimit } = PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[PLAN_TYPES.FREE];
 
     for (const sub of expired) {
         await prisma.subscription.update({
             where: { id: sub.id },
             data: {
                 status: SUBSCRIPTION_STATUS.ACTIVE,
-                planType: "free",
+                planType: PLAN_TYPES.FREE,
                 gracePeriodEndsAt: null,
                 stripeSubscriptionId: null,
                 stripePriceId: null,
                 billingInterval: null,
-                therapistLimit,
-                requestLimit,
+                visitLimit: visitLimit ?? 999999,
+                jobPostingLimit: jobPostingLimit ?? 999999,
             },
         });
 
