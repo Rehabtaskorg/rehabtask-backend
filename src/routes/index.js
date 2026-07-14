@@ -24,6 +24,7 @@ import requestOptionRoutes from "./requestOption.routes.js";
 import subscriptionRoutes from "./subscription.routes.js";
 import visitTypeRoutes from "./visitType.routes.js";
 import publicRequestRoutes from "./publicRequest.routes.js";
+import customerRoutes from "./customer.routes.js";
 
 const router = express.Router();
 
@@ -51,5 +52,6 @@ router.use("/request-options", requestOptionRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 router.use("/visit-types", visitTypeRoutes);
 router.use("/public", publicRequestRoutes);
+router.use("/customers", customerRoutes);
 
 export default router;
