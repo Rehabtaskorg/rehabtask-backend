@@ -81,7 +81,6 @@ export const runGracePeriodExpiry = async () => {
                 gracePeriodEndsAt: null,
                 stripeSubscriptionId: null,
                 stripePriceId: null,
-                billingInterval: null,
                 visitLimit: visitLimit ?? 999999,
                 jobPostingLimit: jobPostingLimit ?? 999999,
             },

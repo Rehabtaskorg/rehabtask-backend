@@ -384,7 +384,6 @@ export const upgradeSubscription = async (customerId, planType) => {
         where: { id: subscription.id },
         data: {
             planType,
-            billingInterval: "monthly",
             stripePriceId: newPriceId,
             currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
             currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),

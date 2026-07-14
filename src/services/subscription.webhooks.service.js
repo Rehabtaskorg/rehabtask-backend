@@ -20,7 +20,7 @@ import { parseStripeDate } from "./subscription.helpers.js";
 export const handleCheckoutCompleted = async (session, stripeEventId) => {
     if (session.mode !== "subscription") return;
 
-    const { customerId, planType, billingInterval } = session.metadata;
+    const { customerId, planType } = session.metadata;
     if (!customerId || !planType) {
         logger.warn("[Subscription] checkout.session.completed missing metadata", { sessionId: session.id, metadata: session.metadata });
         return;
@@ -42,7 +42,6 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         stripeCustomerId: session.customer,
         stripePriceId: subscriptionItem?.price?.id || null,
         planType,
-        billingInterval: "monthly",
         status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
         currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
@@ -85,7 +84,6 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
             if (customer.user?.id) {
                 trackServerEvent(customer.user.id, "subscription_activated", {
                     plan_type: planType,
-                    billing_interval: billingInterval || null,
                 });
             }
         }
@@ -97,7 +95,7 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         action: "subscription.created",
         entityType: "subscription",
         entityId: subscription?.id,
-        changes: { customerId, planType, billingInterval, stripeSubscriptionId },
+        changes: { customerId, planType, stripeSubscriptionId },
     });
 
     logger.info("[Subscription] Checkout completed", { customerId, planType, stripeSubscriptionId });
@@ -147,7 +145,6 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         if (planConfig) {
             updateData.planType = stripePlanType;
             updateData.stripePriceId = stripeSub.items.data[0]?.price?.id;
-            updateData.billingInterval = "monthly";
             updateData.visitLimit = planConfig.visitLimit ?? 999999;
             updateData.jobPostingLimit = planConfig.jobPostingLimit ?? 999999;
             updateData.cancelledAt = null;
@@ -197,7 +194,7 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         if (customer?.user?.id) {
             trackServerEvent(customer.user.id, hasPlanChange ? "subscription_upgraded" : "subscription_renewed", {
                 plan_type: updateData.planType ?? subscription.planType,
-                billing_interval: updateData.billingInterval ?? subscription.billingInterval,
+                billing_interval: "monthly",
             });
         }
     }).catch(() => { });
@@ -413,7 +410,6 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
             const planConfig = PLAN_CONFIG[detected.planType];
             planUpdate = {
                 planType: detected.planType,
-                billingInterval: "monthly",
                 visitLimit: planConfig.visitLimit ?? 999999,
                 jobPostingLimit: planConfig.jobPostingLimit ?? 999999,
                 cancelReason: null,
