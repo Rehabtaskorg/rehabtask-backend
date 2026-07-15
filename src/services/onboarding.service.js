@@ -487,18 +487,20 @@ export const saveInsurance = async (userId, data) => {
 
     const submittedPaths = new Set(data.documents.map((doc) => doc.path));
 
-    await prisma.licenseDocument.updateMany({
-        where: {
-            therapistId: therapist.id,
-            isDeleted: false,
-            documentType: { in: DOCUMENT_CATEGORIES.insurance },
-            documentUrl: { notIn: [...submittedPaths] },
-        },
-        data: {
-            isDeleted: true,
-            deletedAt: new Date(),
-        },
-    });
+    if (submittedPaths.size > 0) {
+        await prisma.licenseDocument.updateMany({
+            where: {
+                therapistId: therapist.id,
+                isDeleted: false,
+                documentType: { in: DOCUMENT_CATEGORIES.insurance },
+                documentUrl: { notIn: [...submittedPaths] },
+            },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+            },
+        });
+    }
 
     const activeDocuments = await prisma.licenseDocument.findMany({
         where: {
@@ -544,18 +546,20 @@ export const saveIdentityVerification = async (userId, data) => {
 
     const submittedPaths = new Set(data.documents.map((doc) => doc.path));
 
-    await prisma.licenseDocument.updateMany({
-        where: {
-            therapistId: therapist.id,
-            isDeleted: false,
-            documentType: { in: DOCUMENT_CATEGORIES.identity },
-            documentUrl: { notIn: [...submittedPaths] },
-        },
-        data: {
-            isDeleted: true,
-            deletedAt: new Date(),
-        },
-    });
+    if (submittedPaths.size > 0) {
+        await prisma.licenseDocument.updateMany({
+            where: {
+                therapistId: therapist.id,
+                isDeleted: false,
+                documentType: { in: DOCUMENT_CATEGORIES.identity },
+                documentUrl: { notIn: [...submittedPaths] },
+            },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+            },
+        });
+    }
 
     const activeDocuments = await prisma.licenseDocument.findMany({
         where: {
