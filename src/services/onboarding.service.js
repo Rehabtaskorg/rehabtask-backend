@@ -340,24 +340,27 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
     // Reconcile documents: keep submitted ones, soft-delete any removed ones
     const submittedPaths = new Set(data.licenseDocuments.map(doc => doc.path));
 
-    // Soft-delete active documents NOT in the submitted list (user removed them)
-    await prisma.licenseDocument.updateMany({
-        where: {
-            therapistId: therapist.id,
-            isDeleted: false,
-            documentUrl: { notIn: [...submittedPaths] },
-        },
-        data: {
-            isDeleted: true,
-            deletedAt: new Date(),
-        },
-    });
+    if (submittedPaths.size > 0) {
+        await prisma.licenseDocument.updateMany({
+            where: {
+                therapistId: therapist.id,
+                isDeleted: false,
+                documentType: { in: DOCUMENT_CATEGORIES.license },
+                documentUrl: { notIn: [...submittedPaths] },
+            },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+            },
+        });
+    }
 
     // Fetch the remaining active documents (already created during upload)
     const activeDocuments = await prisma.licenseDocument.findMany({
         where: {
             therapistId: therapist.id,
             isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.license },
         },
         orderBy: { uploadedAt: "desc" },
     });
