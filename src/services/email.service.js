@@ -103,10 +103,13 @@ export const sendTherapistApplicationSubmitted = async ({ therapist }) => {
 };
 
 /**
- * Admin Approved therapist
+ * Admin Approved therapist.
+ * Passes stripeComplete so the template can omit the Stripe CTA for therapists
+ * who already finished Connect onboarding before their profile was approved.
  */
 export const sendTherapistApproved = async ({ therapist }) => {
-    return dispatch(therapist.user.email, therapistApproved, { therapist });
+    const stripeComplete = therapist.stripeOnboardingComplete === true;
+    return dispatch(therapist.user.email, therapistApproved, { therapist, stripeComplete });
 };
 
 /**

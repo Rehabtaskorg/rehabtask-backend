@@ -54,13 +54,17 @@ export const therapistApplicationSubmittedAdmin = ({ therapist }) => ({
 });
 
 // Therapist Approved
-export const therapistApproved = ({ therapist }) => ({
+export const therapistApproved = ({ therapist, stripeComplete }) => ({
     subject: 'Congratulations — Your RehabTask profile is approved',
     html: layout(`
         ${heading(`Congratulations, ${therapist.fullName}!`)}
         ${text('Great news — your RehabTask profile has been reviewed and <strong>approved</strong>. Your profile is now live and visible to customers looking for therapy services.')}
-        ${text('To start receiving payments for your sessions, please complete your Stripe Connect setup. This only takes a few minutes and is required before you can accept bookings.')}
-        ${button(`${FRONTEND_URL}/therapist/onboarding/stripe`, 'Set Up Payments')}
+        ${stripeComplete
+            ? `${text('Your payment account is already connected — you\'re all set to start accepting bookings right away.')}
+               ${button(`${FRONTEND_URL}/therapist/dashboard`, 'Go to Dashboard')}`
+            : `${text('To start receiving payments for your sessions, please complete your Stripe Connect setup. This only takes a few minutes and is required before you can accept bookings.')}
+               ${button(`${FRONTEND_URL}/therapist/onboarding/stripe`, 'Set Up Payments')}`
+        }
         ${muted('If you have any questions about getting started, visit our Help Center or contact support.')}
     `),
 });
