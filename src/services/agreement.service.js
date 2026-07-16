@@ -1,7 +1,6 @@
-import prisma from "../config/prismaClient.js";
+import { prisma } from "../config/prisma.js";
 import { AGREEMENT_VERSION, AGREEMENT_ROLE_SECTIONS } from "../utils/constants.js";
 import { AGREEMENT_SECTIONS } from "../data/unifiedAgreement.js";
-import { NotFoundError } from "../utils/errors.js";
 
 /**
  * @param {string} userId
