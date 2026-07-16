@@ -247,7 +247,7 @@ const agencyDocumentSchema = z.object({
     path: z.string().min(1, "Document path is required"),
     fileName: z.string().min(1),
     fileSize: z.number().positive(),
-    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"]),
+    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability", "w9"]),
     mimeType: z.string().optional(),
 });
 
