@@ -223,10 +223,13 @@ jobs:
             --cpu=1 \
             --service-account=${{ env.RUNTIME_SA }} \
             $NO_TRAFFIC_FLAG \
+            --async \
             --timeout=300 \
             --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }}" \
             --set-secrets "$SECRETS" \
             --quiet
+          echo "Waiting for revision registration..."
+          sleep 15
           echo "Step 1 complete — revision created without VPC"
 
       - name: Step 2 — Apply VPC egress via services update
