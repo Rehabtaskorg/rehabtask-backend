@@ -413,45 +413,52 @@ export const logout = async () => {
  * @param {string} userId
  */
 export const getCurrentUser = async (userId) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-            id: true,
-            email: true,
-            role: true,
-            emailVerified: true,
-            isActive: true,
-            customerProfile: {
-                select: {
-                    fullName: true,
-                    customerType: true,
-                    agencyName: true,
-                    onboardingComplete: true,
-                    onboardingStep: true,
-                    approvalStatus: true,
+    const [user, agreementAcceptance] = await Promise.all([
+        prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                emailVerified: true,
+                isActive: true,
+                customerProfile: {
+                    select: {
+                        fullName: true,
+                        customerType: true,
+                        agencyName: true,
+                        onboardingComplete: true,
+                        onboardingStep: true,
+                        approvalStatus: true,
+                    },
+                },
+                therapistProfile: {
+                    select: {
+                        fullName: true,
+                        approvalStatus: true,
+                        rejectionReason: true,
+                        profilePhotoUrl: true,
+                        onboardingStep: true,
+                        onboardingComplete: true,
+                        ratePerVisit: true,
+                        attemptedVisitRate: true,
+                        primaryLicenseType: true,
+                    },
+                },
+                subAdminProfile: {
+                    select: {
+                        permissions: true,
+                        isActive: true,
+                    },
                 },
             },
-            therapistProfile: {
-                select: {
-                    fullName: true,
-                    approvalStatus: true,
-                    rejectionReason: true,
-                    profilePhotoUrl: true,
-                    onboardingStep: true,
-                    onboardingComplete: true,
-                    ratePerVisit: true,
-                    attemptedVisitRate: true,
-                    primaryLicenseType: true,
-                },
-            },
-            subAdminProfile: {
-                select: {
-                    permissions: true,
-                    isActive: true,
-                },
-            },
-        },
-    });
+        }),
+        prisma.unifiedAgreementAcceptance.findFirst({
+            where: { userId },
+            select: { agreementVersion: true },
+            orderBy: { acceptedAt: "desc" },
+        }),
+    ]);
 
     if (!user) throw new NotFoundError("User not found");
 
@@ -461,6 +468,7 @@ export const getCurrentUser = async (userId) => {
         role: user.role,
         emailVerified: user.emailVerified,
         isActive: user.isActive,
+        hasAcceptedAgreement: agreementAcceptance !== null,
         profile:
             user.role === USER_ROLES.CUSTOMER
                 ? user.customerProfile

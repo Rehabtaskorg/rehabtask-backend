@@ -34,6 +34,7 @@ model User {
   directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
   uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
+  agreementAcceptances       UnifiedAgreementAcceptance[]
 
   @@index([email])
   @@index([role, isActive])
@@ -1008,4 +1009,19 @@ enum PendingRefundRetryStatus {
   pending
   resolved
   failed
+}
+
+model UnifiedAgreementAcceptance {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.VarChar(128)
+  userRole         String   @map("user_role") @db.VarChar(20)
+  agreementVersion String   @map("agreement_version") @db.VarChar(20)
+  acceptedAt       DateTime @default(now()) @map("accepted_at") @db.Timestamptz(3)
+  ipAddress        String?  @map("ip_address") @db.VarChar(45)
+  userAgent        String?  @map("user_agent") @db.Text
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, agreementVersion])
+  @@index([userId])
+  @@map("unified_agreement_acceptances")
 }

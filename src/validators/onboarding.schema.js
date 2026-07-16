@@ -229,14 +229,6 @@ export const identitySchema = z.object({
     { message: "Government ID (front) is required", path: ["documents"] }
 );
 
-export const signComplianceSchema = z.object({
-    documentType: z.enum([
-        "independent_contractor_agreement",
-        "hipaa_acknowledgment",
-        "background_check_authorization",
-    ]),
-    signature: z.string().min(2, "Signature is required").max(255, "Signature too long"),
-});
 
 export const backgroundCheckSchema = z.object({
     consent: z

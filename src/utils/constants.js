@@ -156,17 +156,13 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
     individual: ["therapy_order"],
 });
 
-export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
-    INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
-    HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
-    BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
-    SERVICE_AGREEMENT: "service_agreement",
-    HIPAA_BAA: "hipaa_baa",
-});
 
-export const INDIVIDUAL_CONSENT_DOCUMENT_TYPES = Object.freeze({
-    HIPAA_CONSENT: "hipaa_consent",
-    TREATMENT_CONSENT: "treatment_consent",
+export const AGREEMENT_VERSION = "v1.0";
+
+export const AGREEMENT_ROLE_SECTIONS = Object.freeze({
+    therapist: [1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15],
+    customer: [1, 2, 3, 8, 9, 11, 12, 13, 14, 15],
+    agency: [1, 2, 3, 7, 10, 11, 12, 13, 14, 15, 16],
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
