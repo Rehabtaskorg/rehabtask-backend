@@ -159,6 +159,7 @@ export const searchTherapists = async ({
     const where = {
         approvalStatus: APPROVAL_STATUS.APPROVED,
         onboardingComplete: true,
+        user: { isActive: true },
     };
 
     // Multi-value license type filter (comma-separated)
@@ -327,6 +328,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { id: therapistId },
         include: {
+            user: { select: { isActive: true } },
             workAreas: true,
             availability: true,
             reviews: {
@@ -335,7 +337,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         },
     });
 
-    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -380,9 +382,10 @@ export const getTherapistPublicProfile = async (therapistId) => {
 export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { id: therapistId },
+        include: { user: { select: { isActive: true } } },
     });
 
-    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -419,19 +422,19 @@ export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => 
 export const getPlatformStats = async () => {
     const [therapistCount, sessionCount, avgRating, distinctCities, distinctStates] = await Promise.all([
         prisma.therapistProfile.count({
-            where: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true },
+            where: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } },
         }),
         prisma.session.count({
             where: { status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER },
         }),
         prisma.review.aggregate({ _avg: { rating: true } }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } } },
             distinct: ["city"],
             select: { city: true },
         }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } } },
             distinct: ["state"],
             select: { state: true },
         }),
