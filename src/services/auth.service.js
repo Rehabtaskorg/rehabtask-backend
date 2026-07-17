@@ -21,10 +21,10 @@ const frontendUrl = () => (env.FRONTEND_URL || "").replace(/\/$/, "");
  * directly from the raw oobCode — giving each environment its own handler URL.
  *
  * @param {string} email
- * @param {string} idToken - The user's Identity Platform ID token (required by sendOobCode)
+ * @param {string | null} [redirect] - encoded `trigger:entityId` descriptor to carry through the email link
  * @returns {Promise<string>} Full verification URL pointing to this environment's action handler
  */
-const generateVerificationLink = async (email) => {
+const generateVerificationLink = async (email, redirect = null) => {
     const auth = getIdentityPlatformAuth();
     const firebaseLink = await auth.generateEmailVerificationLink(email, {
         url: `${frontendUrl()}/verify-callback`,
@@ -37,7 +37,9 @@ const generateVerificationLink = async (email) => {
     }
 
     const base = `${frontendUrl()}/action-handler`;
-    const continueUrl = `${frontendUrl()}/verify-callback`;
+    const continueUrlObj = new URL(`${frontendUrl()}/verify-callback`);
+    if (redirect) continueUrlObj.searchParams.set("redirect", redirect);
+    const continueUrl = continueUrlObj.toString();
     return `${base}?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}&continueUrl=${encodeURIComponent(continueUrl)}`;
 };
 
@@ -587,9 +589,9 @@ export const changePassword = async ({ userId, currentPassword, newPassword }) =
  * Resend the email verification link.
  * Guards against sending when the account is already verified.
  *
- * @param {{email: string}} params
+ * @param {{email: string, redirect?: string | null}} params
  */
-export const resendVerificationEmail = async ({ email }) => {
+export const resendVerificationEmail = async ({ email, redirect = null }) => {
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await prisma.user.findUnique({
@@ -606,7 +608,7 @@ export const resendVerificationEmail = async ({ email }) => {
 
     if (user) {
         try {
-            const verificationLink = await generateVerificationLink(normalizedEmail);
+            const verificationLink = await generateVerificationLink(normalizedEmail, redirect);
             sendEmailVerificationEmail({ email: normalizedEmail, verificationLink }).catch((err) => {
                 logger.error("[Auth] Failed to send verification email", { email: normalizedEmail, error: err.message });
             });

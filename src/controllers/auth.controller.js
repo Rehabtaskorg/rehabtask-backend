@@ -349,8 +349,8 @@ export const processOAuthController = async (req, res, next) => {
  */
 export const resendVerificationEmailController = async (req, res, next) => {
     try {
-        const { email } = req.body;
-        const result = await resendVerificationEmail({ email });
+        const { email, redirect } = req.body;
+        const result = await resendVerificationEmail({ email, redirect: redirect ?? null });
         res.status(200).json({ success: true, message: result.message });
     } catch (error) {
         next(error);

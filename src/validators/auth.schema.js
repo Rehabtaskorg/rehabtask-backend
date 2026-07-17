@@ -173,6 +173,7 @@ export const resendVerificationSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
+    redirect: z.string().max(500).optional().nullable(),
 });
 
 /**
