@@ -1892,14 +1892,14 @@ const getCustomerConnectStatus = async (customerId, userId) => {
 };
 
 /**
- * Get customer refund summary (for the Payments & Refunds dashboard).
+ * Get customer credit summary (for the Payments & Credits dashboard).
  *
  * Source of truth:
  *   - totalPaid:    sum(payment.amount)
  *   - inEscrow:     sum(payment.amount - payment.refundedAmount) for escrowed/partially_released
- *                   (subtract refunds because that money is no longer in escrow)
+ *                   (subtract credited amounts because that money is no longer in escrow)
  *   - totalRefunded: sum(customerRefund.amount where status=transferred OR refunded_to_card)
- *                    + legacy card refunds on payments that pre-date CustomerRefund (no rows linked)
+ *                    + legacy amounts on payments that pre-date CustomerRefund (no rows linked)
  *   - pendingAmount: sum(customerRefund.amount where status=pending_connect)
  *
  */
@@ -1948,9 +1948,9 @@ const getCustomerRefundSummary = async (customerId) => {
         .filter(r => r.status === "refunded_to_card")
         .reduce((sum, r) => sum + parseFloat(r.amount), 0);
 
-    // Legacy card refunds: payments with refundedAmount but no linked CustomerRefund
-    // (these are pre-Phase-1 refunds done via direct stripe.refunds.create).
-    // For new flows, refundedAmount mirrors CustomerRefund.amount — counting both would double.
+    // Legacy credits: payments with refundedAmount but no linked CustomerRefund row.
+    // These pre-date the CustomerRefund model. For all current flows, refundedAmount
+    // mirrors CustomerRefund.amount — counting both would double-count.
     const legacyCardRefunded = payments
         .filter(p => p.refundedAmount && p.customerRefunds.length === 0)
         .reduce((sum, p) => sum + parseFloat(p.refundedAmount), 0);

@@ -138,9 +138,8 @@ export const adminReleaseRemainder = async (paymentId, adminId) => {
 };
 
 /**
- * Admin refund — transfers full payment amount to customer Connect account.
- * Never uses stripe.refunds.create(). If customer has no Connect account,
- * creates a pending_connect CustomerRefund for later transfer.
+ * Admin credit — transfers full payment amount to customer Connect account via Stripe Transfer.
+ * If customer has no Connect account, creates a pending_connect CustomerRefund for later transfer.
  *
  * @param {string} paymentId
  * @param {string} reason
