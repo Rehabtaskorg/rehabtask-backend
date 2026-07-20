@@ -5,6 +5,7 @@ import { NotFoundError, ConflictError, AuthorizationError, BadRequestError } fro
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { createPerSessionRefund } from "./payment.service.js";
+import { markLinkedRequestCompleted } from "./request.service.js";
 import {
     sendSessionCancellationRequestedToOtherParty,
     sendSessionCancellationApprovedToRequester,
@@ -145,6 +146,11 @@ const executeSessionCancellationApproval = async (sessionId, { isAuto = false, a
     });
 
     const bookingFinalized = await finalizeBookingIfAllTerminal(session.bookingId, booking.status);
+    if (bookingFinalized) {
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionCancellationService] markLinkedRequestCompleted failed after cancellation FINALIZED", { bookingId: session.bookingId, error: err.message })
+        );
+    }
 
     const requester = session.cancellationRequestedBy === USER_ROLES.CUSTOMER
         ? booking.customer

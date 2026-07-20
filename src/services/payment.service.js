@@ -1,6 +1,7 @@
 import { BOOKING_STATUS, SESSION_STATUS, REFUND_STATUS, TIME_MS } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
+import { markLinkedRequestCompleted } from "./request.service.js";
 import {
     sendPaymentConfirmation, sendPayoutConfirmation, sendPaymentReleasedToCustomer,
     sendCustomerRefundAvailable, sendCustomerRefundTransferred, sendCustomerRefundReturnedToCard,
@@ -1130,6 +1131,10 @@ const finalizeBooking = async (bookingId, therapistId) => {
         where: { id: booking.id },
         data: { status: BOOKING_STATUS.FINALIZED },
     });
+
+    markLinkedRequestCompleted(booking.id).catch((err) =>
+        logger.error("[PaymentService] markLinkedRequestCompleted failed after therapist FINALIZED", { bookingId: booking.id, error: err.message })
+    );
 
     // Audit events
     logSystemEvent({

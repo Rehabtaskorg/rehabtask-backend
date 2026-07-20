@@ -18,6 +18,7 @@ import {
     sendAttemptedVisitTherapistPayout,
 } from "./email.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { markLinkedRequestCompleted } from "./request.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -194,6 +195,12 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
 
         return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
     }, { timeout: 10000 });
+
+    if (updatedSession._allConfirmed) {
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after COMPLETED", { bookingId: session.bookingId, error: err.message })
+        );
+    }
 
     // Event: session.confirmed_by_customer
     logAction({
@@ -805,6 +812,9 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after missed FINALIZED", { bookingId: session.bookingId, error: err.message })
+        );
     }
 
     logAction({
@@ -1047,6 +1057,9 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(booking.id).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after attempted FINALIZED", { bookingId: booking.id, error: err.message })
+        );
     }
 
     logAction({

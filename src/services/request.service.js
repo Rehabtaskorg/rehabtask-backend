@@ -599,3 +599,36 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
         createdAt: r.createdAt,
     }));
 }
+
+/**
+ * Mark the TherapyRequest linked to a booking as completed.
+ *
+ * Called after a booking reaches a terminal state (COMPLETED or FINALIZED).
+ * Resolves the requestId via the booking's offer — one extra DB read, but
+ * isolated here so all 5 finalization paths share a single implementation.
+ *
+ * Idempotent: skips the update if the request is already completed or cancelled.
+ *
+ * @param {string} bookingId
+ * @returns {Promise<void>}
+ */
+export const markLinkedRequestCompleted = async (bookingId) => {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: { offer: { select: { requestId: true } } },
+    });
+
+    const requestId = booking?.offer?.requestId;
+    if (!requestId) {
+        logger.warn("[RequestService] markLinkedRequestCompleted: no requestId found for booking", { bookingId });
+        return;
+    }
+
+    await prisma.therapyRequest.updateMany({
+        where: {
+            id: requestId,
+            status: { notIn: ["completed", "cancelled"] },
+        },
+        data: { status: "completed" },
+    });
+}
