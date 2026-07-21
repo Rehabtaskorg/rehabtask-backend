@@ -49,6 +49,7 @@ export const createPatient = async (customerProfile, data) => {
 
     const {
         fullName, dateOfBirth, certificationStart, certificationEnd,
+        gender,
         email, phone,
         addressLine1, addressLine2, city, state, zipCode,
         latitude, longitude,
@@ -65,6 +66,7 @@ export const createPatient = async (customerProfile, data) => {
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
             certificationStart: certificationStart ? new Date(certificationStart) : null,
             certificationEnd: certificationEnd ? new Date(certificationEnd) : null,
+            gender: gender ?? null,
             email: email || null,
             phone: phone || null,
             addressLine1: addressLine1 || null,
@@ -172,6 +174,7 @@ export const updatePatient = async (customerProfile, patientId, data) => {
             ...(data.dateOfBirth !== undefined && { dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null }),
             ...(data.certificationStart !== undefined && { certificationStart: data.certificationStart ? new Date(data.certificationStart) : null }),
             ...(data.certificationEnd !== undefined && { certificationEnd: data.certificationEnd ? new Date(data.certificationEnd) : null }),
+            ...(data.gender !== undefined && { gender: data.gender ?? null }),
             ...(data.email !== undefined && { email: data.email || null }),
             ...(data.phone !== undefined && { phone: data.phone || null }),
             ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),

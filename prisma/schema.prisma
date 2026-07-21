@@ -110,6 +110,7 @@ model Patient {
   dateOfBirth        DateTime?        @map("date_of_birth") @db.Date
   certificationStart DateTime?        @map("certification_start") @db.Date
   certificationEnd   DateTime?        @map("certification_end") @db.Date
+  gender             String?          @db.VarChar(10)
   userId             String?          @unique @map("user_id") @db.VarChar(128)
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)

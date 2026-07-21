@@ -54,7 +54,11 @@ export const getBookingById = async (bookingId, userId) => {
                 },
             },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
             },
         },
     });
@@ -90,7 +94,11 @@ export const getCustomerBookings = async (customerId) => {
             },
             payment: { include: { sessionPayouts: true } },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
             },
             sessions: {
                 orderBy: { sessionNumber: "asc" },
@@ -124,7 +132,11 @@ export const getTherapistBookings = async (therapistId) => {
                 include: { payout: true },
             },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
             },
         },
         orderBy: { scheduledDate: "desc" },
