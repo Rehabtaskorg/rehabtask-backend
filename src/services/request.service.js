@@ -561,12 +561,17 @@ export const cancelRequest = async (requestId, customerId) => {
  * Get open requests for a specific customer (therapist-facing).
  * Used in the messaging sidebar so therapists can view and make offers
  * on a customer's requests directly from the chat.
+ * PUBLIC requests are geo-filtered to the therapist's work areas.
+ * DIRECT requests addressed to this therapist always appear regardless of location.
  */
 export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId) => {
-    const customerProfile = await prisma.customerProfile.findFirst({
-        where: { userId: customerUserId },
-        select: { id: true },
-    });
+    const [customerProfile, workAreas] = await Promise.all([
+        prisma.customerProfile.findFirst({
+            where: { userId: customerUserId },
+            select: { id: true },
+        }),
+        prisma.workArea.findMany({ where: { therapistId } }),
+    ]);
 
     if (!customerProfile) return [];
 
@@ -590,7 +595,18 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
         take: 5,
     });
 
-    return requests.map(r => ({
+    const filtered = requests.filter((request) => {
+        if (request.requestType === "DIRECT") return true;
+        if (workAreas.length === 0) return false;
+        const requestLat = parseFloat(request.latitude);
+        const requestLng = parseFloat(request.longitude);
+        return workAreas.some((area) => {
+            const distance = haversineDistance(requestLat, requestLng, parseFloat(area.latitude), parseFloat(area.longitude));
+            return distance <= area.radiusMiles;
+        });
+    });
+
+    return filtered.map(r => ({
         id: r.id,
         serviceType: r.serviceType,
         location: r.location,
