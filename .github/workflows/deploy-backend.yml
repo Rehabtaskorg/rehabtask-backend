@@ -126,10 +126,10 @@ jobs:
             echo "SERVICE_NAME=rehabtask-backend-dev" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-dev@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
             echo "IS_PROD=false" >> $GITHUB_ENV
-            echo "NODE_ENV=development" >> $GITHUB_ENV
+            echo "NODE_ENV=production" >> $GITHUB_ENV
             echo "FRONTEND_URL=https://dev.rehabtask.com" >> $GITHUB_ENV
             echo "API_URL=https://api-dev.rehabtask.com" >> $GITHUB_ENV
-            echo "COOKIE_SECURE=false" >> $GITHUB_ENV
+            echo "COOKIE_SECURE=true" >> $GITHUB_ENV
             echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_DEV }}" >> $GITHUB_ENV
             echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
             echo "DB_SECRET=DATABASE_URL_DEV" >> $GITHUB_ENV
