@@ -256,7 +256,9 @@ export const getAvailableRequests = async (therapistId, { primaryLicenseType, sh
     });
 
     // Filter by work area radius — radiusMiles, if provided, extends (never shrinks) each area's configured radius
+    // DIRECT requests bypass geo-filtering — the customer explicitly chose this therapist regardless of location
     let filteredRequests = requests.filter((request) => {
+        if (request.requestType === "DIRECT") return true;
         const requestLat = parseFloat(request.latitude);
         const requestLng = parseFloat(request.longitude);
         return workAreas.some((area) => {
