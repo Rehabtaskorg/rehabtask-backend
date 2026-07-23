@@ -35,6 +35,7 @@ export const listTherapists = async ({
                         id: true,
                         fullName: true,
                         phone: true,
+                        profilePhotoUrl: true,
                         approvalStatus: true,
                         approvedAt: true,
                         rejectionReason: true,

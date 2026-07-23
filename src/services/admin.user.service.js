@@ -32,7 +32,7 @@ export const listUsers = async ({ role, isActive, search, page = 1, limit = 20 }
                 deactivatedAt: true,
                 createdAt: true,
                 customerProfile: { select: { id: true, fullName: true, customerType: true, agencyName: true } },
-                therapistProfile: { select: { id: true, fullName: true, approvalStatus: true, approvedAt: true, primaryLicenseType: true } },
+                therapistProfile: { select: { id: true, fullName: true, approvalStatus: true, approvedAt: true, primaryLicenseType: true, profilePhotoUrl: true } },
                 subAdminProfile: { select: { id: true, permissions: true, isActive: true } },
             },
             orderBy: { createdAt: "desc" },
