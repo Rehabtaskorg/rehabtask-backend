@@ -1,5 +1,10 @@
-import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
-import { prisma } from "../config/prisma.js"
+import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
+import { prisma } from "../config/prisma.js";
+import {
+    queryLatestMessagesPerConversation,
+    queryContextMessagesPerConversation,
+    queryPatientMessagesPerConversation,
+} from "./message.queries.js";
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
@@ -360,53 +365,14 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
     const isCustomer = callerRole === USER_ROLES.CUSTOMER;
 
     const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
-        // Latest message per conversation
-        prisma.$queryRaw`
-            SELECT DISTINCT ON (conversation_id)
-                id, sender_id AS "senderId", content, created_at AS "createdAt",
-                read_at AS "readAt", conversation_id AS "conversationId", system_type AS "systemType",
-                EXISTS (
-                    SELECT 1 FROM message_attachments WHERE message_id = messages.id
-                ) AS "hasAttachments"
-            FROM messages
-            WHERE conversation_id = ANY(${conversationIds}::uuid[])
-            ORDER BY conversation_id, created_at DESC
-        `,
-        // Unread counts per conversation
+        queryLatestMessagesPerConversation(conversationIds),
         prisma.message.groupBy({
             by: ["conversationId"],
-            where: {
-                conversationId: { in: conversationIds },
-                recipientId: userId,
-                readAt: null,
-                systemType: null,
-            },
+            where: { conversationId: { in: conversationIds }, recipientId: userId, readAt: null, systemType: null },
             _count: { id: true },
         }),
-        // Latest context-bearing message per conversation (for badge: booking > offer > direct)
-        prisma.$queryRaw`
-            SELECT DISTINCT ON (conversation_id)
-                conversation_id AS "conversationId",
-                offer_id AS "offerId",
-                booking_id AS "bookingId",
-                patient_id AS "patientId"
-            FROM messages
-            WHERE conversation_id = ANY(${conversationIds}::uuid[])
-              AND (offer_id IS NOT NULL OR booking_id IS NOT NULL)
-            ORDER BY conversation_id, created_at DESC
-        `,
-        // Patient info only for customers — therapists must not see patient PHI
-        isCustomer
-            ? prisma.$queryRaw`
-                SELECT DISTINCT ON (conversation_id)
-                    conversation_id AS "conversationId",
-                    patient_id AS "patientId"
-                FROM messages
-                WHERE conversation_id = ANY(${conversationIds}::uuid[])
-                  AND patient_id IS NOT NULL
-                ORDER BY conversation_id, created_at DESC
-              `
-            : Promise.resolve([]),
+        queryContextMessagesPerConversation(conversationIds),
+        isCustomer ? queryPatientMessagesPerConversation(conversationIds) : Promise.resolve([]),
     ]);
 
     // Build lookup maps
