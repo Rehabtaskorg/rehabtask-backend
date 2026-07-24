@@ -98,7 +98,8 @@ export const acceptOffer = async (offerId, customerId) => {
 
     const acceptCustomerUserId = booking.customer.user.id;
     const acceptTherapistUserId = booking.therapist.user.id;
-    findOrCreateDirectConversation(acceptCustomerUserId, acceptTherapistUserId)
+    const acceptPatientId = booking.offer?.request?.patientId || null;
+    findOrCreateDirectConversation(acceptCustomerUserId, acceptTherapistUserId, acceptPatientId)
         .then(async (conversation) => {
             await createSystemMessage({
                 conversationId: conversation.id,
