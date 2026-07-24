@@ -21,25 +21,30 @@ const emitToRoom = (room, event, payload) => {
     io.to(room).emit(event, payload);
 };
 
-export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
+/**
+ * @param {string} userIdA
+ * @param {string} userIdB
+ * @param {string|null} [patientId]
+ * @returns {Promise<import("@prisma/client").DirectConversation>}
+ */
+export const findOrCreateDirectConversation = async (userIdA, userIdB, patientId = null) => {
     const [user1Id, user2Id] = userIdA < userIdB
         ? [userIdA, userIdB]
         : [userIdB, userIdA];
 
-    const existing = await prisma.directConversation.findUnique({
-        where: { user1Id_user2Id: { user1Id, user2Id } },
+    const existing = await prisma.directConversation.findFirst({
+        where: { user1Id, user2Id, patientId: patientId ?? null },
     });
     if (existing) return existing;
 
     try {
         return await prisma.directConversation.create({
-            data: { user1Id, user2Id },
+            data: { user1Id, user2Id, patientId: patientId ?? null },
         });
     } catch (err) {
-        // P2002 = unique constraint violation — another request created it first
         if (err.code === "P2002") {
-            const found = await prisma.directConversation.findUnique({
-                where: { user1Id_user2Id: { user1Id, user2Id } },
+            const found = await prisma.directConversation.findFirst({
+                where: { user1Id, user2Id, patientId: patientId ?? null },
             });
             if (found) return found;
         }
