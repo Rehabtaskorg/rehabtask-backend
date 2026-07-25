@@ -249,8 +249,9 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
     if (bookingWithDetails) {
         const payCustomerUserId = bookingWithDetails.customer.user.id;
         const payTherapistUserId = bookingWithDetails.therapist?.userId;
+        const payPatientId = bookingWithDetails.patientId || null;
         if (payCustomerUserId && payTherapistUserId) {
-            findOrCreateDirectConversation(payCustomerUserId, payTherapistUserId)
+            findOrCreateDirectConversation(payCustomerUserId, payTherapistUserId, payPatientId)
                 .then((conversation) =>
                     createSystemMessage({
                         conversationId: conversation.id,

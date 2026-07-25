@@ -123,7 +123,7 @@ export const createOffer = async (therapistId, data) => {
     // so the unified thread shows this event. Fire-and-forget — don't block offer creation.
     const therapistUserId = offer.therapist.userId;
     const customerUserId = offer.request.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, offer.request.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -313,7 +313,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
     // System message: offer_revised
     const reviseCustomerUserId = updated.request.customer.user.id;
     const reviseTherapistUserId = updated.therapist.userId;
-    findOrCreateDirectConversation(reviseTherapistUserId, reviseCustomerUserId)
+    findOrCreateDirectConversation(reviseTherapistUserId, reviseCustomerUserId, updated.request.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -415,7 +415,7 @@ export const declineOffer = async (offerId, customerId) => {
     // System message: offer_declined
     const declineCustomerUserId = updatedOffer.request.customer.user.id;
     const declineTherapistUserId = updatedOffer.therapist.user.id;
-    findOrCreateDirectConversation(declineCustomerUserId, declineTherapistUserId)
+    findOrCreateDirectConversation(declineCustomerUserId, declineTherapistUserId, updatedOffer.request.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -493,7 +493,7 @@ export const requestOfferChange = async (offerId, customerId, note) => {
     // System message: offer_change_requested
     const changeCustomerUserId = offer.request.customer.user.id;
     const changeTherapistUserId = offer.therapist.user.id;
-    findOrCreateDirectConversation(changeCustomerUserId, changeTherapistUserId)
+    findOrCreateDirectConversation(changeCustomerUserId, changeTherapistUserId, offer.request.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -575,7 +575,7 @@ export const withdrawOffer = async (offerId, therapistId) => {
     // System message: offer_withdrawn
     const withdrawCustomerUserId = offer.request.customer.user.id;
     const withdrawTherapistUserId = offer.therapist.userId;
-    findOrCreateDirectConversation(withdrawCustomerUserId, withdrawTherapistUserId)
+    findOrCreateDirectConversation(withdrawCustomerUserId, withdrawTherapistUserId, offer.request.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,

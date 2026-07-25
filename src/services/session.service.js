@@ -97,7 +97,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
     // System message: session_completed
     const completeTherapistUserId = session.booking.therapist.userId;
     const completeCustomerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId)
+    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -219,7 +219,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     const confirmTherapistUserId = session.booking.therapist.user.id;
     const confirmCustomerUserId = session.booking.customer.userId;
     const allDone = updatedSession._allConfirmed;
-    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId)
+    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -361,7 +361,7 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
     // they've already shared with the customer.
     const customerUserId = session.booking.customer.user.id;
     const therapistUserId = session.booking.therapist.user.id;
-    findOrCreateDirectConversation(customerUserId, therapistUserId)
+    findOrCreateDirectConversation(customerUserId, therapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -469,7 +469,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -566,7 +566,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -662,7 +662,7 @@ export const extendRevision = async (sessionId, therapistId) => {
 
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -1089,7 +1089,7 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
     // System message — fire-and-forget
     const therapistUserId = booking.therapist.userId;
     const customerUserId = booking.customer.userId;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
