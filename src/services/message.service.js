@@ -3,7 +3,6 @@ import { prisma } from "../config/prisma.js";
 import {
     queryLatestMessagesPerConversation,
     queryContextMessagesPerConversation,
-    queryPatientMessagesPerConversation,
 } from "./message.queries.js";
 import { sendNewMessageNotification } from "./email.service.js";
 import { logger } from "../config/logger.js";
@@ -341,7 +340,7 @@ export const getUserPublicInfo = async (requesterId, targetUserId) => {
  * The "currentContext" badge (booking > offer > direct) is derived from the most recent
  * non-system message that has a bookingId or offerId. If neither exists, it's "direct".
  */
-export const getUserConversations = async (userId, callerRole = "customer") => {
+export const getUserConversations = async (userId) => {
     const userSelect = {
         id: true,
         role: true,
@@ -357,6 +356,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         include: {
             user1: { select: userSelect },
             user2: { select: userSelect },
+            patient: { select: { id: true, fullName: true } },
         },
     });
 
@@ -367,9 +367,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
     // 2. Fetch the latest message per conversation (single query, partitioned by conversationId)
     //    Also fetch the latest context-bearing message (bookingId or offerId set) for the badge.
     //    And unread counts per conversation.
-    const isCustomer = callerRole === USER_ROLES.CUSTOMER;
-
-    const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
+    const [latestMessages, unreadCounts, contextMessages] = await Promise.all([
         queryLatestMessagesPerConversation(conversationIds),
         prisma.message.groupBy({
             by: ["conversationId"],
@@ -377,14 +375,12 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
             _count: { id: true },
         }),
         queryContextMessagesPerConversation(conversationIds),
-        isCustomer ? queryPatientMessagesPerConversation(conversationIds) : Promise.resolve([]),
     ]);
 
     // Build lookup maps
     const lastMsgMap = new Map(latestMessages.map(m => [m.conversationId, m]));
     const unreadMap = new Map(unreadCounts.map(u => [u.conversationId, u._count.id]));
     const contextMap = new Map(contextMessages.map(c => [c.conversationId, c]));
-    const patientMap = new Map(patientMessages.map(p => [p.conversationId, p.patientId]));
 
     // 3. If any conversations have context (offer/booking), fetch those entities for badge data
     const offerIds = new Set();
@@ -394,7 +390,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         else if (ctx.offerId) offerIds.add(ctx.offerId);
     }
 
-    const [offers, bookings, patients] = await Promise.all([
+    const [offers, bookings] = await Promise.all([
         offerIds.size > 0
             ? prisma.offer.findMany({
                 where: { id: { in: Array.from(offerIds) } },
@@ -407,17 +403,10 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
                 select: { id: true, status: true, scheduledDate: true, sessionType: true },
             })
             : [],
-        patientMap.size > 0
-            ? prisma.patient.findMany({
-                where: { id: { in: Array.from(patientMap.values()).filter(Boolean) } },
-                select: { id: true, fullName: true },
-            })
-            : [],
     ]);
 
     const offerMap = new Map(offers.map(o => [o.id, o]));
     const bookingMap = new Map(bookings.map(b => [b.id, b]));
-    const patientDataMap = new Map(patients.map(p => [p.id, p]));
 
     // 4. Assemble the response
     const result = conversations.map(conv => {
@@ -425,8 +414,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         const lastMsg = lastMsgMap.get(conv.id);
         const unreadCount = unreadMap.get(conv.id) ?? 0;
         const ctx = contextMap.get(conv.id);
-        const patientId = isCustomer ? patientMap.get(conv.id) : null;
-        const patient = patientId ? patientDataMap.get(patientId) ?? null : null;
+        const patient = conv.patient ?? null;
 
         // Determine badge context: booking > offer > direct
         let currentContext;
