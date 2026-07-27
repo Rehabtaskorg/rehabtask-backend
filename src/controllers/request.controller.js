@@ -1,5 +1,6 @@
 import { createRequest, getAvailableRequests, getCustomerRequests, getRequestById, updateRequest, cancelRequest, getOpenRequestsByCustomerUserId } from "../services/request.service.js";
 import { MAX_SEARCH_RADIUS_MILES } from "../utils/constants.js";
+import { logger } from "../config/logger.js";
 
 /**
  * Create a new request
@@ -112,6 +113,7 @@ const getCustomerOpenRequestsController = async (req, res, next) => {
         const { customerUserId } = req.params;
         const therapistId = req.user.therapistProfile.id;
         const primaryLicenseType = req.user.therapistProfile.primaryLicenseType;
+        logger.info("[RequestController] getCustomerOpenRequests", { therapistId, primaryLicenseType, customerUserId });
         const requests = await getOpenRequestsByCustomerUserId(customerUserId, therapistId, primaryLicenseType);
 
         res.status(200).json({ success: true, data: requests });
