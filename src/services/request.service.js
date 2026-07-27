@@ -97,16 +97,21 @@ export const createRequest = async (customerId, data, customerProfile) => {
         }).catch((err) => logger.error("[RequestService] Failed to send direct request notification", { error: err.message }));
     }
 
-    // Notify matching therapists — ONLY for public requests
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {
         const workAreas = await prisma.workArea.findMany({
-            include: { therapist: { include: { user: { select: { email: true } } } } },
+            include: {
+                therapist: {
+                    select: { primaryLicenseType: true, user: { select: { email: true } } },
+                },
+            },
         });
 
         const matchingTherapists = [];
         const seen = new Set();
         for (const area of workAreas) {
             if (seen.has(area.therapistId)) continue;
+            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
+            if (allowedServiceType !== request.serviceType) continue;
             const distance = haversineDistance(
                 parseFloat(request.latitude), parseFloat(request.longitude),
                 parseFloat(area.latitude), parseFloat(area.longitude)
@@ -190,7 +195,10 @@ export const getRequestById = async (requestId, userId) => {
 
     const isCustomer = request.customer.userId === userId;
     const isTargetTherapist = user?.therapistProfile?.id === request.targetTherapistId;
-    const isPublicAndTherapist = request.requestType === "PUBLIC" && !!user?.therapistProfile;
+    const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[user?.therapistProfile?.primaryLicenseType] ?? null;
+    const isPublicAndTherapist = request.requestType === "PUBLIC"
+        && !!user?.therapistProfile
+        && allowedServiceType === request.serviceType;
     const canView = isCustomer || isTargetTherapist || isPublicAndTherapist;
 
     // Use a generic error to avoid leaking the existence of private requests
@@ -432,13 +440,19 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
 
     if (locationChanged && updatedRequest.latitude && updatedRequest.longitude) {
         const workAreas = await prisma.workArea.findMany({
-            include: { therapist: { include: { user: { select: { email: true } } } } },
+            include: {
+                therapist: {
+                    select: { primaryLicenseType: true, user: { select: { email: true } } },
+                },
+            },
         });
 
         const matchingTherapists = [];
         const seen = new Set();
         for (const area of workAreas) {
             if (seen.has(area.therapistId)) continue;
+            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
+            if (allowedServiceType !== updatedRequest.serviceType) continue;
             const distance = haversineDistance(
                 parseFloat(updatedRequest.latitude), parseFloat(updatedRequest.longitude),
                 parseFloat(area.latitude), parseFloat(area.longitude)
