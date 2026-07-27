@@ -564,7 +564,7 @@ export const cancelRequest = async (requestId, customerId) => {
  * PUBLIC requests are geo-filtered to the therapist's work areas.
  * DIRECT requests addressed to this therapist always appear regardless of location.
  */
-export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId) => {
+export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId, primaryLicenseType) => {
     const [customerProfile, workAreas] = await Promise.all([
         prisma.customerProfile.findFirst({
             where: { userId: customerUserId },
@@ -575,12 +575,20 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
 
     if (!customerProfile) return [];
 
+    const allowedServiceType = primaryLicenseType
+        ? (LICENSE_TYPE_TO_SERVICE_TYPE[primaryLicenseType] ?? null)
+        : null;
+
+    const publicFilter = allowedServiceType
+        ? { requestType: "PUBLIC", serviceType: allowedServiceType }
+        : null;
+
     const requests = await prisma.therapyRequest.findMany({
         where: {
             customerId: customerProfile.id,
             status: { in: ["created", "offers_received"] },
             OR: [
-                { requestType: "PUBLIC" },
+                ...(publicFilter ? [publicFilter] : []),
                 { requestType: "DIRECT", targetTherapistId: therapistId },
             ],
         },

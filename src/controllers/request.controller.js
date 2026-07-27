@@ -111,7 +111,8 @@ const getCustomerOpenRequestsController = async (req, res, next) => {
     try {
         const { customerUserId } = req.params;
         const therapistId = req.user.therapistProfile.id;
-        const requests = await getOpenRequestsByCustomerUserId(customerUserId, therapistId);
+        const primaryLicenseType = req.user.therapistProfile.primaryLicenseType;
+        const requests = await getOpenRequestsByCustomerUserId(customerUserId, therapistId, primaryLicenseType);
 
         res.status(200).json({ success: true, data: requests });
     } catch (error) {
