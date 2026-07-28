@@ -158,6 +158,12 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
             data: { status: BOOKING_STATUS.CANCELLED },
             include: BOOKING_INCLUDE,
         });
+        if (booking.sessions?.length > 0) {
+            await tx.session.updateMany({
+                where: { bookingId },
+                data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason ?? "Cancelled by admin" },
+            });
+        }
         if (nonCancelledCount > 0) {
             await tx.subscription.updateMany({
                 where: {
