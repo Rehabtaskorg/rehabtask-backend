@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_STATUS, BOOKING_STATUS, PLAN_TYPES } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { NotFoundError } from "../utils/errors.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
@@ -75,20 +75,11 @@ export const getActiveSubscription = async (customerId) => {
 export const getSubscriptionWithUsage = async (customerId) => {
     const subscription = await getActiveSubscription(customerId);
 
-    const periodStart = subscription.currentPeriodStart ?? subscription.createdAt;
+    const activeJobPostings = await prisma.therapyRequest.count({
+        where: { customerId, status: { in: ["created", "offers_received"] } },
+    });
 
-    const [visitCount, activeJobPostings] = await Promise.all([
-        prisma.booking.count({
-            where: {
-                customerId,
-                status: BOOKING_STATUS.CONFIRMED,
-                createdAt: { gte: periodStart },
-            },
-        }),
-        prisma.therapyRequest.count({
-            where: { customerId, status: { in: ["created", "offers_received"] } },
-        }),
-    ]);
+    const visitCount = subscription.sessionsUsed;
 
     let scheduledDowngradePlan = null;
     if (subscription.stripeScheduleId) {

@@ -138,6 +138,7 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
         currentPeriodEnd: periodEnd,
         gracePeriodEndsAt: null,
+        sessionsUsed: 0,
     };
 
     if (hasPlanChange) {

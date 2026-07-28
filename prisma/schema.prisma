@@ -314,6 +314,7 @@ model Subscription {
   stripeScheduleId     String?            @map("stripe_schedule_id") @db.VarChar(255)
   visitLimit           Int                @map("visit_limit")
   jobPostingLimit      Int                @map("job_posting_limit")
+  sessionsUsed         Int                @default(0) @map("sessions_used")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer             CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)

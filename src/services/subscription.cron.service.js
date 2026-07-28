@@ -31,6 +31,7 @@ export const runTrialExpiry = async () => {
                 trialEndsAt: null,
                 visitLimit: visitLimit ?? 999999,
                 jobPostingLimit: jobPostingLimit ?? 999999,
+                sessionsUsed: 0,
             },
         });
 
@@ -83,6 +84,7 @@ export const runGracePeriodExpiry = async () => {
                 stripePriceId: null,
                 visitLimit: visitLimit ?? 999999,
                 jobPostingLimit: jobPostingLimit ?? 999999,
+                sessionsUsed: 0,
             },
         });
 

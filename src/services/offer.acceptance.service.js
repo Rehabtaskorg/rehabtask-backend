@@ -4,7 +4,8 @@ import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 import { sendOfferAccepted } from "./email.service.js";
-import { resolveVisitPlan } from "../utils/visitPlan.js";
+import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
+import { getActiveSubscription } from "./subscription.service.js";
 
 export const acceptOffer = async (offerId, customerId) => {
     const offer = await prisma.offer.findUnique({
@@ -76,6 +77,15 @@ export const acceptOffer = async (offerId, customerId) => {
             }
             throw err;
         }
+
+        const totalSessions = computeTotalSessions(effectivePlan);
+        await tx.subscription.updateMany({
+            where: {
+                customerId,
+                status: { in: ["active", "trialing", "grace_period", "past_due"] },
+            },
+            data: { sessionsUsed: { increment: totalSessions } },
+        });
 
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
     }, { timeout: 15000 });

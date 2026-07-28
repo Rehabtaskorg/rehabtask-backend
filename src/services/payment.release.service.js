@@ -231,9 +231,21 @@ export const finalizeBooking = async (bookingId, therapistId) => {
         if (payout) { /* collected */ }
     }
 
-    await prisma.session.updateMany({
-        where: { id: { in: undeliveredSessions.map(s => s.id) } },
-        data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: "Series finalized by therapist" },
+    await prisma.$transaction(async (tx) => {
+        await tx.session.updateMany({
+            where: { id: { in: undeliveredSessions.map(s => s.id) } },
+            data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: "Series finalized by therapist" },
+        });
+        if (undeliveredSessions.length > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: undeliveredSessions.length },
+                },
+                data: { sessionsUsed: { decrement: undeliveredSessions.length } },
+            });
+        }
     });
 
     const perSessionRate = parseFloat(booking.rate);

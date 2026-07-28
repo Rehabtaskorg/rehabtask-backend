@@ -127,14 +127,25 @@ const executeSessionCancellationApproval = async (sessionId, { isAuto = false, a
     const payment = booking.payment;
     const refundAmount = parseFloat(booking.rate);
 
-    await prisma.session.update({
-        where: { id: sessionId },
-        data: {
-            status: SESSION_STATUS.CANCELLED,
-            cancellationRequestedAt: null,
-            cancellationRequestedBy: null,
-            preCancellationStatus: null,
-        },
+    await prisma.$transaction(async (tx) => {
+        await tx.session.update({
+            where: { id: sessionId },
+            data: {
+                status: SESSION_STATUS.CANCELLED,
+                cancellationRequestedAt: null,
+                cancellationRequestedBy: null,
+                preCancellationStatus: null,
+            },
+        });
+
+        await tx.subscription.updateMany({
+            where: {
+                customerId: booking.customerId,
+                status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                sessionsUsed: { gt: 0 },
+            },
+            data: { sessionsUsed: { decrement: 1 } },
+        });
     });
 
     const { customerRefund } = await createPerSessionRefund({

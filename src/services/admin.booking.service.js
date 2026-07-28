@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -148,11 +148,28 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         );
     }
 
-    const updated = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { status: BOOKING_STATUS.CANCELLED },
-        include: BOOKING_INCLUDE,
-    });
+    const nonCancelledCount = booking.sessions?.filter(
+        (s) => s.status !== SESSION_STATUS.CANCELLED
+    ).length ?? 0;
+
+    const updated = await prisma.$transaction(async (tx) => {
+        const txBooking = await tx.booking.update({
+            where: { id: bookingId },
+            data: { status: BOOKING_STATUS.CANCELLED },
+            include: BOOKING_INCLUDE,
+        });
+        if (nonCancelledCount > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: nonCancelledCount },
+                },
+                data: { sessionsUsed: { decrement: nonCancelledCount } },
+            });
+        }
+        return txBooking;
+    }, { timeout: 15000 });
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.customer.user.email,
