@@ -101,7 +101,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
         const workAreas = await prisma.workArea.findMany({
             include: {
                 therapist: {
-                    select: { primaryLicenseType: true, user: { select: { email: true } } },
+                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
                 },
             },
         });
@@ -442,7 +442,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         const workAreas = await prisma.workArea.findMany({
             include: {
                 therapist: {
-                    select: { primaryLicenseType: true, user: { select: { email: true } } },
+                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
                 },
             },
         });
