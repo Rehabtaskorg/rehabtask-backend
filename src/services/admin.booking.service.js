@@ -152,20 +152,34 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         (s) => s.status !== SESSION_STATUS.CANCELLED
     ).length ?? 0;
 
+    logger.info("[AdminBookingService] Cancel initiated", {
+        bookingId,
+        sessionCount: booking.sessions?.length ?? 0,
+        nonCancelledCount,
+        customerId: booking.customer.id,
+        sessionIds: booking.sessions?.map((s) => ({ id: s.id, status: s.status })),
+    });
+
     const updated = await prisma.$transaction(async (tx) => {
         const txBooking = await tx.booking.update({
             where: { id: bookingId },
             data: { status: BOOKING_STATUS.CANCELLED },
             include: BOOKING_INCLUDE,
         });
+        logger.info("[AdminBookingService] Booking row updated in tx", { bookingId });
+
         if (booking.sessions?.length > 0) {
-            await tx.session.updateMany({
+            const sessionResult = await tx.session.updateMany({
                 where: { bookingId },
                 data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason ?? "Cancelled by admin" },
             });
+            logger.info("[AdminBookingService] session.updateMany result", { bookingId, count: sessionResult.count });
+        } else {
+            logger.info("[AdminBookingService] Skipped session.updateMany — no sessions", { bookingId });
         }
+
         if (nonCancelledCount > 0) {
-            await tx.subscription.updateMany({
+            const subResult = await tx.subscription.updateMany({
                 where: {
                     customerId: booking.customer.id,
                     status: { in: ["active", "trialing", "grace_period", "past_due"] },
@@ -173,7 +187,11 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
                 },
                 data: { sessionsUsed: { decrement: nonCancelledCount } },
             });
+            logger.info("[AdminBookingService] subscription.updateMany result", { bookingId, count: subResult.count, nonCancelledCount });
+        } else {
+            logger.info("[AdminBookingService] Skipped subscription.updateMany — nonCancelledCount=0", { bookingId });
         }
+
         return txBooking;
     }, { timeout: 15000 });
 
