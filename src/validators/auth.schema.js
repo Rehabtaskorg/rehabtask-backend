@@ -60,6 +60,7 @@ export const registerCustomerSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    smsOptIn: z.boolean().optional().default(false),
     location: z.string().trim().optional(),
     customerType: customerTypeSchema,
     agencyName: z.string().min(2).max(255).trim().optional(),
@@ -85,6 +86,7 @@ export const registerTherapistSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    smsOptIn: z.boolean().optional().default(false),
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
 });
@@ -136,7 +138,9 @@ export const completeOAuthOnboardingSchema = z.object({
         .min(2, "Full name must be at least 2 characters")
         .max(255, "Full name must not exceed 255 characters"),
 
-    phone: phoneSchema.optional(),
+    phone: phoneSchema,
+
+    smsOptIn: z.boolean().optional().default(false),
 
     // Customer fields
     customerType: z.enum(["individual", "agency"]).optional(),

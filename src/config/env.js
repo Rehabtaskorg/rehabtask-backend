@@ -62,6 +62,11 @@ const envSchema = z.object({
     // PostHog (server-side analytics)
     POSTHOG_API_KEY: z.string().optional(),
 
+    // Twilio (SMS)
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_PHONE_NUMBER: z.string().optional(),
+
     // Cloud Scheduler — shared secret for /internal/jobs/* endpoints
     CLOUD_SCHEDULER_SECRET: z.string().min(32, "CLOUD_SCHEDULER_SECRET must be at least 32 characters"),
 });
@@ -134,4 +139,7 @@ export const {
     MESSAGE_ATTACHMENTS_BUCKET,
     POSTHOG_API_KEY,
     CLOUD_SCHEDULER_SECRET,
+    TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN,
+    TWILIO_PHONE_NUMBER,
 } = env;

@@ -48,6 +48,7 @@ model CustomerProfile {
   fullName                 String           @map("full_name") @db.VarChar(255)
   agencyName               String?          @map("agency_name") @db.VarChar(255)
   phone                    String?          @db.VarChar(20)
+  smsOptIn                 Boolean          @default(false) @map("sms_opt_in")
   location                 String?
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
@@ -134,6 +135,7 @@ model TherapistProfile {
   userId                   String                 @unique @map("user_id") @db.VarChar(128)
   fullName                 String                 @map("full_name") @db.VarChar(255)
   phone                    String?                @db.VarChar(20)
+  smsOptIn                 Boolean                @default(false) @map("sms_opt_in")
   dateOfBirth              DateTime?              @map("date_of_birth") @db.Date
   addressLine1             String?                @map("address_line_1") @db.VarChar(255)
   addressLine2             String?                @map("address_line_2") @db.VarChar(255)

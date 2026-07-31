@@ -52,7 +52,7 @@ const sendResetLink = async (email, type = "reset") => {
     }
 };
 
-export const registerCustomer = async ({ email, password, fullName, phone, customerType, agencyName }) => {
+export const registerCustomer = async ({ email, password, fullName, phone, smsOptIn = false, customerType, agencyName }) => {
     const normalizedEmail = email.toLowerCase().trim();
     const auth = getIdentityPlatformAuth();
     let authUid;
@@ -90,6 +90,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
                         create: {
                             fullName,
                             phone,
+                            smsOptIn,
                             customerType,
                             agencyName: customerType === CUSTOMER_TYPES.AGENCY ? agencyName : null,
                         },
@@ -139,7 +140,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, custo
     }
 };
 
-export const registerTherapist = async ({ email, password, fullName, phone }) => {
+export const registerTherapist = async ({ email, password, fullName, phone, smsOptIn = false }) => {
     const normalizedEmail = email.toLowerCase().trim();
     const auth = getIdentityPlatformAuth();
     let authUid;
@@ -169,7 +170,7 @@ export const registerTherapist = async ({ email, password, fullName, phone }) =>
                     emailVerified: false,
                     isActive: true,
                     therapistProfile: {
-                        create: { fullName, phone, approvalStatus: APPROVAL_STATUS.PENDING },
+                        create: { fullName, phone, smsOptIn, approvalStatus: APPROVAL_STATUS.PENDING },
                     },
                 },
                 include: { therapistProfile: true },
@@ -235,7 +236,7 @@ export const resendVerificationEmail = async ({ email, redirect = null }) => {
     return { message: "If an unverified account exists with this email, a verification link has been sent." };
 };
 
-export const completeOAuthOnboarding = async ({ userId, role, profileData }) => {
+export const completeOAuthOnboarding = async ({ userId, role, profileData, smsOptIn = false }) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: { customerProfile: true, therapistProfile: true },
@@ -259,7 +260,8 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
                     customerProfile: {
                         create: {
                             fullName: profileData.fullName,
-                            phone: profileData.phone || null,
+                            phone: profileData.phone,
+                            smsOptIn,
                             customerType: profileData.customerType || "individual",
                             agencyName: profileData.customerType === CUSTOMER_TYPES.AGENCY ? profileData.agencyName : null,
                         },
@@ -277,7 +279,7 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData }) => 
             where: { id: userId },
             data: {
                 role: USER_ROLES.THERAPIST,
-                therapistProfile: { create: { fullName: profileData.fullName, phone: profileData.phone || null, approvalStatus: APPROVAL_STATUS.PENDING } },
+                therapistProfile: { create: { fullName: profileData.fullName, phone: profileData.phone, smsOptIn, approvalStatus: APPROVAL_STATUS.PENDING } },
             },
             include: { therapistProfile: true },
         });

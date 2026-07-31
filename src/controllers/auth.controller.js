@@ -37,8 +37,8 @@ const getRoleCookieOptions = () => ({
  */
 export const registerCustomerController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, customerType, agencyName } = req.body;
-        const result = await registerCustomer({ email, password, fullName, phone, customerType, agencyName });
+        const { email, password, fullName, phone, smsOptIn, customerType, agencyName } = req.body;
+        const result = await registerCustomer({ email, password, fullName, phone, smsOptIn, customerType, agencyName });
 
         const response = { success: true, message: result.message };
 
@@ -65,8 +65,8 @@ export const registerCustomerController = async (req, res, next) => {
  */
 export const registerTherapistController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone } = req.body;
-        const result = await registerTherapist({ email, password, fullName, phone });
+        const { email, password, fullName, phone, smsOptIn } = req.body;
+        const result = await registerTherapist({ email, password, fullName, phone, smsOptIn });
 
         const response = { success: true, message: result.message };
 
@@ -194,7 +194,7 @@ export const changePasswordController = async (req, res, next) => {
  */
 export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
-        const { role, fullName, phone, customerType, agencyName, location } = req.body;
+        const { role, fullName, phone, smsOptIn, customerType, agencyName, location } = req.body;
 
         const profileData = {
             fullName,
@@ -202,7 +202,7 @@ export const completeOAuthOnboardingController = async (req, res, next) => {
             ...(role === "customer" && { customerType, agencyName, location }),
         };
 
-        const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData });
+        const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData, smsOptIn });
 
         res.cookie("app_role", result.user.role, getRoleCookieOptions());
 
