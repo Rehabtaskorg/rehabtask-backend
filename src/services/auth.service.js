@@ -162,6 +162,8 @@ export const getCurrentUser = async (userId) => {
                         fullName: true,
                         customerType: true,
                         agencyName: true,
+                        phone: true,
+                        smsOptIn: true,
                         onboardingComplete: true,
                         onboardingStep: true,
                         approvalStatus: true,
