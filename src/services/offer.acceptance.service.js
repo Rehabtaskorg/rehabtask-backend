@@ -6,7 +6,12 @@ import { findOrCreateDirectConversation, createSystemMessage } from "./message.s
 import { sendOfferAccepted } from "./email.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 import { getActiveSubscription } from "./subscription.service.js";
+import { APIError } from "../utils/errors.js";
 
+/**
+ * @param {string} offerId
+ * @param {string} customerId
+ */
 export const acceptOffer = async (offerId, customerId) => {
     const offer = await prisma.offer.findUnique({
         where: { id: offerId },
@@ -22,6 +27,24 @@ export const acceptOffer = async (offerId, customerId) => {
     if (new Date() > new Date(offer.expiresAt)) throw new Error("Offer has expired");
 
     const effectivePlan = resolveVisitPlan({ offer, request: offer.request });
+    const offerVisits = computeTotalSessions(effectivePlan);
+
+    const subscription = await getActiveSubscription(customerId);
+
+    if (subscription.visitLimit < 999999) {
+        const remaining = subscription.visitLimit - subscription.sessionsUsed;
+        const projectedTotal = subscription.sessionsUsed + offerVisits;
+
+        if (projectedTotal > subscription.visitLimit) {
+            const err = new APIError(
+                `This offer requires ${offerVisits} visit${offerVisits !== 1 ? "s" : ""} but you only have ${remaining} remaining this billing period.`,
+                403,
+                "VISIT_LIMIT_REACHED"
+            );
+            err.errors = { offerVisits, remaining, limit: subscription.visitLimit, planType: subscription.planType };
+            throw err;
+        }
+    }
 
     const { updatedOffer, booking } = await prisma.$transaction(async (tx) => {
         const txUpdatedOffer = await tx.offer.update({
@@ -78,13 +101,12 @@ export const acceptOffer = async (offerId, customerId) => {
             throw err;
         }
 
-        const totalSessions = computeTotalSessions(effectivePlan);
         await tx.subscription.updateMany({
             where: {
                 customerId,
                 status: { in: ["active", "trialing", "grace_period", "past_due"] },
             },
-            data: { sessionsUsed: { increment: totalSessions } },
+            data: { sessionsUsed: { increment: offerVisits } },
         });
 
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
