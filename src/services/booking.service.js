@@ -84,7 +84,12 @@ export const getCustomerBookings = async (customerId) => {
     const bookings = await prisma.booking.findMany({
         where: { customerId },
         include: {
-            therapist: true,
+            therapist: {
+                select: {
+                    id: true, fullName: true, profilePhotoUrl: true,
+                    primaryLicenseType: true, specialization: true,
+                },
+            },
             visitTypeRef: true,
             offer: {
                 include: {
@@ -118,7 +123,11 @@ export const getTherapistBookings = async (therapistId) => {
     const bookings = await prisma.booking.findMany({
         where: { therapistId },
         include: {
-            customer: true,
+            customer: {
+                select: {
+                    id: true, fullName: true, customerType: true, agencyName: true,
+                },
+            },
             visitTypeRef: true,
             offer: {
                 include: {
@@ -136,6 +145,12 @@ export const getTherapistBookings = async (therapistId) => {
                     id: true, fullName: true, email: true, phone: true,
                     dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
                     agency: { select: { agencyName: true } },
+                },
+            },
+            therapist: {
+                select: {
+                    id: true, fullName: true, profilePhotoUrl: true,
+                    primaryLicenseType: true, specialization: true,
                 },
             },
         },
