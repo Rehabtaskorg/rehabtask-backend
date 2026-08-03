@@ -79,8 +79,6 @@ export const getSubscriptionWithUsage = async (customerId) => {
         where: { customerId, status: { in: ["created", "offers_received"] } },
     });
 
-    const visitCount = subscription.sessionsUsed;
-
     let scheduledDowngradePlan = null;
     if (subscription.stripeScheduleId) {
         try {
@@ -97,7 +95,7 @@ export const getSubscriptionWithUsage = async (customerId) => {
 
     return {
         subscription: { ...subscription, scheduledDowngradePlan },
-        usage: { visitCount, activeJobPostings },
+        usage: { sessionsUsed: subscription.sessionsUsed, activeJobPostings },
     };
 };
 
