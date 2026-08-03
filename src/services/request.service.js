@@ -6,9 +6,7 @@ import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDir
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
-import { NotFoundError, BadRequestError, APIError } from "../utils/errors.js";
-import { computeTotalSessions } from "../utils/visitPlan.js";
-import { getActiveSubscription } from "./subscription.service.js";
+import { NotFoundError, BadRequestError } from "../utils/errors.js";
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
@@ -46,24 +44,6 @@ export const createRequest = async (customerId, data, customerProfile) => {
         });
         if (!directTargetTherapist) throw new NotFoundError("Target therapist not found");
         if (directTargetTherapist.approvalStatus !== APPROVAL_STATUS.APPROVED) throw new BadRequestError("Target therapist is not available");
-    }
-
-    const requestedVisits = computeTotalSessions({ visitsPerWeek, numberOfWeeks });
-    if (requestedVisits > 1) {
-        const subscription = await getActiveSubscription(customerId);
-        if (subscription.visitLimit < 999999) {
-            const projectedTotal = subscription.sessionsUsed + requestedVisits;
-            if (projectedTotal > subscription.visitLimit) {
-                const remaining = subscription.visitLimit - subscription.sessionsUsed;
-                const err = new APIError(
-                    `This request requires ${requestedVisits} visits but you only have ${remaining} remaining this billing period.`,
-                    403,
-                    "VISIT_LIMIT_REACHED"
-                );
-                err.errors = { requestedVisits, remaining, limit: subscription.visitLimit, planType: subscription.planType };
-                throw err;
-            }
-        }
     }
 
     const geocoded = await geocodeAddress(location);
