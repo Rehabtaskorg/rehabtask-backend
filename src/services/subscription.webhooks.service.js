@@ -124,12 +124,10 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
     const stripePlanType = stripeSub.metadata?.planType;
     const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
     const isRecoveringFromPastDue = subscription.status === SUBSCRIPTION_STATUS.PAST_DUE;
+    const isPeriodAdvancing = !periodEnd || !subscription.currentPeriodEnd || periodEnd > subscription.currentPeriodEnd;
 
-    if (!hasPlanChange && !isRecoveringFromPastDue &&
-        subscription.status === "active" &&
-        subscription.currentPeriodEnd && periodEnd &&
-        periodEnd <= subscription.currentPeriodEnd) {
-        logger.info("[Subscription] handleInvoicePaid — skipped (already up to date)", { subscriptionId: subscription.id });
+    if (!hasPlanChange && !isRecoveringFromPastDue && !isPeriodAdvancing) {
+        logger.info("[Subscription] handleInvoicePaid — skipped (period not advancing)", { subscriptionId: subscription.id });
         return;
     }
 
@@ -397,6 +395,10 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
     const subItem = stripeSubscription.items?.data?.[0];
     const currentPriceId = subItem?.price?.id;
 
+    const incomingPeriodEnd = parseStripeDate(subItem?.current_period_end);
+    const periodIsAdvancing = incomingPeriodEnd && subscription.currentPeriodEnd &&
+        incomingPeriodEnd > subscription.currentPeriodEnd;
+
     const isScheduledToCancel = stripeSubscription.cancel_at_period_end === true || !!stripeSubscription.cancel_at;
     const isNotScheduledToCancel = stripeSubscription.cancel_at_period_end === false && !stripeSubscription.cancel_at;
 
@@ -432,8 +434,9 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
                 data: {
                     status: mappedStatus,
                     currentPeriodStart: parseStripeDate(subItem?.current_period_start),
-                    currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
+                    currentPeriodEnd: incomingPeriodEnd,
                     stripePriceId: currentPriceId || subscription.stripePriceId,
+                    ...(periodIsAdvancing && { sessionsUsed: 0 }),
                     ...(resumed && { cancelledAt: null, cancelReason: null }),
                     ...(cancelledViaPortal && { cancelledAt: new Date() }),
                     ...planUpdate,
