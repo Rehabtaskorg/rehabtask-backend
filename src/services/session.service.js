@@ -183,7 +183,11 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         });
         const totalSessions = allSessions.length;
         const confirmedCount = allSessions.filter(s =>
-            s.id === sessionId || s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER
+            s.id === sessionId ||
+            s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER ||
+            s.status === SESSION_STATUS.ATTEMPTED ||
+            s.status === SESSION_STATUS.MISSED ||
+            s.status === SESSION_STATUS.CANCELLED
         ).length;
 
         if (confirmedCount === totalSessions) {
