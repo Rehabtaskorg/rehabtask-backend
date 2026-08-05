@@ -718,6 +718,9 @@ export const completeOnboarding = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
         include: {
+            attributes: {
+                where: { category: THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY },
+            },
             licenseDocuments: {
                 where: { isDeleted: false },
             },
