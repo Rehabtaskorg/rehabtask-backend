@@ -57,9 +57,17 @@ export const professionalProfileSchema = z.object({
         .min(1, "Primary license type is required")
         .max(100, "License type too long"),
 
-    specialization: z
-        .string()
-        .max(500, "Specialization too long")
+    specialties: z.array(z.string().max(128)).max(20).optional().default([]),
+    languages: z.array(z.string().max(128)).max(20).optional().default([]),
+    certifications: z.array(z.string().max(128)).max(20).optional().default([]),
+    pastSettings: z.array(z.string().max(128)).max(20).optional().default([]),
+    populationExperience: z.array(z.string().max(128)).max(20).optional().default([]),
+
+    yearsInHomeHealth: z
+        .number()
+        .int()
+        .min(0)
+        .max(50)
         .optional()
         .nullable(),
 
@@ -130,6 +138,20 @@ export const credentialsSchema = z.object({
         .nullable()
         .optional()
         .transform(val => (val === 0 ? null : val)),
+    evaluationRate: z.coerce
+        .number()
+        .min(0, "Evaluation rate must be 0 or greater")
+        .max(10000, "Evaluation rate must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
+    travelFee: z.coerce
+        .number()
+        .min(0, "Travel fee must be 0 or greater")
+        .max(500, "Travel fee must be $500 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
 }).refine(
     (data) => {
         // Cap: attempted rate cannot exceed session rate when both are set.
@@ -187,9 +209,21 @@ export const availabilitySchema = z.object({
         error: "At least one day must be enabled",
     }),
 
-    acceptingNewPatients: z.boolean().optional().default(true),
+    availableFrom: z.string().datetime({ offset: true }).optional().nullable(),
+    caseloadCapacity: z.number().int().min(1).max(999).optional().nullable(),
 
     workAreas: z.array(workAreaSchema).min(1, "At least one work area is required"),
+})
+
+export const hipaaSchema = z.object({
+    attested: z.literal(true, { errorMap: () => ({ message: "HIPAA attestation is required" }) }),
+    document: z.object({
+        path: z.string().min(1),
+        fileName: z.string().min(1),
+        fileSize: z.number().positive(),
+        documentType: z.literal("hipaa_certificate"),
+        mimeType: z.string().optional(),
+    }).optional().nullable(),
 })
 
 const insuranceDocumentSchema = z.object({

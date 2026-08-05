@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, THERAPIST_ATTRIBUTE_CATEGORIES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -11,6 +11,10 @@ const computeOnboardingSteps = (therapist) => {
     const hasDocumentType = (types) =>
         therapist.licenseDocuments.some((doc) => types.includes(doc.documentType));
 
+    const hasSpecialty = therapist.attributes?.some(
+        (a) => a.category === THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY
+    ) ?? false;
+
     return {
         personalInfo: !!(
             therapist.dateOfBirth &&
@@ -22,7 +26,8 @@ const computeOnboardingSteps = (therapist) => {
         profile: !!(
             therapist.yearsOfExperience !== null &&
             therapist.primaryLicenseType &&
-            therapist.professionalSummary
+            therapist.professionalSummary &&
+            hasSpecialty
         ),
         credentials: !!(
             therapist.licenseNumber &&
@@ -36,6 +41,7 @@ const computeOnboardingSteps = (therapist) => {
             (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
         ),
         identity: hasDocumentType(["government_id_front"]),
+        hipaa: therapist.hipaaAttested === true,
     };
 };
 
@@ -44,6 +50,9 @@ export const getOnboardingStatus = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
         include: {
+            attributes: {
+                where: { category: THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY },
+            },
             licenseDocuments: {
                 where: { isDeleted: false },
                 orderBy: { uploadedAt: "desc" },
@@ -84,6 +93,7 @@ export const getOnboardingData = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
         include: {
+            attributes: true,
             licenseDocuments: {
                 where: { isDeleted: false },
                 orderBy: { uploadedAt: "desc" },
@@ -121,6 +131,11 @@ export const getOnboardingData = async (userId) => {
 
     const toNumberOrNull = (value) => (value === null || value === undefined ? null : parseFloat(value));
 
+    const attrsByCategory = therapist.attributes.reduce((acc, a) => {
+        (acc[a.category] ??= []).push(a.value);
+        return acc;
+    }, {});
+
     return {
         personalInfo: {
             dateOfBirth: therapist.dateOfBirth,
@@ -138,7 +153,12 @@ export const getOnboardingData = async (userId) => {
         professionalProfile: {
             yearsOfExperience: therapist.yearsOfExperience,
             primaryLicenseType: therapist.primaryLicenseType,
-            specialization: therapist.specialization,
+            specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
+            languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
+            certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
+            pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
+            populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
+            yearsInHomeHealth: therapist.yearsInHomeHealth,
             professionalSummary: therapist.professionalSummary,
             profilePhotoUrl: therapist.profilePhotoUrl,
         },
@@ -149,10 +169,14 @@ export const getOnboardingData = async (userId) => {
             additionalLicenseStates: therapist.additionalLicenseStates,
             ratePerVisit: toNumberOrNull(therapist.ratePerVisit),
             attemptedVisitRate: toNumberOrNull(therapist.attemptedVisitRate),
+            evaluationRate: toNumberOrNull(therapist.evaluationRate),
+            travelFee: toNumberOrNull(therapist.travelFee),
             licenseDocuments: documentsByCategory(DOCUMENT_CATEGORIES.license),
         },
         availability: {
             schedule,
+            availableFrom: therapist.availableFrom,
+            caseloadCapacity: therapist.caseloadCapacity,
             workAreas: therapist.workAreas.map((wa) => ({
                 zipCode: wa.zipCode,
                 city: wa.city,
@@ -168,6 +192,11 @@ export const getOnboardingData = async (userId) => {
         },
         identity: {
             documents: documentsByCategory(DOCUMENT_CATEGORIES.identity),
+        },
+        hipaa: {
+            attested: therapist.hipaaAttested,
+            attestedAt: therapist.hipaaAttestedAt,
+            document: documentsByCategory(DOCUMENT_CATEGORIES.compliance.filter(t => t === "hipaa_certificate"))[0] ?? null,
         },
     };
 };
@@ -213,39 +242,47 @@ export const savePersonalInfo = async (userId, data) => {
 
 
 export const saveProfessionalProfile = async (userId, data) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { userId },
-    });
+    const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
+    if (!therapist) throw new NotFoundError("Therapist profile not found");
 
-    if (!therapist) {
-        throw new NotFoundError("Therapist profile not found");
-    }
+    const categoryMap = {
+        [THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY]:     data.specialties ?? [],
+        [THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE]:      data.languages ?? [],
+        [THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION]: data.certifications ?? [],
+        [THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING]:  data.pastSettings ?? [],
+        [THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION]:    data.populationExperience ?? [],
+    };
 
-    // Validate years of experience
-    if (data.yearsOfExperience < 0 || data.yearsOfExperience > 50) {
-        throw new BadRequestError("Years of experience must be between 0 and 50");
-    }
-
-    const updated = await withAdminAccess(async (db) => {
-        return db.therapistProfile.update({
-            where: { userId },
-            data: {
-                yearsOfExperience: data.yearsOfExperience,
-                primaryLicenseType: data.primaryLicenseType,
-                specialization: data.specialization,
-                professionalSummary: data.professionalSummary,
-                profilePhotoUrl: data.profilePhotoUrl || null,
-                onboardingStep: Math.max(therapist.onboardingStep, 3),
-            },
-        });
+    const [updated] = await withAdminAccess(async (db) => {
+        return Promise.all([
+            db.therapistProfile.update({
+                where: { userId },
+                data: {
+                    yearsOfExperience: data.yearsOfExperience,
+                    primaryLicenseType: data.primaryLicenseType,
+                    yearsInHomeHealth: data.yearsInHomeHealth ?? null,
+                    professionalSummary: data.professionalSummary,
+                    profilePhotoUrl: data.profilePhotoUrl || null,
+                    onboardingStep: Math.max(therapist.onboardingStep, 3),
+                },
+            }),
+            ...Object.entries(categoryMap).map(([category, values]) =>
+                db.therapistAttribute.deleteMany({ where: { therapistId: therapist.id, category } })
+                    .then(() =>
+                        values.length > 0
+                            ? db.therapistAttribute.createMany({
+                                data: values.map((value) => ({ therapistId: therapist.id, category, value })),
+                                skipDuplicates: true,
+                            })
+                            : null
+                    )
+            ),
+        ]);
     });
 
     return {
         message: "Professional profile saved successfully",
-        therapist: {
-            id: updated.id,
-            onboardingStep: updated.onboardingStep,
-        },
+        therapist: { id: updated.id, onboardingStep: updated.onboardingStep },
     };
 };
 
@@ -310,6 +347,8 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
                 additionalLicenseStates: data.additionalLicenseStates ?? [],
                 ...(data.ratePerVisit !== undefined && { ratePerVisit: data.ratePerVisit }),
                 ...(data.attemptedVisitRate !== undefined && { attemptedVisitRate: data.attemptedVisitRate }),
+                ...(data.evaluationRate !== undefined && { evaluationRate: data.evaluationRate }),
+                ...(data.travelFee !== undefined && { travelFee: data.travelFee }),
                 onboardingStep: Math.max(therapist.onboardingStep, 4),
             },
         });
@@ -436,22 +475,60 @@ export const saveAvailability = async (userId, data) => {
         await prisma.workArea.createMany({ data: geocodedAreas });
     }
 
-    // Update therapist profile
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
             where: { userId },
             data: {
-                onboardingStep: Math.max(therapist.onboardingStep, 5)
+                ...(data.availableFrom !== undefined && { availableFrom: data.availableFrom ? new Date(data.availableFrom) : null }),
+                ...(data.caseloadCapacity !== undefined && { caseloadCapacity: data.caseloadCapacity ?? null }),
+                onboardingStep: Math.max(therapist.onboardingStep, 5),
             },
         });
     });
 
     return {
         message: "Availability saved successfully",
-        therapist: {
-            id: updated.id,
-            onboardingStep: updated.onboardingStep,
-        },
+        therapist: { id: updated.id, onboardingStep: updated.onboardingStep },
+    };
+};
+
+
+export const saveHipaaAttestation = async (userId, data, uploadIp = null) => {
+    const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
+    if (!therapist) throw new NotFoundError("Therapist profile not found");
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.update({
+            where: { userId },
+            data: {
+                hipaaAttested: true,
+                hipaaAttestedAt: new Date(),
+                onboardingStep: Math.max(therapist.onboardingStep, 7),
+            },
+        });
+    });
+
+    if (data.document) {
+        const existingCerts = await prisma.licenseDocument.findMany({
+            where: {
+                therapistId: therapist.id,
+                isDeleted: false,
+                documentType: "hipaa_certificate",
+                documentUrl: { not: data.document.path },
+            },
+        });
+
+        if (existingCerts.length > 0) {
+            await prisma.licenseDocument.updateMany({
+                where: { id: { in: existingCerts.map((d) => d.id) } },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
+        }
+    }
+
+    return {
+        message: "HIPAA attestation saved successfully",
+        therapist: { id: updated.id, onboardingStep: updated.onboardingStep },
     };
 };
 

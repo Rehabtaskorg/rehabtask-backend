@@ -171,9 +171,17 @@ model TherapistProfile {
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
   attemptedVisitRate       Decimal?               @map("attempted_visit_rate") @db.Decimal(10, 2)
+  yearsInHomeHealth        Int?                   @map("years_in_home_health")
+  evaluationRate           Decimal?               @map("evaluation_rate") @db.Decimal(10, 2)
+  travelFee                Decimal?               @map("travel_fee") @db.Decimal(10, 2)
+  availableFrom            DateTime?              @map("available_from") @db.Timestamptz(3)
+  caseloadCapacity         Int?                   @map("caseload_capacity")
+  hipaaAttested            Boolean                @default(false) @map("hipaa_attested")
+  hipaaAttestedAt          DateTime?              @map("hipaa_attested_at") @db.Timestamptz(3)
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  attributes               TherapistAttribute[]
   availability             Availability[]
   bookings                 Booking[]
   licenseDocuments         LicenseDocument[]
@@ -192,6 +200,20 @@ model TherapistProfile {
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
   @@map("therapist_profiles")
+}
+
+model TherapistAttribute {
+  id           String          @id @default(uuid()) @db.Uuid
+  therapistId  String          @map("therapist_id") @db.Uuid
+  category     String          @db.VarChar(64)
+  value        String          @db.VarChar(128)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@unique([therapistId, category, value])
+  @@index([therapistId, category])
+  @@index([category, value])
+  @@map("therapist_attributes")
 }
 
 model VisitType {

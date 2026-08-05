@@ -151,10 +151,24 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
     license: ["license"],
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
     identity: ["government_id_front", "government_id_back"],
-    compliance: ["w9"],
+    compliance: ["w9", "hipaa_certificate"],
     agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
     individual: ["therapy_order"],
 });
+
+export const THERAPIST_ATTRIBUTE_CATEGORIES = Object.freeze({
+    SPECIALTY:    "specialty",
+    LANGUAGE:     "language",
+    CERTIFICATION:"certification",
+    PAST_SETTING: "past_setting",
+    POPULATION:   "population",
+});
+
+export const THERAPIST_SPECIALTIES    = Object.freeze(["Neuro", "Ortho", "Geriatrics", "Pediatrics", "Lymphedema", "Home Health"]);
+export const THERAPIST_LANGUAGES      = Object.freeze(["English", "Spanish", "French", "Mandarin", "Cantonese", "Arabic", "Portuguese", "Tagalog", "Korean", "Vietnamese", "Russian", "Hindi", "Haitian Creole", "Polish", "Italian", "Japanese"]);
+export const THERAPIST_CERTIFICATIONS = Object.freeze(["LSVT", "NDT", "Wound Care", "VitalStim"]);
+export const THERAPIST_PAST_SETTINGS  = Object.freeze(["SNF", "Outpatient", "Acute Care", "Home Health"]);
+export const THERAPIST_POPULATIONS    = Object.freeze(["Pediatrics", "Geriatrics", "Neurological", "Post-surgical", "Cardiac", "Oncology", "Orthopedic", "Pulmonary"]);
 
 
 export const AGREEMENT_VERSION = "v1.0";

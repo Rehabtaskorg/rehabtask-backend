@@ -12,6 +12,7 @@ import {
     saveInsurance,
     savePersonalInfo,
     saveProfessionalProfile,
+    saveHipaaAttestation,
     submitBackgroundCheck,
     getAgencyOnboardingStatus,
     getAgencyOnboardingData,
@@ -127,14 +128,30 @@ export const savePersonalInfoController = async (req, res, next) => {
  */
 export const saveProfessionalProfileController = async (req, res, next) => {
     try {
-        const { yearsOfExperience, primaryLicenseType, specialization, professionalSummary, profilePhotoUrl } = req.body;
+        const {
+            yearsOfExperience,
+            primaryLicenseType,
+            specialties,
+            languages,
+            certifications,
+            pastSettings,
+            populationExperience,
+            yearsInHomeHealth,
+            professionalSummary,
+            profilePhotoUrl,
+        } = req.body;
 
         const result = await saveProfessionalProfile(req.user.id, {
             yearsOfExperience,
             primaryLicenseType,
-            specialization,
+            specialties,
+            languages,
+            certifications,
+            pastSettings,
+            populationExperience,
+            yearsInHomeHealth,
             professionalSummary,
-            profilePhotoUrl
+            profilePhotoUrl,
         });
 
         res.status(200).json({
@@ -163,20 +180,22 @@ export const saveCredentialsController = async (req, res, next) => {
             licenseDocuments,
             ratePerVisit,
             attemptedVisitRate,
+            evaluationRate,
+            travelFee,
         } = req.body;
         const uploadIp = getClientIp(req);
 
-        const result = await saveCredentials(req.user.id,
-            {
-                licenseNumber,
-                licenseState,
-                npiNumber,
-                additionalLicenseStates,
-                licenseDocuments,
-                ratePerVisit,
-                attemptedVisitRate,
-            }, uploadIp
-        );
+        const result = await saveCredentials(req.user.id, {
+            licenseNumber,
+            licenseState,
+            npiNumber,
+            additionalLicenseStates,
+            licenseDocuments,
+            ratePerVisit,
+            attemptedVisitRate,
+            evaluationRate,
+            travelFee,
+        }, uploadIp);
 
         res.status(200).json({
             success: true,
@@ -197,11 +216,12 @@ export const saveCredentialsController = async (req, res, next) => {
  */
 export const saveAvailabilityController = async (req, res, next) => {
     try {
-        const { schedule, acceptingNewPatients, workAreas } = req.body;
+        const { schedule, availableFrom, caseloadCapacity, workAreas } = req.body;
 
         const result = await saveAvailability(req.user.id, {
             schedule,
-            acceptingNewPatients,
+            availableFrom,
+            caseloadCapacity,
             workAreas: workAreas || [],
         });
 
@@ -257,6 +277,27 @@ export const saveIdentityVerificationController = async (req, res, next) => {
                 therapist: result.therapist,
                 documents: result.documents,
             },
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * POST /api/therapist/onboarding/hipaa
+ * Save HIPAA attestation + optional certificate upload (Step 7)
+ */
+export const saveHipaaAttestationController = async (req, res, next) => {
+    try {
+        const { attested, document } = req.body;
+        const uploadIp = getClientIp(req);
+
+        const result = await saveHipaaAttestation(req.user.id, { attested, document }, uploadIp);
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: { therapist: result.therapist },
         });
     } catch (error) {
         next(error);

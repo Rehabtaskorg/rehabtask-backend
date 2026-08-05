@@ -9,6 +9,7 @@ import {
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveHipaaAttestationController,
     saveIdentityVerificationController,
     saveInsuranceController,
     savePersonalInfoController,
@@ -22,6 +23,7 @@ import {
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
+    hipaaSchema,
     insuranceSchema,
     identitySchema,
     backgroundCheckSchema,
@@ -97,6 +99,15 @@ router.post(
     "/identity",
     validate(identitySchema),
     saveIdentityVerificationController
+);
+
+/**
+ * POST /api/therapist/onboarding/hipaa
+ */
+router.post(
+    "/hipaa",
+    validate(hipaaSchema),
+    saveHipaaAttestationController
 );
 
 /**
