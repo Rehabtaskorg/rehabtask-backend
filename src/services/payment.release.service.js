@@ -118,27 +118,18 @@ export const releaseSessionPayout = async ({ session, payment, booking, isLast }
     if (!["escrowed", "partially_released"].includes(payment.status)) throw new Error(`Payment not in a releasable state (current: ${payment.status})`);
 
     const alreadyReleased = parseFloat(payment.releasedAmount ?? 0);
-    const totalTherapistPayout = parseFloat(payment.therapistPayout);
     const totalAmount = parseFloat(payment.amount);
     const totalFee = parseFloat(payment.platformFee);
     const perSessionRate = parseFloat(booking.rate);
 
-    const previousPayouts = await prisma.sessionPayout.findMany({ where: { paymentId: payment.id } });
-    const previousPayoutSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.therapistPayout), 0);
-    const previousFeeSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.platformFee), 0);
-    const previousAmountSum = previousPayouts.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-
-    let perSessionTherapistPayout, perSessionFee, perSessionAmount;
-
-    if (isLast) {
-        perSessionTherapistPayout = parseFloat((totalTherapistPayout - previousPayoutSum).toFixed(2));
-        perSessionFee = parseFloat((totalFee - previousFeeSum).toFixed(2));
-        perSessionAmount = parseFloat((totalAmount - previousAmountSum).toFixed(2));
-    } else {
-        perSessionAmount = perSessionRate;
-        perSessionFee = Math.floor(perSessionRate * (totalFee / totalAmount) * 100) / 100;
-        perSessionTherapistPayout = parseFloat((perSessionAmount - perSessionFee).toFixed(2));
-    }
+    // Per-session amounts derived from the full booking fee rate.
+    // Each delivered session always pays the same amount — no remainder formula.
+    // Missed/attempted sessions never call this function so they are naturally
+    // excluded from the therapist's total payout.
+    const feeRate = totalFee / totalAmount;
+    const perSessionFee = Math.floor(perSessionRate * feeRate * 100) / 100;
+    const perSessionTherapistPayout = parseFloat((perSessionRate - perSessionFee).toFixed(2));
+    const perSessionAmount = perSessionRate;
 
     if (perSessionTherapistPayout <= 0) {
         logger.warn("[PaymentService] Per-session payout is zero or negative, skipping transfer", { sessionId: session.id, perSessionTherapistPayout, isLast });
@@ -162,7 +153,7 @@ export const releaseSessionPayout = async ({ session, payment, booking, isLast }
     const newReleasedAmount = parseFloat((alreadyReleased + perSessionTherapistPayout).toFixed(2));
     const alreadyReleasedFee = parseFloat(payment.releasedFee ?? 0);
     const newReleasedFee = parseFloat((alreadyReleasedFee + perSessionFee).toFixed(2));
-    const allSessionsPaid = isLast || newReleasedAmount >= totalTherapistPayout - 0.01;
+    const allSessionsPaid = isLast;
 
     const sessionPayout = await prisma.$transaction(async (tx) => {
         const payout = await tx.sessionPayout.create({
