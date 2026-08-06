@@ -10,6 +10,7 @@ import {
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { smsCustOfferReceived } from "./sms.service.js";
 export { acceptOffer } from "./offer.acceptance.service.js";
 
 /**
@@ -94,7 +95,7 @@ export const createOffer = async (therapistId, data) => {
                 include: {
                     visitTypeRef: true,
                     customer: {
-                        include: { user: { select: { id: true, email: true } } }
+                        include: { user: { select: { id: true, email: true } } },
                     },
                     patient: {
                         select: { id: true, fullName: true, email: true, phone: true }
@@ -147,7 +148,8 @@ export const createOffer = async (therapistId, data) => {
         request: offer.request
     }).catch((err) => {
         logger.error('[OfferService] New offer notification failed', { error: err.message });
-    })
+    });
+    smsCustOfferReceived(offer.request.customer);
 
     return offer;
 }

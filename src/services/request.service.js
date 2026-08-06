@@ -3,6 +3,7 @@ import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
 import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDirectRequestNotification } from "./email.service.js";
+import { smsTherDirectOfferReceived } from "./sms.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
@@ -39,6 +40,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
                 id: true,
                 fullName: true,
                 approvalStatus: true,
+                phone: true,
+                smsOptIn: true,
                 user: { select: { email: true } },
             },
         });
@@ -95,6 +98,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             therapist: directTargetTherapist,
             request,
         }).catch((err) => logger.error("[RequestService] Failed to send direct request notification", { error: err.message }));
+        smsTherDirectOfferReceived(directTargetTherapist);
     }
 
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {

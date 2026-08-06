@@ -8,6 +8,7 @@ import {
     sendSessionRevisionRequested,
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
+import { smsCustWorkSubmittedForReview, smsTherPaymentReleased } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
 import {
     releaseSessionPayout,
@@ -120,7 +121,8 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         booking: session.booking
     }).catch((err) => {
         logger.error('[SessionService] Completion request notification failed', { error: err.message });
-    })
+    });
+    smsCustWorkSubmittedForReview(session.booking.customer);
 
     return updatedSession;
 }
@@ -268,6 +270,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                 booking: bookingWithTherapist,
                 isLast: updatedSession._allConfirmed,
             });
+            smsTherPaymentReleased(bookingWithTherapist.therapist);
             logger.info("[Session] Per-session payout released", {
                 bookingId: session.bookingId,
                 sessionId,

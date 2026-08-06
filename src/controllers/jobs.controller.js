@@ -8,6 +8,7 @@ import { runRetryPendingRefunds } from "../jobs/retryPendingRefunds.js";
 import { runCancellationExpiry } from "../jobs/cancellationExpiry.js";
 import { runSessionCancellationExpiry } from "../jobs/sessionCancellationExpiry.js";
 import { runPurgeWebhookEvents } from "../jobs/purgeWebhookEvents.js";
+import { runReviewExpirySms } from "../jobs/reviewExpirySms.js";
 import { logger } from "../config/logger.js";
 
 const runJob = (name, fn) => async (req, res) => {
@@ -31,3 +32,4 @@ export const triggerRetryPendingRefunds = runJob("retry-pending-refunds", runRet
 export const triggerCancellationExpiry = runJob("cancellation-expiry", runCancellationExpiry);
 export const triggerSessionCancellationExpiry = runJob("session-cancellation-expiry", runSessionCancellationExpiry);
 export const triggerPurgeWebhookEvents = runJob("purge-webhook-events", runPurgeWebhookEvents);
+export const triggerReviewExpirySms = runJob("review-expiry-sms", runReviewExpirySms);

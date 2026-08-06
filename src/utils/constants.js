@@ -36,15 +36,16 @@ export const BOOKING_STATUS = {
 };
 
 export const SESSION_STATUS = {
-    PENDING_SCHEDULE:        "pending_schedule",
-    SCHEDULED:               "scheduled",
-    IN_PROGRESS:             "in_progress",
-    CONFIRMED_BY_CUSTOMER:   "confirmed_by_customer",
-    MISSED:                  "missed",
-    ATTEMPTED:               "attempted",
-    CANCELLED:               "cancelled",
-    COMPLETED:               "completed",
-    CANCELLATION_REQUESTED:  "cancellation_requested",
+    PENDING_SCHEDULE:           "pending_schedule",
+    SCHEDULED:                  "scheduled",
+    IN_PROGRESS:                "in_progress",
+    COMPLETED_BY_THERAPIST:     "completed_by_therapist",
+    CONFIRMED_BY_CUSTOMER:      "confirmed_by_customer",
+    MISSED:                     "missed",
+    ATTEMPTED:                  "attempted",
+    CANCELLED:                  "cancelled",
+    COMPLETED:                  "completed",
+    CANCELLATION_REQUESTED:     "cancellation_requested",
 };
 
 export const OFFER_STATUS = {

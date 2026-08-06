@@ -5,6 +5,7 @@ import { logger } from "../config/logger.js";
 import { logSystemEvent } from "./audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
 import { sendPayoutConfirmation, sendPaymentReleasedToCustomer } from "./email.service.js";
+import { smsTherPaymentReleased } from "./sms.service.js";
 import { markLinkedRequestCompleted } from "./request.service.js";
 import { releasePartialSessionPayout } from "./payment.refund.service.js";
 import { createPerSessionRefund } from "./payment.refund.service.js";
@@ -96,6 +97,7 @@ export const releasePayment = async (sessionId) => {
 
         sendPayoutConfirmation({ therapist: session.booking.therapist, payment: updatedPayment, booking: session.booking }).catch(() => {});
         sendPaymentReleasedToCustomer({ customer: session.booking.customer, therapist: session.booking.therapist, payment: updatedPayment, booking: session.booking }).catch(() => {});
+        smsTherPaymentReleased(session.booking.therapist);
 
         return updatedPayment;
     } catch (dbError) {
@@ -304,6 +306,7 @@ export const finalizeBooking = async (bookingId, therapistId) => {
     });
 
     sendPayoutConfirmation({ therapist: booking.therapist, payment: updatedPayment, booking }).catch(() => {});
+    smsTherPaymentReleased(booking.therapist);
 
     if (refundAmount > 0) {
         const { sendCustomerRefundTransferred, sendCustomerRefundAvailable } = await import("./email.service.js");

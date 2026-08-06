@@ -5,6 +5,7 @@ import {
     queryContextMessagesPerConversation,
 } from "./message.queries.js";
 import { sendNewMessageNotification } from "./email.service.js";
+import { smsTherNewMessage, smsCustNewMessage } from "./sms.service.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 import { getIO } from "../socket/index.js";
@@ -142,10 +143,28 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
     const unreadCount = await getUnreadCount(recipientId);
     emitToRoom(`user:${recipientId}`, "message:unread_update", { count: unreadCount });
 
-    // Email notification — fire and forget, non-blocking
+    // Email + SMS notification — fire and forget, non-blocking
+    // Both gate on shouldEmailNotify (first unread only) to prevent notification spam
     if (!isRecipientOnline && shouldEmailNotify) {
         sendNewMessageNotification({ message, recipientId }).catch((err) => {
             logger.error("[MessageService] Email notification failed", { error: err.message });
+        });
+
+        prisma.user.findUnique({
+            where: { id: recipientId },
+            select: {
+                role: true,
+                therapistProfile: { select: { phone: true, smsOptIn: true } },
+                customerProfile: { select: { phone: true, smsOptIn: true } },
+            },
+        }).then((recipient) => {
+            if (recipient?.role === USER_ROLES.THERAPIST) {
+                smsTherNewMessage(recipient.therapistProfile);
+            } else if (recipient?.role === USER_ROLES.CUSTOMER) {
+                smsCustNewMessage(recipient.customerProfile);
+            }
+        }).catch((err) => {
+            logger.error("[MessageService] SMS notification failed", { error: err.message });
         });
     }
 

@@ -479,8 +479,9 @@ model Session {
   scheduledDate           DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                  SessionStatus
   startedAt               DateTime?     @map("started_at") @db.Timestamptz(3)
-  completedAt             DateTime?     @map("completed_at") @db.Timestamptz(3)
-  confirmedByCustomerAt   DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  completedAt                DateTime?     @map("completed_at") @db.Timestamptz(3)
+  confirmedByCustomerAt      DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  reviewExpirySmsSentAt      DateTime?     @map("review_expiry_sms_sent_at") @db.Timestamptz(3)
   cancellationReason      String?       @map("cancellation_reason")
   cancellationRequestedAt DateTime?     @map("cancellation_requested_at") @db.Timestamptz(3)
   cancellationRequestedBy String?       @map("cancellation_requested_by") @db.VarChar(20)
