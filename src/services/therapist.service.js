@@ -5,18 +5,31 @@ import { haversineDistance } from "../utils/distance.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 
 export const getTherapistProfile = async (userId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { userId },
-        include: {
-            attributes: true,
-            workAreas: true,
-            availability: true,
-            licenseDocuments: {
-                where: { isDeleted: false },
-                orderBy: { uploadedAt: "desc" },
+    const [therapist, completedSessionCount, reviewStats] = await Promise.all([
+        prisma.therapistProfile.findUnique({
+            where: { userId },
+            include: {
+                attributes: true,
+                workAreas: true,
+                availability: true,
+                licenseDocuments: {
+                    where: { isDeleted: false },
+                    orderBy: { uploadedAt: "desc" },
+                },
             },
-        },
-    });
+        }),
+        prisma.session.count({
+            where: {
+                status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
+                booking: { therapist: { userId } },
+            },
+        }),
+        prisma.review.aggregate({
+            where: { therapist: { userId } },
+            _avg: { rating: true },
+            _count: { rating: true },
+        }),
+    ]);
 
     if (!therapist) throw new NotFoundError("Therapist profile not found");
 
@@ -33,6 +46,14 @@ export const getTherapistProfile = async (userId) => {
         certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
         pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
         populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
+        stats: {
+            completedVisits: completedSessionCount,
+            averageRating: reviewStats._avg.rating
+                ? Math.round(reviewStats._avg.rating * 10) / 10
+                : null,
+            reviewCount: reviewStats._count.rating,
+            memberSince: therapist.createdAt,
+        },
     };
 }
 
