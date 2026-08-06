@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, SESSION_STATUS } from "../utils/constants.js";
+import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
@@ -8,6 +8,7 @@ export const getTherapistProfile = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
         include: {
+            attributes: true,
             workAreas: true,
             availability: true,
             licenseDocuments: {
@@ -19,7 +20,20 @@ export const getTherapistProfile = async (userId) => {
 
     if (!therapist) throw new NotFoundError("Therapist profile not found");
 
-    return therapist;
+    const attrsByCategory = {};
+    for (const attr of therapist.attributes) {
+        if (!attrsByCategory[attr.category]) attrsByCategory[attr.category] = [];
+        attrsByCategory[attr.category].push(attr.value);
+    }
+
+    return {
+        ...therapist,
+        specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
+        languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
+        certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
+        pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
+        populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
+    };
 }
 
 export const updateTherapistProfile = async (userId, data) => {
