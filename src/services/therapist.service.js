@@ -364,6 +364,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         where: { id: therapistId },
         include: {
             user: { select: { isActive: true } },
+            attributes: true,
             workAreas: true,
             availability: true,
             reviews: {
@@ -387,18 +388,28 @@ export const getTherapistPublicProfile = async (therapistId) => {
             )
             : null;
 
+    const attrsByCategory = {};
+    for (const attr of therapist.attributes) {
+        if (!attrsByCategory[attr.category]) attrsByCategory[attr.category] = [];
+        attrsByCategory[attr.category].push(attr.value);
+    }
+
     return {
         id: therapist.id,
         userId: therapist.userId,
         fullName: therapist.fullName,
         phone: therapist.phone,
-        specialization: therapist.specialization,
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
         primaryLicenseType: therapist.primaryLicenseType,
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,
+        specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
+        languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
+        certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
+        pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
+        populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
         workAreas: therapist.workAreas.map((wa) => ({
             id: wa.id,
             zipCode: wa.zipCode,
@@ -410,7 +421,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
         })),
         availability: therapist.availability,
         averageRating,
-        reviewCount
+        reviewCount,
     };
 };
 
