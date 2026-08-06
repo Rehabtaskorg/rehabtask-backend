@@ -360,18 +360,24 @@ function sortTherapists(therapists, sortBy) {
 }
 
 export const getTherapistPublicProfile = async (therapistId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { id: therapistId },
-        include: {
-            user: { select: { isActive: true } },
-            attributes: true,
-            workAreas: true,
-            availability: true,
-            reviews: {
-                select: { rating: true },
+    const [therapist, completedVisitCount] = await Promise.all([
+        prisma.therapistProfile.findUnique({
+            where: { id: therapistId },
+            include: {
+                user: { select: { isActive: true } },
+                attributes: true,
+                workAreas: true,
+                availability: true,
+                reviews: { select: { rating: true } },
             },
-        },
-    });
+        }),
+        prisma.session.count({
+            where: {
+                status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
+                booking: { therapist: { id: therapistId } },
+            },
+        }),
+    ]);
 
     if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
         throw new NotFoundError("Therapist not found");
@@ -401,10 +407,16 @@ export const getTherapistPublicProfile = async (therapistId) => {
         phone: therapist.phone,
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
+        yearsInHomeHealth: therapist.yearsInHomeHealth,
         primaryLicenseType: therapist.primaryLicenseType,
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,
+        evaluationRate: therapist.evaluationRate,
+        travelFee: therapist.travelFee,
+        availableFrom: therapist.availableFrom,
+        hipaaAttested: therapist.hipaaAttested,
+        memberSince: therapist.createdAt,
         specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
         languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
         certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
@@ -420,6 +432,12 @@ export const getTherapistPublicProfile = async (therapistId) => {
             radiusMiles: wa.radiusMiles,
         })),
         availability: therapist.availability,
+        stats: {
+            completedVisits: completedVisitCount,
+            averageRating,
+            reviewCount,
+            memberSince: therapist.createdAt,
+        },
         averageRating,
         reviewCount,
     };
