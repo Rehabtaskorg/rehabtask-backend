@@ -130,7 +130,7 @@ export const getTherapistBookings = async (therapistId) => {
         include: {
             customer: {
                 select: {
-                    id: true, fullName: true, customerType: true, agencyName: true,
+                    id: true, fullName: true, customerType: true, agencyName: true, dateOfBirth: true,
                 },
             },
             visitTypeRef: true,
