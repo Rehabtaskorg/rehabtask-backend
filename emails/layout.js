@@ -95,10 +95,10 @@ export const formatTherapistName = (therapist) => {
     return abbr ? `${therapist.fullName}, ${abbr}` : therapist.fullName;
 };
 
-export const customerFields = (customer) => {
+export const customerFields = (customer, patient) => {
     if (!customer) return field('Name', 'N/A');
     if (customer.customerType === 'agency') {
-        return `${field('Agency', customer.agencyName || 'N/A')}${field('Patient', customer.fullName || 'N/A')}`;
+        return `${field('Agency', customer.agencyName || 'N/A')}${field('Patient', patient?.fullName || 'N/A')}`;
     }
     return field('Name', customer.fullName || 'N/A');
 };

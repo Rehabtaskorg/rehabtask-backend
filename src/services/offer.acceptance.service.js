@@ -84,6 +84,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     therapist: { include: { user: { select: { id: true, email: true } } } },
                     customer: { include: { user: { select: { id: true, email: true } } } },
                     offer: { include: { request: true } },
+                    patient: { select: { id: true, fullName: true } },
                 },
             });
         } catch (err) {
@@ -94,6 +95,7 @@ export const acceptOffer = async (offerId, customerId) => {
                         therapist: { include: { user: { select: { id: true, email: true } } } },
                         customer: { include: { user: { select: { id: true, email: true } } } },
                         offer: { include: { request: true } },
+                        patient: { select: { id: true, fullName: true } },
                     },
                 });
                 if (txBooking) return { updatedOffer: txUpdatedOffer, booking: txBooking };

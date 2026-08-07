@@ -140,6 +140,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                         include: { user: { select: { id: true, email: true } } }
                     },
                     customer: true,
+                    patient: { select: { id: true, fullName: true } },
                 },
             },
         },

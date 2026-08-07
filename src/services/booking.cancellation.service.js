@@ -28,6 +28,8 @@ const getBookingForCancellation = async (bookingId) =>
                     id: true,
                     userId: true,
                     fullName: true,
+                    customerType: true,
+                    agencyName: true,
                     stripeAccountId: true,
                     stripeOnboardingComplete: true,
                     user: { select: { email: true } },
@@ -41,6 +43,7 @@ const getBookingForCancellation = async (bookingId) =>
                     user: { select: { email: true } },
                 },
             },
+            patient: { select: { id: true, fullName: true } },
         },
     });
 

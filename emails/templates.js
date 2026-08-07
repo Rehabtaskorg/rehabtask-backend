@@ -205,7 +205,7 @@ export const offerAccepted = ({ therapist, customer, booking }) => ({
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`Great news — <strong>${customer.fullName}</strong> has accepted your offer and a booking has been confirmed.`)}
         ${hr()}
-        ${customerFields(customer)}
+        ${customerFields(customer, booking.patient)}
         ${field('Session Date', formatDate(booking.scheduledDate))}
         ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Rate', formatCurrency(booking.rate))}
@@ -327,7 +327,7 @@ export const sessionConfirmed = ({ therapist, customer, booking }) => ({
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`<strong>${customer.fullName}</strong> has confirmed the session. Your payout is now being processed.`)}
         ${hr()}
-        ${customerFields(customer)}
+        ${customerFields(customer, booking.patient)}
         ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Gross Rate', formatCurrency(booking.rate))}
         ${hr()}
@@ -1115,7 +1115,7 @@ export const cancellationRequestedToTherapist = ({ therapist, customer, booking,
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`<strong>${customer.fullName}</strong> has requested to cancel their booking. You have <strong>24 hours</strong> to approve or reject this request. If you don't respond, the cancellation will be approved automatically.`)}
         ${hr()}
-        ${customerFields(customer)}
+        ${customerFields(customer, booking.patient)}
         ${field('Reason', reason || 'No reason provided')}
         ${hr()}
         ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'Review Request')}
