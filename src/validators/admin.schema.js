@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { THERAPIST_VERIFICATION_FIELDS } from "../utils/constants.js";
 
 const VALID_PERMISSIONS = [
     "users",
@@ -85,6 +86,11 @@ export const rejectTherapistSchema = z.object({
         .string()
         .min(10, "Rejection reason must be at least 10 characters")
         .max(2000, "Rejection reason must be 2000 characters or less"),
+});
+
+export const updateTherapistVerificationSchema = z.object({
+    field: z.enum(Object.values(THERAPIST_VERIFICATION_FIELDS)),
+    value: z.boolean(),
 });
 
 // ── Dispute Management ───────────────────────────────────────────────────────

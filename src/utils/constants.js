@@ -165,6 +165,11 @@ export const THERAPIST_ATTRIBUTE_CATEGORIES = Object.freeze({
     POPULATION:   "population",
 });
 
+export const THERAPIST_VERIFICATION_FIELDS = Object.freeze({
+    LICENSE:   "licenseVerified",
+    INSURANCE: "insuranceVerified",
+});
+
 export const THERAPIST_SPECIALTIES    = Object.freeze(["Neuro", "Ortho", "Geriatrics", "Pediatrics", "Lymphedema", "Home Health"]);
 export const THERAPIST_LANGUAGES      = Object.freeze(["English", "Spanish", "French", "Mandarin", "Cantonese", "Arabic", "Portuguese", "Tagalog", "Korean", "Vietnamese", "Russian", "Hindi", "Haitian Creole", "Polish", "Italian", "Japanese"]);
 export const THERAPIST_CERTIFICATIONS = Object.freeze(["LSVT", "NDT", "Wound Care", "VitalStim"]);

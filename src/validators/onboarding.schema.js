@@ -57,7 +57,7 @@ export const professionalProfileSchema = z.object({
         .min(1, "Primary license type is required")
         .max(100, "License type too long"),
 
-    specialties: z.array(z.string().max(128)).max(20).optional().default([]),
+    specialties: z.array(z.string().max(128)).min(1, "At least one specialty is required").max(20),
     languages: z.array(z.string().max(128)).max(20).optional().default([]),
     certifications: z.array(z.string().max(128)).max(20).optional().default([]),
     pastSettings: z.array(z.string().max(128)).max(20).optional().default([]),
@@ -125,12 +125,9 @@ export const credentialsSchema = z.object({
         .max(5, "Maximum 5 license documents allowed"),
 
     ratePerVisit: z.coerce
-        .number()
-        .min(0, "Rate must be 0 or greater")
-        .max(10000, "Rate must be $10,000 or less")
-        .nullable()
-        .optional()
-        .transform(val => val === 0 ? null : val),
+        .number({ required_error: "Rate per visit is required", invalid_type_error: "Rate per visit is required" })
+        .min(1, "Rate per visit is required")
+        .max(10000, "Rate must be $10,000 or less"),
     attemptedVisitRate: z.coerce
         .number()
         .min(0, "Attempted visit rate must be 0 or greater")
@@ -139,12 +136,9 @@ export const credentialsSchema = z.object({
         .optional()
         .transform(val => (val === 0 ? null : val)),
     evaluationRate: z.coerce
-        .number()
-        .min(0, "Evaluation rate must be 0 or greater")
-        .max(10000, "Evaluation rate must be $10,000 or less")
-        .nullable()
-        .optional()
-        .transform(val => (val === 0 ? null : val)),
+        .number({ required_error: "Evaluation rate is required", invalid_type_error: "Evaluation rate is required" })
+        .min(1, "Evaluation rate is required")
+        .max(10000, "Evaluation rate must be $10,000 or less"),
     travelFee: z.coerce
         .number()
         .min(0, "Travel fee must be 0 or greater")

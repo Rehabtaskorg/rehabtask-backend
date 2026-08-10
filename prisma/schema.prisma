@@ -178,6 +178,8 @@ model TherapistProfile {
   caseloadCapacity         Int?                   @map("caseload_capacity")
   hipaaAttested            Boolean                @default(false) @map("hipaa_attested")
   hipaaAttestedAt          DateTime?              @map("hipaa_attested_at") @db.Timestamptz(3)
+  licenseVerified          Boolean                @default(false) @map("license_verified")
+  insuranceVerified        Boolean                @default(false) @map("insurance_verified")
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -252,6 +254,7 @@ model LicenseDocument {
   isDeleted     Boolean           @default(false) @map("is_deleted")
   mimeType      String?           @map("mime_type") @db.VarChar(100)
   reject_reason String?
+  // TODO: [NEXT] status/verifiedAt/verifiedBy are provisioned but never written — superseded by TherapistProfile.licenseVerified/insuranceVerified (profile-level flags). Drop in a follow-up migration once a per-document review queue is scoped.
   status        String?           @default("pending") @db.VarChar(20)
   uploadIp      String?           @map("upload_ip") @db.VarChar(45)
   userId        String?           @map("user_id") @db.VarChar(128)
