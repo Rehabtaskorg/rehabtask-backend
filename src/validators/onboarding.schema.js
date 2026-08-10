@@ -129,12 +129,9 @@ export const credentialsSchema = z.object({
         .min(1, "Rate per visit is required")
         .max(10000, "Rate must be $10,000 or less"),
     attemptedVisitRate: z.coerce
-        .number()
+        .number({ required_error: "Attempted visit rate is required", invalid_type_error: "Attempted visit rate is required" })
         .min(0, "Attempted visit rate must be 0 or greater")
-        .max(10000, "Attempted visit rate must be $10,000 or less")
-        .nullable()
-        .optional()
-        .transform(val => (val === 0 ? null : val)),
+        .max(10000, "Attempted visit rate must be $10,000 or less"),
     evaluationRate: z.coerce
         .number({ required_error: "Evaluation rate is required", invalid_type_error: "Evaluation rate is required" })
         .min(1, "Evaluation rate is required")
@@ -147,11 +144,7 @@ export const credentialsSchema = z.object({
         .optional()
         .transform(val => (val === 0 ? null : val)),
 }).refine(
-    (data) => {
-        // Cap: attempted rate cannot exceed session rate when both are set.
-        if (data.attemptedVisitRate == null || data.ratePerVisit == null) return true;
-        return data.attemptedVisitRate <= data.ratePerVisit;
-    },
+    (data) => data.attemptedVisitRate <= data.ratePerVisit,
     {
         message: "Attempted visit rate cannot be greater than your session rate",
         path: ["attemptedVisitRate"],
