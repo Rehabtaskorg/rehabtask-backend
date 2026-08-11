@@ -203,7 +203,9 @@ export const searchTherapists = async ({
         if (types.length === 1) {
             where.primaryLicenseType = { equals: types[0], mode: "insensitive" };
         } else if (types.length > 1) {
-            where.primaryLicenseType = { in: types };
+            where.OR = types.map((t) => ({
+                primaryLicenseType: { equals: t, mode: "insensitive" },
+            }));
         }
     }
 
@@ -241,6 +243,19 @@ export const searchTherapists = async ({
                 return distance <= area.radiusMiles && distance <= radiusMiles;
             })
         );
+
+        geoFiltered.forEach((therapist) => {
+            therapist._minDistance = Math.min(
+                ...therapist.workAreas.map((area) =>
+                    haversineDistance(
+                        latitude,
+                        longitude,
+                        parseFloat(area.latitude),
+                        parseFloat(area.longitude)
+                    )
+                )
+            );
+        });
 
         // Apply sorting on the geo-filtered set
         sortTherapists(geoFiltered, sortBy);
@@ -343,6 +358,13 @@ function sortTherapists(therapists, sortBy) {
     };
 
     switch (sortBy) {
+        case "relevance":
+            if (therapists.length > 0 && therapists[0]._minDistance !== undefined) {
+                therapists.sort((a, b) => (a._minDistance || 0) - (b._minDistance || 0));
+            } else {
+                therapists.sort((a, b) => getAvgRating(b) - getAvgRating(a));
+            }
+            break;
         case "rating":
             therapists.sort((a, b) => getAvgRating(b) - getAvgRating(a));
             break;
@@ -353,7 +375,6 @@ function sortTherapists(therapists, sortBy) {
             therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             break;
         default:
-            // "relevance" or undefined — keep default order (createdAt desc)
             therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             break;
     }
