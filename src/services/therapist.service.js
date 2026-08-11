@@ -268,7 +268,7 @@ export const searchTherapists = async ({
     } else {
         // No location — return all approved therapists, paginated
         // For rating sort, we fetch all and sort post-query (computed field)
-        if (sortBy === "rating") {
+        if (sortBy === "rating" || sortBy === "relevance") {
             const allTherapists = await prisma.therapistProfile.findMany({
                 where,
                 include: {
