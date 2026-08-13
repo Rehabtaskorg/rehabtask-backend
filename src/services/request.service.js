@@ -98,7 +98,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             therapist: directTargetTherapist,
             request,
         }).catch((err) => logger.error("[RequestService] Failed to send direct request notification", { error: err.message }));
-        smsTherDirectOfferReceived(directTargetTherapist);
+        smsTherDirectOfferReceived(directTargetTherapist, request.id);
     }
 
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {

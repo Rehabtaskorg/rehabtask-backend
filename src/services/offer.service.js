@@ -149,7 +149,7 @@ export const createOffer = async (therapistId, data) => {
     }).catch((err) => {
         logger.error('[OfferService] New offer notification failed', { error: err.message });
     });
-    smsCustOfferReceived(offer.request.customer);
+    smsCustOfferReceived(offer.request.customer, offer.requestId);
 
     return offer;
 }

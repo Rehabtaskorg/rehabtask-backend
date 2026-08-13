@@ -48,7 +48,7 @@ export const runReviewExpirySms = async () => {
 
     for (const session of sessions) {
         try {
-            const wasSent = await smsCustWorkReviewExpiring(session.booking.customer);
+            const wasSent = await smsCustWorkReviewExpiring(session.booking.customer, session.booking.id);
 
             await prisma.session.update({
                 where: { id: session.id },

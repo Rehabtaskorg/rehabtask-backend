@@ -125,11 +125,12 @@ export const syncTwilioOptStatus = async (phone, optIn) => {
 /**
  * Customer sent a direct request to this therapist.
  * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} requestId
  */
-export const smsTherDirectOfferReceived = (therapistProfile) => {
+export const smsTherDirectOfferReceived = (therapistProfile, requestId) => {
     dispatch(
         therapistProfile,
-        `You have a new direct service request on RehabTask. Open the app to review and respond: ${env.FRONTEND_URL}/therapist/requests`,
+        `You have a new direct service request on RehabTask. Open the app to review and respond: ${env.FRONTEND_URL}/therapist/requests/${requestId}`,
         "therDirectOfferReceived"
     );
 };
@@ -163,11 +164,12 @@ export const smsTherNewMessage = (therapistProfile) => {
 /**
  * Therapist submitted an offer on the customer's request.
  * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} requestId
  */
-export const smsCustOfferReceived = (customerProfile) => {
+export const smsCustOfferReceived = (customerProfile, requestId) => {
     dispatch(
         customerProfile,
-        `A therapist has submitted an offer on your RehabTask request. Review it now: ${env.FRONTEND_URL}/customer/requests`,
+        `A therapist has submitted an offer on your RehabTask request. Review it now: ${env.FRONTEND_URL}/customer/requests/${requestId}`,
         "custOfferReceived"
     );
 };
@@ -191,12 +193,13 @@ export const smsCustWorkSubmittedForReview = (customerProfile) => {
  * Returns true if sent, false if skipped (opted out / no phone). Throws on Twilio error.
  *
  * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
  * @returns {Promise<boolean>}
  */
-export const smsCustWorkReviewExpiring = (customerProfile) => {
+export const smsCustWorkReviewExpiring = (customerProfile, bookingId) => {
     return dispatchAwaitable(
         customerProfile,
-        `Reminder: your session review window closes in 24 hours on RehabTask. Payment will release automatically if no action is taken: ${env.FRONTEND_URL}/customer/sessions`
+        `Reminder: your session review window closes in 24 hours on RehabTask. Payment will release automatically if no action is taken: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`
     );
 };
 
