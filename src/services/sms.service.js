@@ -74,25 +74,6 @@ const dispatchAwaitable = async (profile, body) => {
     return true;
 };
 
-/**
- * Remove a number from Twilio's suppression list.
- * Called when a user re-enables SMS from the app UI after having previously
- * texted STOP. Without this call, Twilio would block delivery even though
- * the DB shows smsOptIn = true.
- *
- * @param {string} phone - E.164 phone number to unsuppress
- * @returns {Promise<void>}
- */
-export const removeTwilioSuppression = async (phone) => {
-    if (!smsEnabled()) return;
-    try {
-        await getClient().messages.unsubscribedResources(phone).remove();
-        logger.info("[SmsService] Removed from Twilio suppression list", { phone });
-    } catch (err) {
-        logger.error("[SmsService] Failed to remove from Twilio suppression list", { error: err.message, phone });
-        throw err;
-    }
-};
 
 /**
  * Sync a STOP or START keyword event from Twilio's inbound webhook back to the DB.
