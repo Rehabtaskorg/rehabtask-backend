@@ -122,7 +122,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
     }).catch((err) => {
         logger.error('[SessionService] Completion request notification failed', { error: err.message });
     });
-    smsCustWorkSubmittedForReview(session.booking.customer);
+    smsCustWorkSubmittedForReview(session.booking.customer, session.booking.id);
 
     return updatedSession;
 }

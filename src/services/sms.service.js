@@ -177,11 +177,12 @@ export const smsCustOfferReceived = (customerProfile, requestId) => {
 /**
  * Therapist marked a session complete — customer needs to review.
  * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
  */
-export const smsCustWorkSubmittedForReview = (customerProfile) => {
+export const smsCustWorkSubmittedForReview = (customerProfile, bookingId) => {
     dispatch(
         customerProfile,
-        `Your therapist has submitted a session for review on RehabTask. Please confirm or dispute within 72 hours: ${env.FRONTEND_URL}/customer/sessions`,
+        `Your therapist has submitted a session for review on RehabTask. Please confirm or dispute within 72 hours: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`,
         "custWorkSubmittedForReview"
     );
 };
