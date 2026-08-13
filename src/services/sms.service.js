@@ -1,15 +1,18 @@
 import twilio from "twilio";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
+import { prisma } from "../config/prisma.js";
 
 const getClient = () => twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+
+const SMS_OPT_OUT_NOTICE = "\nReply STOP to opt out.";
 
 /**
  * @returns {boolean}
  */
 const smsEnabled = () => {
     if (env.NODE_ENV === "test") return false;
-    if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) {
+    if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_MESSAGING_SERVICE_SID) {
         logger.warn("[SmsService] Twilio credentials not configured — SMS disabled");
         return false;
     }
@@ -18,24 +21,27 @@ const smsEnabled = () => {
 
 /**
  * Low-level send. Callers must already have verified smsOptIn and phone.
- * Fire-and-forget safe — always .catch() at the call site.
+ * Appends STOP disclosure required by Twilio's Messaging Policy for toll-free traffic.
+ * Sends via Messaging Service SID (not bare phone number) to enable Advanced Opt-Out.
  *
  * @param {{ to: string, body: string }} params
  * @returns {Promise<void>}
  */
 export const sendSms = async ({ to, body }) => {
+    const compliantBody = `${body}${SMS_OPT_OUT_NOTICE}`;
+
     if (!smsEnabled()) {
-        logger.info("[SmsService] Skipping — credentials not configured or NODE_ENV=test", { body });
+        logger.info("[SmsService] Skipping — credentials not configured or NODE_ENV=test");
         return;
     }
 
     const message = await getClient().messages.create({
-        from: env.TWILIO_PHONE_NUMBER,
+        messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
         to,
-        body,
+        body: compliantBody,
     });
 
-    logger.info("[SmsService] SMS sent", { sid: message.sid, status: message.status, to });
+    logger.info("[SmsService] SMS sent", { sid: message.sid, status: message.status });
 };
 
 /**
@@ -49,7 +55,7 @@ export const sendSms = async ({ to, body }) => {
 const dispatch = (profile, body, triggerName) => {
     if (!profile?.smsOptIn || !profile?.phone) return;
     sendSms({ to: profile.phone, body }).catch((err) =>
-        logger.error(`[SmsService] ${triggerName} failed`, { error: err.message, phone: profile.phone })
+        logger.error(`[SmsService] ${triggerName} failed`, { error: err.message })
     );
 };
 
@@ -66,6 +72,52 @@ const dispatchAwaitable = async (profile, body) => {
     if (!profile?.smsOptIn || !profile?.phone) return false;
     await sendSms({ to: profile.phone, body });
     return true;
+};
+
+/**
+ * Remove a number from Twilio's suppression list.
+ * Called when a user re-enables SMS from the app UI after having previously
+ * texted STOP. Without this call, Twilio would block delivery even though
+ * the DB shows smsOptIn = true.
+ *
+ * @param {string} phone - E.164 phone number to unsuppress
+ * @returns {Promise<void>}
+ */
+export const removeTwilioSuppression = async (phone) => {
+    if (!smsEnabled()) return;
+    try {
+        await getClient().messages.unsubscribedResources(phone).remove();
+        logger.info("[SmsService] Removed from Twilio suppression list", { phone });
+    } catch (err) {
+        logger.error("[SmsService] Failed to remove from Twilio suppression list", { error: err.message, phone });
+        throw err;
+    }
+};
+
+/**
+ * Sync a STOP or START keyword event from Twilio's inbound webhook back to the DB.
+ * Finds the matching CustomerProfile or TherapistProfile by phone and updates smsOptIn.
+ * Safe to call multiple times — idempotent.
+ *
+ * @param {string} phone - E.164 phone number from Twilio's `From` field
+ * @param {boolean} optIn - true for START, false for STOP
+ * @returns {Promise<void>}
+ */
+export const syncTwilioOptStatus = async (phone, optIn) => {
+    const [customerResult, therapistResult] = await Promise.allSettled([
+        prisma.customerProfile.updateMany({ where: { phone }, data: { smsOptIn: optIn } }),
+        prisma.therapistProfile.updateMany({ where: { phone }, data: { smsOptIn: optIn } }),
+    ]);
+
+    const customerCount = customerResult.status === "fulfilled" ? customerResult.value.count : 0;
+    const therapistCount = therapistResult.status === "fulfilled" ? therapistResult.value.count : 0;
+    const total = customerCount + therapistCount;
+
+    if (total === 0) {
+        logger.warn("[SmsService] Twilio opt status sync — no profile found for phone", { optIn });
+    } else {
+        logger.info("[SmsService] Twilio opt status synced", { optIn, customerCount, therapistCount });
+    }
 };
 
 // ─── Therapist triggers ────────────────────────────────────────────────────

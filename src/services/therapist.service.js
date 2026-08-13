@@ -1,6 +1,7 @@
 import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
+import { removeTwilioSuppression } from "./sms.service.js";
 import { haversineDistance } from "../utils/distance.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 
@@ -70,8 +71,13 @@ export const updateTherapistProfile = async (userId, data) => {
         );
     }
 
-    // Prevent changing license fields through this endpoint
     const { licenseNumber, licenseState, ...allowedData } = data;
+
+    const reEnabling = allowedData.smsOptIn === true && therapist.smsOptIn === false;
+    if (reEnabling) {
+        const phoneToUse = allowedData.phone ?? therapist.phone;
+        if (phoneToUse) await removeTwilioSuppression(phoneToUse);
+    }
 
     // Cap guard: attemptedVisitRate cannot exceed ratePerVisit.
     if (allowedData.attemptedVisitRate != null) {

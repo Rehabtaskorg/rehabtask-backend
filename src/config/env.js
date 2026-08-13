@@ -66,6 +66,7 @@ const envSchema = z.object({
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_PHONE_NUMBER: z.string().optional(),
+    TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
 
     // Cloud Scheduler — shared secret for /internal/jobs/* endpoints
     CLOUD_SCHEDULER_SECRET: z.string().min(32, "CLOUD_SCHEDULER_SECRET must be at least 32 characters"),
@@ -142,4 +143,5 @@ export const {
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,
     TWILIO_PHONE_NUMBER,
+    TWILIO_MESSAGING_SERVICE_SID,
 } = env;
