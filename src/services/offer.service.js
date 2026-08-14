@@ -1,5 +1,5 @@
 import { OFFER_STATUS, BOOKING_STATUS } from "../utils/constants.js";
-import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
+import { THERAPIST_SAFE_SELECT, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { addHours } from "date-fns";
 import {
@@ -214,7 +214,6 @@ export const getOfferById = async (offerId, userId) => {
         throw err;
     }
 
-    // Access check: the authenticated user must be either the therapist or the customer on this offer
     const isTherapist = offer.therapist.userId === userId;
     const isCustomer = offer.request.customer.userId === userId;
 
@@ -224,7 +223,16 @@ export const getOfferById = async (offerId, userId) => {
         throw err;
     }
 
-    return offer;
+    const canViewContact = await hasContactAccessByProfileId(
+        offer.request.customer.id,
+        offer.therapistId
+    );
+
+    const { phone, ...therapistWithoutPhone } = offer.therapist;
+    return {
+        ...offer,
+        therapist: canViewContact ? offer.therapist : therapistWithoutPhone,
+    };
 }
 
 /**
