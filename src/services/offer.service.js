@@ -1,4 +1,5 @@
 import { OFFER_STATUS, BOOKING_STATUS } from "../utils/constants.js";
+import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { addHours } from "date-fns";
 import {
@@ -90,7 +91,7 @@ export const createOffer = async (therapistId, data) => {
         },
         include: {
             visitTypeRef: true,
-            therapist: true,
+            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true, user: { select: { id: true } } } },
             request: {
                 include: {
                     visitTypeRef: true,
@@ -192,13 +193,18 @@ export const getOfferById = async (offerId, userId) => {
             request: {
                 include: {
                     visitTypeRef: true,
-                    customer: true,
+                    customer: {
+                        select: {
+                            id: true, userId: true, fullName: true, customerType: true,
+                            agencyName: true, phone: true, billingEmail: true,
+                        },
+                    },
                     patient: {
                         select: { id: true, fullName: true, email: true, phone: true }
                     },
                 },
             },
-            therapist: true,
+            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true } },
         }
     });
 
@@ -291,7 +297,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         },
         include: {
             visitTypeRef: true,
-            therapist: true,
+            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true } },
             request: {
                 include: {
                     visitTypeRef: true,
@@ -537,7 +543,7 @@ export const withdrawOffer = async (offerId, therapistId) => {
                     },
                 },
             },
-            therapist: true,
+            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true, smsOptIn: true } },
         },
     });
 

@@ -1,4 +1,5 @@
 import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
+import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -1181,7 +1182,7 @@ export const getCustomerSessions = async (customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: true,
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true } },
                     offer: {
                         include: {
                             request: true,
