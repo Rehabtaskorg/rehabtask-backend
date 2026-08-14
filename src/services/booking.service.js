@@ -1,6 +1,6 @@
 import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import {
     sendBookingRescheduleProposed,
     sendBookingRescheduleAccepted,
@@ -11,17 +11,6 @@ import { logger } from "../config/logger.js";
 const BOOKING_THERAPIST_SELECT = {
     ...THERAPIST_SAFE_SELECT,
     phone: true,
-    user: { select: { id: true, email: true } },
-};
-
-const BOOKING_CUSTOMER_SELECT = {
-    id: true,
-    userId: true,
-    customerType: true,
-    fullName: true,
-    agencyName: true,
-    phone: true,
-    billingEmail: true,
     user: { select: { id: true, email: true } },
 };
 
@@ -43,7 +32,7 @@ export const getBookingById = async (bookingId, userId) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
-            customer: { select: BOOKING_CUSTOMER_SELECT },
+            customer: { select: CUSTOMER_SAFE_SELECT },
             therapist: { select: BOOKING_THERAPIST_SELECT },
             visitTypeRef: true,
             offer: {

@@ -2,6 +2,21 @@ import { prisma } from "../config/prisma.js";
 import { CONTACT_UNLOCK_BOOKING_STATUSES } from "./constants.js";
 
 /**
+ * Safe field selection for CustomerProfile on responses visible to therapists or
+ * other authenticated parties. Excludes Stripe internals, address, and admin fields.
+ */
+export const CUSTOMER_SAFE_SELECT = {
+    id: true,
+    userId: true,
+    customerType: true,
+    fullName: true,
+    agencyName: true,
+    phone: true,
+    billingEmail: true,
+    user: { select: { id: true, email: true } },
+};
+
+/**
  * Safe field selection for TherapistProfile on customer-facing responses.
  * Never includes PII fields (phone, address, DOB, stripeAccountId, etc.).
  * Use therapistSelectFor() to get the contact-unlocked variant.

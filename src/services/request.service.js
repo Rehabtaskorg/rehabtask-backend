@@ -1,5 +1,5 @@
 import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES, LICENSE_TYPE_TO_SERVICE_TYPE } from "../utils/constants.js";
-import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
@@ -182,7 +182,7 @@ export const getRequestById = async (requestId, userId) => {
         where: { id: requestId },
         include: {
             visitTypeRef: true,
-            customer: { include: { user: { select: { id: true, email: true } } } },
+            customer: { select: CUSTOMER_SAFE_SELECT },
             offers: {
                 where: user?.therapistProfile
                     ? { therapistId: user.therapistProfile.id }
