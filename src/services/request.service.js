@@ -181,7 +181,7 @@ export const getRequestById = async (requestId, userId) => {
         where: { id: requestId },
         include: {
             visitTypeRef: true,
-            customer: { include: { user: true } },
+            customer: { include: { user: { select: { id: true, email: true } } } },
             offers: {
                 where: user?.therapistProfile
                     ? { therapistId: user.therapistProfile.id }

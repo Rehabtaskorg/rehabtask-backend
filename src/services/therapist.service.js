@@ -1,4 +1,5 @@
 import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES } from "../utils/constants.js";
+import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
@@ -379,8 +380,8 @@ function sortTherapists(therapists, sortBy) {
     }
 }
 
-export const getTherapistPublicProfile = async (therapistId) => {
-    const [therapist, completedVisitCount] = await Promise.all([
+export const getTherapistPublicProfile = async (therapistId, viewerUserId = null) => {
+    const [therapist, completedVisitCount, canViewContact] = await Promise.all([
         prisma.therapistProfile.findUnique({
             where: { id: therapistId },
             include: {
@@ -397,6 +398,7 @@ export const getTherapistPublicProfile = async (therapistId) => {
                 booking: { therapist: { id: therapistId } },
             },
         }),
+        hasContactAccessByUserId(viewerUserId, therapistId),
     ]);
 
     if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
@@ -424,12 +426,12 @@ export const getTherapistPublicProfile = async (therapistId) => {
         id: therapist.id,
         userId: therapist.userId,
         fullName: therapist.fullName,
-        phone: therapist.phone,
+        ...(canViewContact && { phone: therapist.phone }),
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
         yearsInHomeHealth: therapist.yearsInHomeHealth,
         primaryLicenseType: therapist.primaryLicenseType,
-        npiNumber: therapist.npiNumber,
+        ...(viewerUserId && { npiNumber: therapist.npiNumber }),
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,

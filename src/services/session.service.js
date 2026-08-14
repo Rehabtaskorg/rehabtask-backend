@@ -1144,8 +1144,8 @@ export const getSessionById = async (sessionId, userId) => {
         include: {
             booking: {
                 include: {
-                    customer: { include: { user: true } },
-                    therapist: { include: { user: true } },
+                    customer: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { include: { user: { select: { id: true, email: true } } } },
                     offer: {
                         include: {
                             request: true,

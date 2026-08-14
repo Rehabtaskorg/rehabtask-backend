@@ -25,8 +25,8 @@ export const getBookingById = async (bookingId, userId) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
-            customer: { include: { user: true } },
-            therapist: { include: { user: true } },
+            customer: { include: { user: { select: { id: true, email: true } } } },
+            therapist: { include: { user: { select: { id: true, email: true } } } },
             visitTypeRef: true,
             offer: {
                 include: {
