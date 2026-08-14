@@ -1,11 +1,29 @@
 import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
+import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import {
     sendBookingRescheduleProposed,
     sendBookingRescheduleAccepted,
     sendBookingRescheduleDeclined
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
+
+const BOOKING_THERAPIST_SELECT = {
+    ...THERAPIST_SAFE_SELECT,
+    phone: true,
+    user: { select: { id: true, email: true } },
+};
+
+const BOOKING_CUSTOMER_SELECT = {
+    id: true,
+    userId: true,
+    customerType: true,
+    fullName: true,
+    agencyName: true,
+    phone: true,
+    billingEmail: true,
+    user: { select: { id: true, email: true } },
+};
 
 // Prisma Decimal fields serialize as strings in JSON. Normalize money fields to
 // numbers at the service boundary so consumers never need to parseFloat() themselves.
@@ -25,8 +43,8 @@ export const getBookingById = async (bookingId, userId) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
-            customer: { include: { user: { select: { id: true, email: true } } } },
-            therapist: { include: { user: { select: { id: true, email: true } } } },
+            customer: { select: BOOKING_CUSTOMER_SELECT },
+            therapist: { select: BOOKING_THERAPIST_SELECT },
             visitTypeRef: true,
             offer: {
                 include: {
