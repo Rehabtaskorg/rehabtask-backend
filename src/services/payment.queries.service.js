@@ -1,4 +1,5 @@
 import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
+import { isConnectAccountReady } from "../utils/stripe.helpers.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { logger } from "../config/logger.js";
@@ -202,7 +203,7 @@ export const getConnectAccountStatus = async (therapistId) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { id: therapistId } });
 
     if (!therapist || !therapist.stripeAccountId) {
-        return { connected: false, detailsSubmitted: false, chargesEnabled: false, payoutsEnabled: false };
+        return { connected: false, detailsSubmitted: false, transfersActive: false, payoutsEnabled: false, onboardingComplete: false };
     }
 
     const account = await stripe.accounts.retrieve(therapist.stripeAccountId);
@@ -218,8 +219,9 @@ export const getConnectAccountStatus = async (therapistId) => {
         connected: true,
         accountId: therapist.stripeAccountId,
         detailsSubmitted: account.details_submitted,
-        chargesEnabled: account.charges_enabled,
+        transfersActive: account.capabilities?.transfers === "active",
         payoutsEnabled: account.payouts_enabled,
+        onboardingComplete: isConnectAccountReady(account),
         disabledReason: req.disabled_reason ?? null,
         pastDueCount,
         currentlyDueCount,
@@ -243,7 +245,7 @@ export const getCustomerConnectStatus = async (customerId, userId) => {
     const req = account.requirements ?? {};
     const futureReq = account.future_requirements ?? {};
 
-    const onboardingComplete = account.details_submitted === true && account.payouts_enabled === true;
+    const onboardingComplete = isConnectAccountReady(account);
     const currentlyDueCount = req.currently_due?.length ?? 0;
     const pastDueCount = req.past_due?.length ?? 0;
     const eventuallyDueCount = req.eventually_due?.length ?? 0;
@@ -344,7 +346,7 @@ export const createOrGetConnectAccount = async (therapistId, userId) => {
     const account = await stripe.accounts.create({
         country: "US",
         email: therapist.user.email,
-        capabilities: { transfers: { requested: true }, card_payments: { requested: true } },
+        capabilities: { transfers: { requested: true } },
         controller: {
             requirement_collection: "application",
             stripe_dashboard: { type: "none" },

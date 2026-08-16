@@ -4,12 +4,14 @@
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
-import { prisma, withAdminAccess } from "../config/prisma.js";
+import { prisma } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendCustomerStripeRequirementsAlert } from "../services/email.service.js";
 import { handleCustomerPayoutFailed } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
+import { STRIPE_CAPABILITY } from "../utils/constants.js";
+import { isConnectAccountReady } from "../utils/stripe.helpers.js";
 
 /**
  * Atomically marks a Stripe event as processed inside an existing transaction.
@@ -449,20 +451,20 @@ const handleAccountUpdated = async (account, accountId, stripeEventId) => {
  * @param {string} stripeEventId - Stripe event ID for deduplication
  */
 const handleTherapistAccountUpdated = async (account, therapist, stripeEventId) => {
-    const isOnboardingComplete = account.details_submitted === true && account.charges_enabled === true;
+    const isOnboardingComplete = isConnectAccountReady(account);
+    const hasChanged = isOnboardingComplete !== therapist.stripeOnboardingComplete;
 
-    if (isOnboardingComplete !== therapist.stripeOnboardingComplete) {
-        await prisma.$transaction(async (tx) => {
-            await markEventProcessed(tx, stripeEventId, "account.updated");
-        });
-
-        await withAdminAccess(async (db) => {
-            await db.therapistProfile.update({
+    await prisma.$transaction(async (tx) => {
+        await markEventProcessed(tx, stripeEventId, "account.updated");
+        if (hasChanged) {
+            await tx.therapistProfile.update({
                 where: { stripeAccountId: account.id },
                 data: { stripeOnboardingComplete: isOnboardingComplete },
             });
-        });
+        }
+    });
 
+    if (hasChanged) {
         logger.info(`[Webhook] Stripe onboarding ${isOnboardingComplete ? "completed" : "reverted"} for therapist: ${therapist.fullName}`);
     }
 
@@ -507,20 +509,21 @@ const handleTherapistAccountUpdated = async (account, therapist, stripeEventId) 
  * @param {string} stripeEventId - Stripe event ID for deduplication
  */
 const handleCustomerAccountUpdated = async (account, customer, stripeEventId) => {
-    const isOnboardingComplete = account.details_submitted === true && account.payouts_enabled === true;
+    const isOnboardingComplete = isConnectAccountReady(account);
+    const justCompleted = isOnboardingComplete && !customer.stripeOnboardingComplete;
+    const justReverted = !isOnboardingComplete && customer.stripeOnboardingComplete;
 
-    if (isOnboardingComplete && !customer.stripeOnboardingComplete) {
-        await prisma.$transaction(async (tx) => {
-            await markEventProcessed(tx, stripeEventId, "account.updated");
-        });
-
-        await withAdminAccess(async (db) => {
-            await db.customerProfile.update({
+    await prisma.$transaction(async (tx) => {
+        await markEventProcessed(tx, stripeEventId, "account.updated");
+        if (justCompleted || justReverted) {
+            await tx.customerProfile.update({
                 where: { stripeAccountId: account.id },
-                data: { stripeOnboardingComplete: true },
+                data: { stripeOnboardingComplete: isOnboardingComplete },
             });
-        });
+        }
+    });
 
+    if (justCompleted) {
         logger.info(`[Webhook] Customer Connect onboarding completed: ${customer.fullName} (${customer.id})`);
 
         try {
@@ -535,13 +538,7 @@ const handleCustomerAccountUpdated = async (account, customer, stripeEventId) =>
         return;
     }
 
-    if (!isOnboardingComplete && customer.stripeOnboardingComplete) {
-        await withAdminAccess(async (db) => {
-            await db.customerProfile.update({
-                where: { stripeAccountId: account.id },
-                data: { stripeOnboardingComplete: false },
-            });
-        });
+    if (justReverted) {
         logger.info(`[Webhook] Customer Connect onboarding reverted: ${customer.fullName}`);
     }
 

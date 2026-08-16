@@ -742,22 +742,27 @@ export const completeOnboarding = async (userId) => {
     }
 
 
-    const alreadyDecided = ["approved", "rejected"].includes(therapist.approvalStatus);
-    const wasAlreadyComplete = therapist.onboardingComplete;
+    const alreadyDecided = [APPROVAL_STATUS.APPROVED, APPROVAL_STATUS.REJECTED].includes(therapist.approvalStatus);
+    const shouldMarkComplete = therapist.approvalStatus !== APPROVAL_STATUS.REJECTED;
 
-    const updated = await withAdminAccess(async (db) => {
-        return db.therapistProfile.update({
-            where: { userId },
+    const { count } = await withAdminAccess(async (db) => {
+        return db.therapistProfile.updateMany({
+            where: { userId, onboardingComplete: false },
             data: {
-                onboardingComplete: true,
+                ...(shouldMarkComplete && { onboardingComplete: true }),
                 ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
             },
+        });
+    });
+
+    const updated = await withAdminAccess(async (db) => {
+        return db.therapistProfile.findUnique({
+            where: { userId },
             include: { user: { select: { email: true } } },
         });
     });
 
-    // Notify therapist + admin only on first-time completion (not on Stripe re-calls)
-    if (!wasAlreadyComplete) {
+    if (count === 1 && !alreadyDecided) {
         sendTherapistApplicationSubmitted({ therapist: updated }).catch(() => { });
     }
 

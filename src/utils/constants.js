@@ -201,4 +201,11 @@ export const ONE_HOUR_AGO_MS = 60 * 60 * 1000;
 export const REPORT_MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 export const MAX_SEARCH_RADIUS_MILES = 100;
+
+export const STRIPE_CAPABILITY = Object.freeze({
+    ACTIVE: "active",
+    INACTIVE: "inactive",
+    PENDING: "pending",
+    UNREQUESTED: "unrequested",
+});
 export const MAX_VISIT_TITLE_LENGTH = 100;
