@@ -41,6 +41,7 @@ export const THERAPIST_SAFE_SELECT = {
     hipaaAttested: true,
     licenseVerified: true,
     insuranceVerified: true,
+    approvalStatus: true,
     createdAt: true,
 };
 
