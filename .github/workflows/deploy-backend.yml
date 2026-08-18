@@ -11,6 +11,7 @@ on:
       - main
       - staging
       - development
+  workflow_dispatch:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -41,7 +42,7 @@ jobs:
   deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: lint
     permissions:
       contents: read
@@ -93,6 +94,10 @@ jobs:
             echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_PROD" >> $GITHUB_ENV
             echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_PROD" >> $GITHUB_ENV
             echo "POSTHOG_SECRET=POSTHOG_API_KEY" >> $GITHUB_ENV
+            echo "TWILIO_ACCOUNT_SID_SECRET=TWILIO_ACCOUNT_SID_PROD" >> $GITHUB_ENV
+            echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_PROD" >> $GITHUB_ENV
+            echo "TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER_PROD }}" >> $GITHUB_ENV
+            echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_PROD" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "staging" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-staging" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
@@ -122,6 +127,10 @@ jobs:
             echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_STAGING" >> $GITHUB_ENV
             echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_STAGING" >> $GITHUB_ENV
             echo "POSTHOG_SECRET=" >> $GITHUB_ENV
+            echo "TWILIO_ACCOUNT_SID_SECRET=TWILIO_ACCOUNT_SID_STAGING" >> $GITHUB_ENV
+            echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_STAGING" >> $GITHUB_ENV
+            echo "TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER_STAGING }}" >> $GITHUB_ENV
+            echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_STAGING" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "development" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-dev" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-dev@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
@@ -151,6 +160,10 @@ jobs:
             echo "INDIVIDUAL_DOCUMENTS_BUCKET_SECRET=INDIVIDUAL_DOCUMENTS_BUCKET_DEV" >> $GITHUB_ENV
             echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_DEV" >> $GITHUB_ENV
             echo "POSTHOG_SECRET=" >> $GITHUB_ENV
+            echo "TWILIO_ACCOUNT_SID_SECRET=TWILIO_ACCOUNT_SID_DEV" >> $GITHUB_ENV
+            echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_DEV" >> $GITHUB_ENV
+            echo "TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER_DEV }}" >> $GITHUB_ENV
+            echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_DEV" >> $GITHUB_ENV
           fi
 
       - name: Sanitize branch name for image tag
@@ -193,12 +206,15 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Step 1 — Deploy image without VPC (no traffic)
+      - name: Deploy image with VPC (no traffic)
         run: |
           IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ env.BRANCH_TAG }}-${{ github.sha }}"
           SECRETS="DATABASE_URL=${{ env.DB_SECRET }}:latest,DIRECT_DATABASE_URL=${{ env.DIRECT_DB_SECRET }}:latest,SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_ROLE_SECRET }}:latest,STRIPE_SECRET_KEY=${{ env.STRIPE_SECRET }}:latest,STRIPE_WEBHOOK_SECRET=${{ env.STRIPE_WEBHOOK_SECRET }}:latest,STRIPE_WEBHOOK_SECRET_CONNECT=${{ env.STRIPE_WEBHOOK_CONNECT_SECRET }}:latest,RESEND_API_KEY=${{ env.RESEND_SECRET }}:latest,RECAPTCHA_API_KEY=RECAPTCHA_API_KEY:latest,RECAPTCHA_SITE_KEY=RECAPTCHA_SITE_KEY:latest,GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,IDENTITY_PLATFORM_TENANT_ID=${{ env.IDENTITY_PLATFORM_TENANT_SECRET }}:latest,FIREBASE_WEB_API_KEY=FIREBASE_WEB_API_KEY:latest,PROFILE_IMAGES_BUCKET=${{ env.PROFILE_IMAGES_BUCKET_SECRET }}:latest,THERAPIST_DOCUMENTS_BUCKET=${{ env.THERAPIST_DOCUMENTS_BUCKET_SECRET }}:latest,AGENCY_DOCUMENTS_BUCKET=${{ env.AGENCY_DOCUMENTS_BUCKET_SECRET }}:latest,INDIVIDUAL_DOCUMENTS_BUCKET=${{ env.INDIVIDUAL_DOCUMENTS_BUCKET_SECRET }}:latest,MESSAGE_ATTACHMENTS_BUCKET=${{ env.MESSAGE_ATTACHMENTS_BUCKET_SECRET }}:latest,CLOUD_SCHEDULER_SECRET=CLOUD_SCHEDULER_SECRET:latest"
           if [[ -n "${{ env.POSTHOG_SECRET }}" ]]; then
             SECRETS="$SECRETS,POSTHOG_API_KEY=${{ env.POSTHOG_SECRET }}:latest"
+          fi
+          if [[ -n "${{ env.TWILIO_ACCOUNT_SID_SECRET }}" ]]; then
+            SECRETS="$SECRETS,TWILIO_ACCOUNT_SID=${{ env.TWILIO_ACCOUNT_SID_SECRET }}:latest,TWILIO_AUTH_TOKEN=${{ env.TWILIO_AUTH_TOKEN_SECRET }}:latest,TWILIO_MESSAGING_SERVICE_SID=${{ env.TWILIO_MESSAGING_SERVICE_SID_SECRET }}:latest"
           fi
           if [[ "${{ env.IS_PROD }}" == "true" ]]; then
             SERVICE_EXISTS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -222,24 +238,18 @@ jobs:
             --memory=512Mi \
             --cpu=1 \
             --service-account=${{ env.RUNTIME_SA }} \
-            $NO_TRAFFIC_FLAG \
-            --timeout=300 \
-            --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }}" \
-            --set-secrets "$SECRETS" \
-            --quiet
-          echo "Step 1 complete — revision created without VPC"
-
-      - name: Step 2 — Apply VPC egress via services update
-        run: |
-          echo "Waiting 30s before applying VPC config..."
-          sleep 30
-          gcloud run services update ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
             --network=default \
             --subnet=default \
             --vpc-egress=private-ranges-only \
+            $NO_TRAFFIC_FLAG \
+            --async \
+            --timeout=300 \
+            --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }},TWILIO_PHONE_NUMBER=${{ env.TWILIO_PHONE_NUMBER }}" \
+            --set-secrets "$SECRETS" \
             --quiet
-          echo "Step 2 complete — VPC egress applied via update path"
+          echo "Waiting 20s for revision registration..."
+          sleep 20
+          echo "Deploy complete — revision created with VPC"
 
       - name: Health check and traffic switch
         run: |

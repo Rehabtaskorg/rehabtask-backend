@@ -1,8 +1,10 @@
 import { APPROVAL_STATUS, OFFER_STATUS, TIME_MS, BOOKING_STATUS, CUSTOMER_TYPES, LICENSE_TYPE_TO_SERVICE_TYPE } from "../utils/constants.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
 import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDirectRequestNotification } from "./email.service.js";
+import { smsTherDirectOfferReceived } from "./sms.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
@@ -39,6 +41,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
                 id: true,
                 fullName: true,
                 approvalStatus: true,
+                phone: true,
+                smsOptIn: true,
                 user: { select: { email: true } },
             },
         });
@@ -95,18 +99,24 @@ export const createRequest = async (customerId, data, customerProfile) => {
             therapist: directTargetTherapist,
             request,
         }).catch((err) => logger.error("[RequestService] Failed to send direct request notification", { error: err.message }));
+        smsTherDirectOfferReceived(directTargetTherapist, request.id);
     }
 
-    // Notify matching therapists — ONLY for public requests
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {
         const workAreas = await prisma.workArea.findMany({
-            include: { therapist: { include: { user: { select: { email: true } } } } },
+            include: {
+                therapist: {
+                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
+                },
+            },
         });
 
         const matchingTherapists = [];
         const seen = new Set();
         for (const area of workAreas) {
             if (seen.has(area.therapistId)) continue;
+            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
+            if (allowedServiceType !== request.serviceType) continue;
             const distance = haversineDistance(
                 parseFloat(request.latitude), parseFloat(request.longitude),
                 parseFloat(area.latitude), parseFloat(area.longitude)
@@ -144,7 +154,7 @@ export const getCustomerRequests = async (customerId, { status, serviceType, pag
             where,
             include: {
                 visitTypeRef: true,
-                offers: { include: { therapist: true, visitTypeRef: true } },
+                offers: { include: { therapist: { select: THERAPIST_SAFE_SELECT }, visitTypeRef: true } },
                 patient: {
                     select: { id: true, fullName: true, email: true, phone: true }
                 },
@@ -172,12 +182,12 @@ export const getRequestById = async (requestId, userId) => {
         where: { id: requestId },
         include: {
             visitTypeRef: true,
-            customer: { include: { user: true } },
+            customer: { select: CUSTOMER_SAFE_SELECT },
             offers: {
                 where: user?.therapistProfile
                     ? { therapistId: user.therapistProfile.id }
                     : undefined,
-                include: { therapist: true, visitTypeRef: true },
+                include: { therapist: { select: THERAPIST_SAFE_SELECT }, visitTypeRef: true },
                 orderBy: { createdAt: "desc" }
             },
             patient: {
@@ -190,7 +200,10 @@ export const getRequestById = async (requestId, userId) => {
 
     const isCustomer = request.customer.userId === userId;
     const isTargetTherapist = user?.therapistProfile?.id === request.targetTherapistId;
-    const isPublicAndTherapist = request.requestType === "PUBLIC" && !!user?.therapistProfile;
+    const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[user?.therapistProfile?.primaryLicenseType] ?? null;
+    const isPublicAndTherapist = request.requestType === "PUBLIC"
+        && !!user?.therapistProfile
+        && allowedServiceType === request.serviceType;
     const canView = isCustomer || isTargetTherapist || isPublicAndTherapist;
 
     // Use a generic error to avoid leaking the existence of private requests
@@ -256,7 +269,9 @@ export const getAvailableRequests = async (therapistId, { primaryLicenseType, sh
     });
 
     // Filter by work area radius — radiusMiles, if provided, extends (never shrinks) each area's configured radius
+    // DIRECT requests bypass geo-filtering — the customer explicitly chose this therapist regardless of location
     let filteredRequests = requests.filter((request) => {
+        if (request.requestType === "DIRECT") return true;
         const requestLat = parseFloat(request.latitude);
         const requestLng = parseFloat(request.longitude);
         return workAreas.some((area) => {
@@ -430,13 +445,19 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
 
     if (locationChanged && updatedRequest.latitude && updatedRequest.longitude) {
         const workAreas = await prisma.workArea.findMany({
-            include: { therapist: { include: { user: { select: { email: true } } } } },
+            include: {
+                therapist: {
+                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
+                },
+            },
         });
 
         const matchingTherapists = [];
         const seen = new Set();
         for (const area of workAreas) {
             if (seen.has(area.therapistId)) continue;
+            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
+            if (allowedServiceType !== updatedRequest.serviceType) continue;
             const distance = haversineDistance(
                 parseFloat(updatedRequest.latitude), parseFloat(updatedRequest.longitude),
                 parseFloat(area.latitude), parseFloat(area.longitude)
@@ -559,21 +580,34 @@ export const cancelRequest = async (requestId, customerId) => {
  * Get open requests for a specific customer (therapist-facing).
  * Used in the messaging sidebar so therapists can view and make offers
  * on a customer's requests directly from the chat.
+ * PUBLIC requests are geo-filtered to the therapist's work areas.
+ * DIRECT requests addressed to this therapist always appear regardless of location.
  */
-export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId) => {
-    const customerProfile = await prisma.customerProfile.findFirst({
-        where: { userId: customerUserId },
-        select: { id: true },
-    });
+export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistId, primaryLicenseType) => {
+    const [customerProfile, workAreas] = await Promise.all([
+        prisma.customerProfile.findFirst({
+            where: { userId: customerUserId },
+            select: { id: true },
+        }),
+        prisma.workArea.findMany({ where: { therapistId } }),
+    ]);
 
     if (!customerProfile) return [];
+
+    const allowedServiceType = primaryLicenseType
+        ? (LICENSE_TYPE_TO_SERVICE_TYPE[primaryLicenseType] ?? null)
+        : null;
+
+    const publicFilter = allowedServiceType
+        ? { requestType: "PUBLIC", serviceType: allowedServiceType }
+        : null;
 
     const requests = await prisma.therapyRequest.findMany({
         where: {
             customerId: customerProfile.id,
             status: { in: ["created", "offers_received"] },
             OR: [
-                { requestType: "PUBLIC" },
+                ...(publicFilter ? [publicFilter] : []),
                 { requestType: "DIRECT", targetTherapistId: therapistId },
             ],
         },
@@ -588,7 +622,18 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
         take: 5,
     });
 
-    return requests.map(r => ({
+    const filtered = requests.filter((request) => {
+        if (request.requestType === "DIRECT") return true;
+        if (workAreas.length === 0) return false;
+        const requestLat = parseFloat(request.latitude);
+        const requestLng = parseFloat(request.longitude);
+        return workAreas.some((area) => {
+            const distance = haversineDistance(requestLat, requestLng, parseFloat(area.latitude), parseFloat(area.longitude));
+            return distance <= area.radiusMiles;
+        });
+    });
+
+    return filtered.map(r => ({
         id: r.id,
         serviceType: r.serviceType,
         location: r.location,
@@ -598,4 +643,37 @@ export const getOpenRequestsByCustomerUserId = async (customerUserId, therapistI
         myOffer: r.offers[0] ?? null,
         createdAt: r.createdAt,
     }));
+}
+
+/**
+ * Mark the TherapyRequest linked to a booking as completed.
+ *
+ * Called after a booking reaches a terminal state (COMPLETED or FINALIZED).
+ * Resolves the requestId via the booking's offer — one extra DB read, but
+ * isolated here so all 5 finalization paths share a single implementation.
+ *
+ * Idempotent: skips the update if the request is already completed or cancelled.
+ *
+ * @param {string} bookingId
+ * @returns {Promise<void>}
+ */
+export const markLinkedRequestCompleted = async (bookingId) => {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: { offer: { select: { requestId: true } } },
+    });
+
+    const requestId = booking?.offer?.requestId;
+    if (!requestId) {
+        logger.warn("[RequestService] markLinkedRequestCompleted: no requestId found for booking", { bookingId });
+        return;
+    }
+
+    await prisma.therapyRequest.updateMany({
+        where: {
+            id: requestId,
+            status: { notIn: ["completed", "cancelled"] },
+        },
+        data: { status: "completed" },
+    });
 }

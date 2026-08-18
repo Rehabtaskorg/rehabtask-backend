@@ -4,7 +4,7 @@
  */
 import {
     layout, heading, text, muted, button, hr, field, label, value,
-    formatDate, formatCurrency, FRONTEND_URL
+    formatDate, formatCurrency, formatSessionType, formatTherapistName, customerFields, FRONTEND_URL
 } from './layout.js';
 
 // Therapist Welcome (sent on account creation, before onboarding)
@@ -175,16 +175,16 @@ export const newOfferNotification = ({ customer, therapist, offer }) => {
     const expiryDate = offer.expiresAt ? formatDate(offer.expiresAt) : null;
 
     return {
-        subject: `${therapist.fullName} sent you a therapy offer`,
+        subject: `${formatTherapistName(therapist)} sent you a therapy offer`,
         html: layout(`
             ${heading('You Received an Offer')}
             ${text(`Hi ${customer.fullName},`)}
-            ${text(`<strong>${therapist.fullName}</strong> has submitted an offer for your therapy request.`)}
+            ${text(`<strong>${formatTherapistName(therapist)}</strong> has submitted an offer for your therapy request.`)}
             ${hr()}
             <p style="color:#2563EB;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(offer.rate)}</p>
             <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">per session</p>
             ${hr()}
-            ${field('Session Type', offer.sessionType)}
+            ${field('Session Type', formatSessionType(offer.sessionType))}
             ${field('Proposed Date', formatDate(offer.proposedDate))}
             ${offer.description ? field('Details', offer.description) : ''}
             ${expiryDate ? `
@@ -205,9 +205,9 @@ export const offerAccepted = ({ therapist, customer, booking }) => ({
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`Great news — <strong>${customer.fullName}</strong> has accepted your offer and a booking has been confirmed.`)}
         ${hr()}
-        ${field('Customer', customer.fullName)}
+        ${customerFields(customer, booking.patient)}
         ${field('Session Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${text('Please make sure to prepare for the session and review the booking details.')}
@@ -226,9 +226,9 @@ export const paymentConfirmation = ({ customer, booking, payment }) => ({
         <p style="color:#16a34a;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(payment.amount)}</p>
         <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Amount Paid</p>
         ${hr()}
-        ${field('Therapist', booking.therapist?.fullName || 'N/A')}
+        ${field('Therapist', formatTherapistName(booking.therapist))}
         ${field('Session Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Payment Date', formatDate(payment.createdAt))}
         ${hr()}
         ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
@@ -238,8 +238,8 @@ export const paymentConfirmation = ({ customer, booking, payment }) => ({
 
 // Session Reminder (dual: customer + therapist)
 export const sessionReminder = ({ recipient, booking, role }) => {
-    const otherPartyName = role === 'customer'
-        ? (booking.therapist?.fullName || 'your therapist')
+    const otherPartyLabel = role === 'customer'
+        ? formatTherapistName(booking.therapist)
         : (booking.customer?.fullName || 'your customer');
 
     const sessionTime = booking.scheduledDate
@@ -249,18 +249,18 @@ export const sessionReminder = ({ recipient, booking, role }) => {
     return {
         subject: role === 'customer'
             ? 'Reminder: Your therapy session is tomorrow'
-            : `Reminder: Session with ${otherPartyName} is tomorrow`,
+            : `Reminder: Session with ${otherPartyLabel} is tomorrow`,
         html: layout(`
             ${heading('Session Reminder')}
             ${text(`Hi ${recipient.fullName},`)}
             ${text(role === 'customer'
-            ? `This is a reminder that your session with ${otherPartyName} is scheduled for tomorrow.`
-            : `You have a session tomorrow with ${otherPartyName}.`
+            ? `This is a reminder that your session with ${otherPartyLabel} is scheduled for tomorrow.`
+            : `You have a session tomorrow with ${otherPartyLabel}.`
         )}
             ${hr()}
             ${field('Date', formatDate(booking.scheduledDate))}
             ${sessionTime ? field('Time', sessionTime) : ''}
-            ${field('Session Type', booking.sessionType)}
+            ${field('Session Type', formatSessionType(booking.sessionType))}
             ${hr()}
             ${button(`${FRONTEND_URL}/${role}/bookings/${booking.id}`, 'View Details')}
         `),
@@ -269,13 +269,13 @@ export const sessionReminder = ({ recipient, booking, role }) => {
 
 // Session Completion Request (to customer)
 export const sessionCompletionRequest = ({ customer, therapist, session, booking }) => ({
-    subject: `${therapist.fullName} marked your session as complete — please confirm`,
+    subject: `${formatTherapistName(therapist)} marked your session as complete — please confirm`,
     html: layout(`
         ${heading('Please Confirm Your Session')}
         ${text(`Hi ${customer.fullName},`)}
-        ${text(`<strong>${therapist.fullName}</strong> has marked your therapy session as complete. Please confirm that the session took place so we can process the therapist's payment.`)}
+        ${text(`<strong>${formatTherapistName(therapist)}</strong> has marked your therapy session as complete. Please confirm that the session took place so we can process the therapist's payment.`)}
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Rate', formatCurrency(booking.rate))}
         ${field('Completed', formatDate(session.completedAt))}
         ${hr()}
@@ -292,7 +292,7 @@ export const sessionRevisionRequested = ({ therapist, customer, session, booking
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`<strong>${customer.fullName}</strong> reviewed the session you marked complete and would like some changes before confirming.`)}
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Originally Completed', formatDate(session.completedAt))}
         ${hr()}
         ${label('What the customer wants changed')}
@@ -305,13 +305,13 @@ export const sessionRevisionRequested = ({ therapist, customer, session, booking
 
 // Therapist resubmitted the session after a revision (to customer)
 export const sessionRevisionSubmitted = ({ customer, therapist, session, booking }) => ({
-    subject: `${therapist.fullName} resubmitted your session — please review`,
+    subject: `${formatTherapistName(therapist)} resubmitted your session — please review`,
     html: layout(`
         ${heading('Session Resubmitted')}
         ${text(`Hi ${customer.fullName},`)}
-        ${text(`<strong>${therapist.fullName}</strong> has addressed your revision request and resubmitted the session. Please review the updates and confirm or request additional changes.`)}
+        ${text(`<strong>${formatTherapistName(therapist)}</strong> has addressed your revision request and resubmitted the session. Please review the updates and confirm or request additional changes.`)}
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${session.revisionDueBy ? field('Therapist commitment', formatDate(session.revisionDueBy)) : ''}
         ${hr()}
         ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Review Session')}
@@ -327,7 +327,8 @@ export const sessionConfirmed = ({ therapist, customer, booking }) => ({
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`<strong>${customer.fullName}</strong> has confirmed the session. Your payout is now being processed.`)}
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${customerFields(customer, booking.patient)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Gross Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${muted('The final payout amount will reflect the platform fee deduction. You\'ll receive a separate confirmation once the payout has been sent to your Stripe account.')}
@@ -346,7 +347,7 @@ export const payoutConfirmation = ({ therapist, payment, booking }) => ({
         <p style="color:#16a34a;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(payment.therapistPayout)}</p>
         <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Net Payout</p>
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Session Date', formatDate(booking.scheduledDate))}
         ${hr()}
         ${text('Funds typically arrive within 2–3 business days.')}
@@ -366,9 +367,9 @@ export const paymentReleasedToCustomer = ({ customer, therapist, payment, bookin
         <p style="color:#137fec;font-size:32px;font-weight:700;text-align:center;margin:0;">${formatCurrency(payment.amount)}</p>
         <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Payment Released</p>
         ${hr()}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Session Date', formatDate(booking.scheduledDate))}
-        ${field('Therapist', therapist.fullName)}
+        ${field('Therapist', formatTherapistName(therapist))}
         ${hr()}
         ${text('Thank you for using RehabTask. We hope your session went well!')}
         ${button(`${FRONTEND_URL}/customer/payments`, 'View Payments')}
@@ -411,7 +412,7 @@ export const offerDeclined = ({ therapist, customer, offer }) => ({
         ${hr()}
         ${field('Proposed Date', formatDate(offer.proposedDate))}
         ${field('Rate', formatCurrency(offer.rate))}
-        ${field('Session Type', offer.sessionType)}
+        ${field('Session Type', formatSessionType(offer.sessionType))}
         ${hr()}
         ${text('You can continue submitting offers on other open requests.')}
         ${button(`${FRONTEND_URL}/therapist/requests/${offer.requestId}`, 'View Request')}
@@ -460,7 +461,7 @@ export const offerChangeRequested = ({ therapist, customer, offer, note }) => ({
         ${hr()}
         ${field('Proposed Date', formatDate(offer.proposedDate))}
         ${field('Rate', formatCurrency(offer.rate))}
-        ${field('Session Type', offer.sessionType)}
+        ${field('Session Type', formatSessionType(offer.sessionType))}
         ${hr()}
         <div style="background-color:#f6f9fc;padding:16px;border-radius:6px;border-left:4px solid #f59e0b;margin:20px 0;">
             <p style="color:#92400e;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 6px;">Customer's Note</p>
@@ -481,7 +482,7 @@ export const bookingRescheduleProposed = ({ customer, therapist, booking, newDat
         ${hr()}
         ${field('Current Date', formatDate(booking.scheduledDate))}
         ${field('Proposed New Date', formatDate(newDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Rate', formatCurrency(booking.rate))}
         ${hr()}
         ${text('Please review and accept or decline the new proposed date.')}
@@ -498,7 +499,7 @@ export const bookingRescheduleAccepted = ({ therapist, booking }) => ({
         ${text('Your client has accepted the new session date.')}
         ${hr()}
         ${field('New Session Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${hr()}
         ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
     `),
@@ -582,7 +583,7 @@ export const bookingRescheduleDeclined = ({ therapist, booking, reason }) => ({
         ${text('Your client has declined the proposed reschedule. The session will remain on the original date.')}
         ${hr()}
         ${field('Original Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${reason ? `
             <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
                 <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
@@ -602,7 +603,7 @@ export const paymentFailed = ({ customer, booking, reason }) => ({
         ${text('Unfortunately, your payment could not be processed. Your booking has been cancelled.')}
         ${hr()}
         ${field('Session Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${reason ? `${field('Reason', reason)}` : ''}
         ${hr()}
         ${text('Please try again with a different payment method or contact your bank for more details.')}
@@ -646,7 +647,7 @@ export const adminPaymentReleased = ({ therapist, amount, booking }) => ({
         <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Released to your account</p>
         ${hr()}
         ${booking ? field('Session Date', formatDate(booking.scheduledDate)) : ''}
-        ${booking ? field('Session Type', booking.sessionType) : ''}
+        ${booking ? field('Session Type', formatSessionType(booking.sessionType)) : ''}
         ${text('The funds will be deposited into your connected bank account according to your Stripe payout schedule.')}
         ${button(`${FRONTEND_URL}/therapist/earnings`, 'View Earnings')}
     `),
@@ -664,7 +665,7 @@ export const adminPaymentRefunded = ({ customer, amount, booking, reason }) => (
         <p style="color:#6b7280;font-size:13px;text-align:center;margin:4px 0 0;">Refund Amount</p>
         ${hr()}
         ${booking ? field('Session Date', formatDate(booking.scheduledDate)) : ''}
-        ${booking ? field('Session Type', booking.sessionType) : ''}
+        ${booking ? field('Session Type', formatSessionType(booking.sessionType)) : ''}
         ${reason ? `
             <div style="background-color:#eff6ff;border-left:4px solid #3b82f6;padding:16px;border-radius:4px;margin:20px 0;">
                 <p style="color:#1e40af;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
@@ -685,7 +686,7 @@ export const bookingCancelledByAdmin = ({ recipientName, booking, reason, role }
         ${text('An administrator has cancelled the following booking:')}
         ${hr()}
         ${field('Session Date', formatDate(booking.scheduledDate))}
-        ${field('Session Type', booking.sessionType)}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
         ${reason ? `
             <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
                 <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
@@ -754,9 +755,9 @@ export const paymentReminder = ({ customer, therapist, booking, hoursUntilSessio
         html: layout(`
             ${heading('Payment Reminder')}
             ${text(`Hi ${customer.fullName},`)}
-            ${text(`Your session with ${therapist.fullName} is scheduled for <strong>${timeLabel}</strong> but payment has not been completed yet.`)}
+            ${text(`Your session with ${formatTherapistName(therapist)} is scheduled for <strong>${timeLabel}</strong> but payment has not been completed yet.`)}
             ${hr()}
-            ${field('Therapist', therapist.fullName)}
+            ${field('Therapist', formatTherapistName(therapist))}
             ${field('Session Date', formatDate(booking.scheduledDate))}
             ${field('Rate', formatCurrency(booking.rate))}
             ${hr()}
@@ -1114,7 +1115,7 @@ export const cancellationRequestedToTherapist = ({ therapist, customer, booking,
         ${text(`Hi ${therapist.fullName},`)}
         ${text(`<strong>${customer.fullName}</strong> has requested to cancel their booking. You have <strong>24 hours</strong> to approve or reject this request. If you don't respond, the cancellation will be approved automatically.`)}
         ${hr()}
-        ${field('Customer', customer.fullName)}
+        ${customerFields(customer, booking.patient)}
         ${field('Reason', reason || 'No reason provided')}
         ${hr()}
         ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'Review Request')}

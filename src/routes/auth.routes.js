@@ -13,6 +13,10 @@ import {
     refreshTokenController,
     verifyEmailController
 } from "../controllers/auth.controller.js";
+import {
+    acceptAgreementController,
+    getAgreementContentController,
+} from "../controllers/agreement.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { recaptchaMiddleware } from "../middleware/recaptcha.js";
 import { validate } from "../middleware/validate.js";
@@ -130,11 +134,14 @@ router.get("/socket-ticket", authenticate, (req, res) => {
 // Export for socket auth middleware
 export { socketTickets };
 
-// Change password
 router.post(
     "/password/change",
     authenticate,
     validate(changePasswordSchema),
-    changePasswordController);
+    changePasswordController
+);
+
+router.get("/agreement/content", authenticate, getAgreementContentController);
+router.post("/agreement/accept", authenticate, acceptAgreementController);
 
 export default router;

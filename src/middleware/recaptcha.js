@@ -11,10 +11,6 @@ export async function verifyRecaptcha(token, expectedAction = null) {
     const projectId  = process.env.GCP_PROJECT_ID;
 
     if (!apiKey) {
-        if (process.env.NODE_ENV === "development") {
-            console.warn("reCAPTCHA API key not configured - skipping verification in development");
-            return { success: true, score: 1.0, action: expectedAction || "development" };
-        }
         throw new Error("reCAPTCHA API key not configured");
     }
 
@@ -90,12 +86,6 @@ export async function verifyRecaptcha(token, expectedAction = null) {
         };
     } catch (error) {
         console.error("reCAPTCHA verification error:", error);
-
-        if (process.env.NODE_ENV === "development") {
-            console.warn("reCAPTCHA verification failed - allowing in development");
-            return { success: true, score: 0.5, action: "development_fallback" };
-        }
-
         throw new Error("reCAPTCHA verification failed");
     }
 }
@@ -106,11 +96,6 @@ export async function verifyRecaptcha(token, expectedAction = null) {
  */
 export function recaptchaMiddleware(req, res, next) {
     const { recaptchaToken, recaptchaAction } = req.body;
-
-    if (!process.env.RECAPTCHA_API_KEY && process.env.NODE_ENV === "development") {
-        console.warn("reCAPTCHA bypassed in development mode");
-        return next();
-    }
 
     if (!recaptchaToken) {
         return res.status(400).json({

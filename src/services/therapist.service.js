@@ -1,25 +1,61 @@
-import { APPROVAL_STATUS, SESSION_STATUS } from "../utils/constants.js";
+import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES } from "../utils/constants.js";
+import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 
 export const getTherapistProfile = async (userId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { userId },
-        include: {
-            workAreas: true,
-            availability: true,
-            licenseDocuments: {
-                where: { isDeleted: false },
-                orderBy: { uploadedAt: "desc" },
+    const [therapist, completedSessionCount, reviewStats] = await Promise.all([
+        prisma.therapistProfile.findUnique({
+            where: { userId },
+            include: {
+                attributes: true,
+                workAreas: true,
+                availability: true,
+                licenseDocuments: {
+                    where: { isDeleted: false },
+                    orderBy: { uploadedAt: "desc" },
+                },
             },
-        },
-    });
+        }),
+        prisma.session.count({
+            where: {
+                status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
+                booking: { therapist: { userId } },
+            },
+        }),
+        prisma.review.aggregate({
+            where: { therapist: { userId } },
+            _avg: { rating: true },
+            _count: { rating: true },
+        }),
+    ]);
 
     if (!therapist) throw new NotFoundError("Therapist profile not found");
 
-    return therapist;
+    const attrsByCategory = {};
+    for (const attr of therapist.attributes) {
+        if (!attrsByCategory[attr.category]) attrsByCategory[attr.category] = [];
+        attrsByCategory[attr.category].push(attr.value);
+    }
+
+    return {
+        ...therapist,
+        specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
+        languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
+        certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
+        pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
+        populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
+        stats: {
+            completedVisits: completedSessionCount,
+            averageRating: reviewStats._avg.rating
+                ? Math.round(reviewStats._avg.rating * 10) / 10
+                : null,
+            reviewCount: reviewStats._count.rating,
+            memberSince: therapist.createdAt,
+        },
+    };
 }
 
 export const updateTherapistProfile = async (userId, data) => {
@@ -35,7 +71,6 @@ export const updateTherapistProfile = async (userId, data) => {
         );
     }
 
-    // Prevent changing license fields through this endpoint
     const { licenseNumber, licenseState, ...allowedData } = data;
 
     // Cap guard: attemptedVisitRate cannot exceed ratePerVisit.
@@ -159,6 +194,7 @@ export const searchTherapists = async ({
     const where = {
         approvalStatus: APPROVAL_STATUS.APPROVED,
         onboardingComplete: true,
+        user: { isActive: true },
     };
 
     // Multi-value license type filter (comma-separated)
@@ -167,7 +203,9 @@ export const searchTherapists = async ({
         if (types.length === 1) {
             where.primaryLicenseType = { equals: types[0], mode: "insensitive" };
         } else if (types.length > 1) {
-            where.primaryLicenseType = { in: types };
+            where.OR = types.map((t) => ({
+                primaryLicenseType: { equals: t, mode: "insensitive" },
+            }));
         }
     }
 
@@ -206,6 +244,19 @@ export const searchTherapists = async ({
             })
         );
 
+        geoFiltered.forEach((therapist) => {
+            therapist._minDistance = Math.min(
+                ...therapist.workAreas.map((area) =>
+                    haversineDistance(
+                        latitude,
+                        longitude,
+                        parseFloat(area.latitude),
+                        parseFloat(area.longitude)
+                    )
+                )
+            );
+        });
+
         // Apply sorting on the geo-filtered set
         sortTherapists(geoFiltered, sortBy);
 
@@ -217,7 +268,7 @@ export const searchTherapists = async ({
     } else {
         // No location — return all approved therapists, paginated
         // For rating sort, we fetch all and sort post-query (computed field)
-        if (sortBy === "rating") {
+        if (sortBy === "rating" || sortBy === "relevance") {
             const allTherapists = await prisma.therapistProfile.findMany({
                 where,
                 include: {
@@ -307,6 +358,13 @@ function sortTherapists(therapists, sortBy) {
     };
 
     switch (sortBy) {
+        case "relevance":
+            if (therapists.length > 0 && therapists[0]._minDistance !== undefined) {
+                therapists.sort((a, b) => (a._minDistance || 0) - (b._minDistance || 0));
+            } else {
+                therapists.sort((a, b) => getAvgRating(b) - getAvgRating(a));
+            }
+            break;
         case "rating":
             therapists.sort((a, b) => getAvgRating(b) - getAvgRating(a));
             break;
@@ -317,25 +375,33 @@ function sortTherapists(therapists, sortBy) {
             therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             break;
         default:
-            // "relevance" or undefined — keep default order (createdAt desc)
             therapists.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             break;
     }
 }
 
-export const getTherapistPublicProfile = async (therapistId) => {
-    const therapist = await prisma.therapistProfile.findUnique({
-        where: { id: therapistId },
-        include: {
-            workAreas: true,
-            availability: true,
-            reviews: {
-                select: { rating: true },
+export const getTherapistPublicProfile = async (therapistId, viewerUserId = null) => {
+    const [therapist, completedVisitCount, canViewContact] = await Promise.all([
+        prisma.therapistProfile.findUnique({
+            where: { id: therapistId },
+            include: {
+                user: { select: { isActive: true } },
+                attributes: true,
+                workAreas: true,
+                availability: true,
+                reviews: { select: { rating: true } },
             },
-        },
-    });
+        }),
+        prisma.session.count({
+            where: {
+                status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER,
+                booking: { therapist: { id: therapistId } },
+            },
+        }),
+        hasContactAccessByUserId(viewerUserId, therapistId),
+    ]);
 
-    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -350,18 +416,37 @@ export const getTherapistPublicProfile = async (therapistId) => {
             )
             : null;
 
+    const attrsByCategory = {};
+    for (const attr of therapist.attributes) {
+        if (!attrsByCategory[attr.category]) attrsByCategory[attr.category] = [];
+        attrsByCategory[attr.category].push(attr.value);
+    }
+
     return {
         id: therapist.id,
         userId: therapist.userId,
         fullName: therapist.fullName,
-        phone: therapist.phone,
-        specialization: therapist.specialization,
+        ...(canViewContact && { phone: therapist.phone }),
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
+        yearsInHomeHealth: therapist.yearsInHomeHealth,
         primaryLicenseType: therapist.primaryLicenseType,
+        ...(viewerUserId && { npiNumber: therapist.npiNumber }),
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,
+        evaluationRate: therapist.evaluationRate,
+        travelFee: therapist.travelFee,
+        availableFrom: therapist.availableFrom,
+        hipaaAttested: therapist.hipaaAttested,
+        licenseVerified: therapist.licenseVerified,
+        insuranceVerified: therapist.insuranceVerified,
+        memberSince: therapist.createdAt,
+        specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
+        languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
+        certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
+        pastSettings: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING] ?? [],
+        populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
         workAreas: therapist.workAreas.map((wa) => ({
             id: wa.id,
             zipCode: wa.zipCode,
@@ -372,17 +457,24 @@ export const getTherapistPublicProfile = async (therapistId) => {
             radiusMiles: wa.radiusMiles,
         })),
         availability: therapist.availability,
+        stats: {
+            completedVisits: completedVisitCount,
+            averageRating,
+            reviewCount,
+            memberSince: therapist.createdAt,
+        },
         averageRating,
-        reviewCount
+        reviewCount,
     };
 };
 
 export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { id: therapistId },
+        include: { user: { select: { isActive: true } } },
     });
 
-    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+    if (!therapist || therapist.approvalStatus !== APPROVAL_STATUS.APPROVED || therapist.user?.isActive === false) {
         throw new NotFoundError("Therapist not found");
     }
 
@@ -419,19 +511,19 @@ export const getTherapistReviews = async (therapistId, page = 1, limit = 10) => 
 export const getPlatformStats = async () => {
     const [therapistCount, sessionCount, avgRating, distinctCities, distinctStates] = await Promise.all([
         prisma.therapistProfile.count({
-            where: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true },
+            where: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } },
         }),
         prisma.session.count({
             where: { status: SESSION_STATUS.CONFIRMED_BY_CUSTOMER },
         }),
         prisma.review.aggregate({ _avg: { rating: true } }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } } },
             distinct: ["city"],
             select: { city: true },
         }),
         prisma.workArea.findMany({
-            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true } },
+            where: { therapist: { approvalStatus: APPROVAL_STATUS.APPROVED, onboardingComplete: true, user: { isActive: true } } },
             distinct: ["state"],
             select: { state: true },
         }),

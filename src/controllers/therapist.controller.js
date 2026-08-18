@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { USER_ROLES, BOOKING_STATUS } from "../utils/constants.js";
 import {
     getTherapistProfile as getTherapistProfileService,
     updateTherapistProfile as updateTherapistProfileService,
@@ -70,13 +71,13 @@ const searchTherapistsController = async (req, res, next) => {
 const getTherapistPublicProfileController = async (req, res, next) => {
     try {
         const { therapistId } = req.params;
-        const profile = await getTherapistPublicProfileService(therapistId);
+        const viewerUserId = req.user?.id ?? null;
+        const profile = await getTherapistPublicProfileService(therapistId, viewerUserId);
 
-        // If authenticated customer, include reviewable bookings
-        if (req.user && req.user.role === "customer") {
+        if (req.user && req.user.role === USER_ROLES.CUSTOMER) {
             const customerProfile = await prisma.customerProfile.findUnique({
                 where: { userId: req.user.id },
-                select: { id: true }
+                select: { id: true },
             });
 
             if (customerProfile) {
@@ -84,8 +85,8 @@ const getTherapistPublicProfileController = async (req, res, next) => {
                     where: {
                         customerId: customerProfile.id,
                         therapistId: therapistId,
-                        status: "completed",
-                        review: null
+                        status: BOOKING_STATUS.COMPLETED,
+                        review: null,
                     },
                     select: { id: true, scheduledDate: true },
                     orderBy: { scheduledDate: "desc" },

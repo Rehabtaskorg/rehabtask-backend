@@ -138,9 +138,8 @@ export const adminReleaseRemainder = async (paymentId, adminId) => {
 };
 
 /**
- * Admin refund — transfers full payment amount to customer Connect account.
- * Never uses stripe.refunds.create(). If customer has no Connect account,
- * creates a pending_connect CustomerRefund for later transfer.
+ * Admin credit — transfers full payment amount to customer Connect account via Stripe Transfer.
+ * If customer has no Connect account, creates a pending_connect CustomerRefund for later transfer.
  *
  * @param {string} paymentId
  * @param {string} reason
@@ -180,11 +179,25 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
             throw err;
         }
 
+        const nonCancelledCount = booking.sessions?.filter(
+            (s) => s.status !== SESSION_STATUS.CANCELLED
+        ).length ?? 0;
+
         await prisma.$transaction(async (tx) => {
             await tx.payment.update({ where: { id: paymentId }, data: { status: "refunded", refundedAt: new Date() } });
             await tx.booking.update({ where: { id: booking.id }, data: { status: BOOKING_STATUS.CANCELLED } });
             if (booking.sessions?.length > 0) {
                 await tx.session.updateMany({ where: { bookingId: booking.id }, data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason } });
+            }
+            if (nonCancelledCount > 0) {
+                await tx.subscription.updateMany({
+                    where: {
+                        customerId: customer.id,
+                        status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                        sessionsUsed: { gte: nonCancelledCount },
+                    },
+                    data: { sessionsUsed: { decrement: nonCancelledCount } },
+                });
             }
         }, { timeout: 15000 });
 
@@ -208,6 +221,10 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         }
     }
 
+    const nonCancelledEscrowedCount = booking.sessions?.filter(
+        (s) => s.status !== SESSION_STATUS.CANCELLED
+    ).length ?? 0;
+
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({ where: { id: paymentId }, data: { status: "refunded", refundedAt: new Date(), refundedAmount: refundAmount } });
         await tx.booking.update({ where: { id: booking.id }, data: { status: BOOKING_STATUS.CANCELLED } });
@@ -226,6 +243,16 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
                 transferredAt: stripeTransfer ? new Date() : null,
             },
         });
+        if (nonCancelledEscrowedCount > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: nonCancelledEscrowedCount },
+                },
+                data: { sessionsUsed: { decrement: nonCancelledEscrowedCount } },
+            });
+        }
     }, { timeout: 15000 });
 
     sendAdminPaymentRefunded({ customer, amount: refundAmount, booking, reason }).catch(logger.error);

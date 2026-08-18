@@ -1,0 +1,2 @@
+ALTER TABLE "customer_profiles" ADD COLUMN "sms_opt_in" BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE "therapist_profiles" ADD COLUMN "sms_opt_in" BOOLEAN NOT NULL DEFAULT FALSE;

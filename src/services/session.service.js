@@ -1,4 +1,5 @@
 import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -8,6 +9,7 @@ import {
     sendSessionRevisionRequested,
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
+import { smsCustWorkSubmittedForReview, smsTherPaymentReleased } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
 import {
     releaseSessionPayout,
@@ -18,6 +20,7 @@ import {
     sendAttemptedVisitTherapistPayout,
 } from "./email.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { markLinkedRequestCompleted } from "./request.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -96,7 +99,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
     // System message: session_completed
     const completeTherapistUserId = session.booking.therapist.userId;
     const completeCustomerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId)
+    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -119,7 +122,8 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         booking: session.booking
     }).catch((err) => {
         logger.error('[SessionService] Completion request notification failed', { error: err.message });
-    })
+    });
+    smsCustWorkSubmittedForReview(session.booking.customer, session.booking.id);
 
     return updatedSession;
 }
@@ -137,6 +141,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                         include: { user: { select: { id: true, email: true } } }
                     },
                     customer: true,
+                    patient: { select: { id: true, fullName: true } },
                 },
             },
         },
@@ -182,7 +187,11 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         });
         const totalSessions = allSessions.length;
         const confirmedCount = allSessions.filter(s =>
-            s.id === sessionId || s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER
+            s.id === sessionId ||
+            s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER ||
+            s.status === SESSION_STATUS.ATTEMPTED ||
+            s.status === SESSION_STATUS.MISSED ||
+            s.status === SESSION_STATUS.CANCELLED
         ).length;
 
         if (confirmedCount === totalSessions) {
@@ -194,6 +203,12 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
 
         return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
     }, { timeout: 10000 });
+
+    if (updatedSession._allConfirmed) {
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after COMPLETED", { bookingId: session.bookingId, error: err.message })
+        );
+    }
 
     // Event: session.confirmed_by_customer
     logAction({
@@ -212,7 +227,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     const confirmTherapistUserId = session.booking.therapist.user.id;
     const confirmCustomerUserId = session.booking.customer.userId;
     const allDone = updatedSession._allConfirmed;
-    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId)
+    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -257,6 +272,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                 booking: bookingWithTherapist,
                 isLast: updatedSession._allConfirmed,
             });
+            smsTherPaymentReleased(bookingWithTherapist.therapist);
             logger.info("[Session] Per-session payout released", {
                 bookingId: session.bookingId,
                 sessionId,
@@ -354,7 +370,7 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
     // they've already shared with the customer.
     const customerUserId = session.booking.customer.user.id;
     const therapistUserId = session.booking.therapist.user.id;
-    findOrCreateDirectConversation(customerUserId, therapistUserId)
+    findOrCreateDirectConversation(customerUserId, therapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -462,7 +478,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -559,7 +575,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -655,7 +671,7 @@ export const extendRevision = async (sessionId, therapistId) => {
 
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -805,6 +821,9 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after missed FINALIZED", { bookingId: session.bookingId, error: err.message })
+        );
     }
 
     logAction({
@@ -1047,6 +1066,9 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(booking.id).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after attempted FINALIZED", { bookingId: booking.id, error: err.message })
+        );
     }
 
     logAction({
@@ -1076,7 +1098,7 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
     // System message — fire-and-forget
     const therapistUserId = booking.therapist.userId;
     const customerUserId = booking.customer.userId;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -1123,8 +1145,8 @@ export const getSessionById = async (sessionId, userId) => {
         include: {
             booking: {
                 include: {
-                    customer: { include: { user: true } },
-                    therapist: { include: { user: true } },
+                    customer: { select: CUSTOMER_SAFE_SELECT },
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true, user: { select: { id: true, email: true } } } },
                     offer: {
                         include: {
                             request: true,
@@ -1160,7 +1182,7 @@ export const getCustomerSessions = async (customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: true,
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true } },
                     offer: {
                         include: {
                             request: true,

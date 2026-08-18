@@ -34,6 +34,7 @@ model User {
   directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
   uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
+  agreementAcceptances       UnifiedAgreementAcceptance[]
 
   @@index([email])
   @@index([role, isActive])
@@ -47,6 +48,7 @@ model CustomerProfile {
   fullName                 String           @map("full_name") @db.VarChar(255)
   agencyName               String?          @map("agency_name") @db.VarChar(255)
   phone                    String?          @db.VarChar(20)
+  smsOptIn                 Boolean          @default(false) @map("sms_opt_in")
   location                 String?
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
@@ -109,15 +111,17 @@ model Patient {
   dateOfBirth        DateTime?        @map("date_of_birth") @db.Date
   certificationStart DateTime?        @map("certification_start") @db.Date
   certificationEnd   DateTime?        @map("certification_end") @db.Date
+  gender             String?          @db.VarChar(10)
   userId             String?          @unique @map("user_id") @db.VarChar(128)
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  bookingsForPatient Booking[]        @relation("PatientBookings")
-  messagesAbout      Message[]        @relation("PatientMessages")
-  agency             CustomerProfile  @relation("AgencyPatients", fields: [agencyId], references: [id], onDelete: Cascade)
-  user               User?            @relation(fields: [userId], references: [id])
-  requestsForPatient TherapyRequest[] @relation("PatientRequests")
+  bookingsForPatient Booking[]             @relation("PatientBookings")
+  messagesAbout      Message[]             @relation("PatientMessages")
+  conversations      DirectConversation[]  @relation("PatientConversations")
+  agency             CustomerProfile       @relation("AgencyPatients", fields: [agencyId], references: [id], onDelete: Cascade)
+  user               User?                 @relation(fields: [userId], references: [id])
+  requestsForPatient TherapyRequest[]      @relation("PatientRequests")
 
   @@index([agencyId])
   @@index([userId])
@@ -131,6 +135,7 @@ model TherapistProfile {
   userId                   String                 @unique @map("user_id") @db.VarChar(128)
   fullName                 String                 @map("full_name") @db.VarChar(255)
   phone                    String?                @db.VarChar(20)
+  smsOptIn                 Boolean                @default(false) @map("sms_opt_in")
   dateOfBirth              DateTime?              @map("date_of_birth") @db.Date
   addressLine1             String?                @map("address_line_1") @db.VarChar(255)
   addressLine2             String?                @map("address_line_2") @db.VarChar(255)
@@ -166,9 +171,19 @@ model TherapistProfile {
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
   attemptedVisitRate       Decimal?               @map("attempted_visit_rate") @db.Decimal(10, 2)
+  yearsInHomeHealth        Int?                   @map("years_in_home_health")
+  evaluationRate           Decimal?               @map("evaluation_rate") @db.Decimal(10, 2)
+  travelFee                Decimal?               @map("travel_fee") @db.Decimal(10, 2)
+  availableFrom            DateTime?              @map("available_from") @db.Timestamptz(3)
+  caseloadCapacity         Int?                   @map("caseload_capacity")
+  hipaaAttested            Boolean                @default(false) @map("hipaa_attested")
+  hipaaAttestedAt          DateTime?              @map("hipaa_attested_at") @db.Timestamptz(3)
+  licenseVerified          Boolean                @default(false) @map("license_verified")
+  insuranceVerified        Boolean                @default(false) @map("insurance_verified")
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  attributes               TherapistAttribute[]
   availability             Availability[]
   bookings                 Booking[]
   licenseDocuments         LicenseDocument[]
@@ -187,6 +202,20 @@ model TherapistProfile {
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
   @@map("therapist_profiles")
+}
+
+model TherapistAttribute {
+  id           String          @id @default(uuid()) @db.Uuid
+  therapistId  String          @map("therapist_id") @db.Uuid
+  category     String          @db.VarChar(64)
+  value        String          @db.VarChar(128)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@unique([therapistId, category, value])
+  @@index([therapistId, category])
+  @@index([category, value])
+  @@map("therapist_attributes")
 }
 
 model VisitType {
@@ -225,6 +254,7 @@ model LicenseDocument {
   isDeleted     Boolean           @default(false) @map("is_deleted")
   mimeType      String?           @map("mime_type") @db.VarChar(100)
   reject_reason String?
+  // TODO: [NEXT] status/verifiedAt/verifiedBy are provisioned but never written — superseded by TherapistProfile.licenseVerified/insuranceVerified (profile-level flags). Drop in a follow-up migration once a per-document review queue is scoped.
   status        String?           @default("pending") @db.VarChar(20)
   uploadIp      String?           @map("upload_ip") @db.VarChar(45)
   userId        String?           @map("user_id") @db.VarChar(128)
@@ -311,6 +341,7 @@ model Subscription {
   stripeScheduleId     String?            @map("stripe_schedule_id") @db.VarChar(255)
   visitLimit           Int                @map("visit_limit")
   jobPostingLimit      Int                @map("job_posting_limit")
+  sessionsUsed         Int                @default(0) @map("sessions_used")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer             CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -451,8 +482,9 @@ model Session {
   scheduledDate           DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                  SessionStatus
   startedAt               DateTime?     @map("started_at") @db.Timestamptz(3)
-  completedAt             DateTime?     @map("completed_at") @db.Timestamptz(3)
-  confirmedByCustomerAt   DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  completedAt                DateTime?     @map("completed_at") @db.Timestamptz(3)
+  confirmedByCustomerAt      DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  reviewExpirySmsSentAt      DateTime?     @map("review_expiry_sms_sent_at") @db.Timestamptz(3)
   cancellationReason      String?       @map("cancellation_reason")
   cancellationRequestedAt DateTime?     @map("cancellation_requested_at") @db.Timestamptz(3)
   cancellationRequestedBy String?       @map("cancellation_requested_by") @db.VarChar(20)
@@ -584,17 +616,18 @@ model DirectConversation {
   id        String   @id @default(uuid()) @db.Uuid
   user1Id   String   @map("user1_id") @db.VarChar(128)
   user2Id   String   @map("user2_id") @db.VarChar(128)
+  patientId String?  @map("patient_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user1       User                @relation("DirectConvUser1", fields: [user1Id], references: [id])
   user2       User                @relation("DirectConvUser2", fields: [user2Id], references: [id])
+  patient     Patient?            @relation("PatientConversations", fields: [patientId], references: [id], onDelete: SetNull)
   messages    Message[]
   attachments MessageAttachment[]
 
-  @@unique([user1Id, user2Id])
-  @@index([user1Id])
-  @@index([user2Id])
+  @@index([user1Id, user2Id])
+  @@index([patientId])
   @@map("direct_conversations")
 }
 
@@ -1008,4 +1041,19 @@ enum PendingRefundRetryStatus {
   pending
   resolved
   failed
+}
+
+model UnifiedAgreementAcceptance {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.VarChar(128)
+  userRole         String   @map("user_role") @db.VarChar(20)
+  agreementVersion String   @map("agreement_version") @db.VarChar(20)
+  acceptedAt       DateTime @default(now()) @map("accepted_at") @db.Timestamptz(3)
+  ipAddress        String?  @map("ip_address") @db.VarChar(45)
+  userAgent        String?  @map("user_agent") @db.Text
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, agreementVersion])
+  @@index([userId])
+  @@map("unified_agreement_acceptances")
 }

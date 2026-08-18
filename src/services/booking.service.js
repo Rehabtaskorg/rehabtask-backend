@@ -1,11 +1,18 @@
 import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 import {
     sendBookingRescheduleProposed,
     sendBookingRescheduleAccepted,
     sendBookingRescheduleDeclined
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
+
+const BOOKING_THERAPIST_SELECT = {
+    ...THERAPIST_SAFE_SELECT,
+    phone: true,
+    user: { select: { id: true, email: true } },
+};
 
 // Prisma Decimal fields serialize as strings in JSON. Normalize money fields to
 // numbers at the service boundary so consumers never need to parseFloat() themselves.
@@ -25,8 +32,8 @@ export const getBookingById = async (bookingId, userId) => {
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
-            customer: { include: { user: true } },
-            therapist: { include: { user: true } },
+            customer: { select: CUSTOMER_SAFE_SELECT },
+            therapist: { select: BOOKING_THERAPIST_SELECT },
             visitTypeRef: true,
             offer: {
                 include: {
@@ -54,7 +61,11 @@ export const getBookingById = async (bookingId, userId) => {
                 },
             },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
             },
         },
     });
@@ -80,7 +91,17 @@ export const getCustomerBookings = async (customerId) => {
     const bookings = await prisma.booking.findMany({
         where: { customerId },
         include: {
-            therapist: true,
+            customer: {
+                select: {
+                    id: true, fullName: true, customerType: true, agencyName: true, dateOfBirth: true,
+                },
+            },
+            therapist: {
+                select: {
+                    id: true, fullName: true, profilePhotoUrl: true,
+                    primaryLicenseType: true, specialization: true,
+                },
+            },
             visitTypeRef: true,
             offer: {
                 include: {
@@ -90,7 +111,11 @@ export const getCustomerBookings = async (customerId) => {
             },
             payment: { include: { sessionPayouts: true } },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
             },
             sessions: {
                 orderBy: { sessionNumber: "asc" },
@@ -110,7 +135,11 @@ export const getTherapistBookings = async (therapistId) => {
     const bookings = await prisma.booking.findMany({
         where: { therapistId },
         include: {
-            customer: true,
+            customer: {
+                select: {
+                    id: true, fullName: true, customerType: true, agencyName: true, dateOfBirth: true,
+                },
+            },
             visitTypeRef: true,
             offer: {
                 include: {
@@ -124,7 +153,17 @@ export const getTherapistBookings = async (therapistId) => {
                 include: { payout: true },
             },
             patient: {
-                select: { id: true, fullName: true, email: true, phone: true }
+                select: {
+                    id: true, fullName: true, email: true, phone: true,
+                    dateOfBirth: true, certificationStart: true, certificationEnd: true, gender: true,
+                    agency: { select: { agencyName: true } },
+                },
+            },
+            therapist: {
+                select: {
+                    id: true, fullName: true, profilePhotoUrl: true,
+                    primaryLicenseType: true, specialization: true,
+                },
             },
         },
         orderBy: { scheduledDate: "desc" },

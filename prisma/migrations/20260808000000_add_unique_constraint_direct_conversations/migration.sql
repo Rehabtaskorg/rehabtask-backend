@@ -1,0 +1,4 @@
+-- Neutralized: the unique constraint direct_conversations_user1_id_user2_id_key
+-- was dropped by 20260724000000_patient_scoped_conversations and replaced with a
+-- patient-scoped COALESCE expression index. Re-adding it here would defeat
+-- patient-scoped conversations entirely. This migration is intentionally a no-op.

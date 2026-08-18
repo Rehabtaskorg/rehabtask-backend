@@ -36,16 +36,27 @@ export const BOOKING_STATUS = {
 };
 
 export const SESSION_STATUS = {
-    PENDING_SCHEDULE:        "pending_schedule",
-    SCHEDULED:               "scheduled",
-    IN_PROGRESS:             "in_progress",
-    CONFIRMED_BY_CUSTOMER:   "confirmed_by_customer",
-    MISSED:                  "missed",
-    ATTEMPTED:               "attempted",
-    CANCELLED:               "cancelled",
-    COMPLETED:               "completed",
-    CANCELLATION_REQUESTED:  "cancellation_requested",
+    PENDING_SCHEDULE:           "pending_schedule",
+    SCHEDULED:                  "scheduled",
+    IN_PROGRESS:                "in_progress",
+    COMPLETED_BY_THERAPIST:     "completed_by_therapist",
+    CONFIRMED_BY_CUSTOMER:      "confirmed_by_customer",
+    MISSED:                     "missed",
+    ATTEMPTED:                  "attempted",
+    CANCELLED:                  "cancelled",
+    COMPLETED:                  "completed",
+    CANCELLATION_REQUESTED:     "cancellation_requested",
 };
+
+export const CONTACT_UNLOCK_BOOKING_STATUSES = [
+    BOOKING_STATUS.ACCEPTED,
+    BOOKING_STATUS.CONFIRMED,
+    BOOKING_STATUS.IN_PROGRESS,
+    BOOKING_STATUS.RESCHEDULE_REQUESTED,
+    BOOKING_STATUS.CANCELLATION_REQUESTED,
+    BOOKING_STATUS.FINALIZED,
+    BOOKING_STATUS.COMPLETED,
+];
 
 export const OFFER_STATUS = {
     PENDING: "pending",
@@ -151,22 +162,37 @@ export const DOCUMENT_CATEGORIES = Object.freeze({
     license: ["license"],
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
     identity: ["government_id_front", "government_id_back"],
-    compliance: ["w9"],
+    compliance: ["w9", "hipaa_certificate"],
     agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
     individual: ["therapy_order"],
 });
 
-export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
-    INDEPENDENT_CONTRACTOR_AGREEMENT: "independent_contractor_agreement",
-    HIPAA_ACKNOWLEDGMENT: "hipaa_acknowledgment",
-    BACKGROUND_CHECK_AUTHORIZATION: "background_check_authorization",
-    SERVICE_AGREEMENT: "service_agreement",
-    HIPAA_BAA: "hipaa_baa",
+export const THERAPIST_ATTRIBUTE_CATEGORIES = Object.freeze({
+    SPECIALTY:    "specialty",
+    LANGUAGE:     "language",
+    CERTIFICATION:"certification",
+    PAST_SETTING: "past_setting",
+    POPULATION:   "population",
 });
 
-export const INDIVIDUAL_CONSENT_DOCUMENT_TYPES = Object.freeze({
-    HIPAA_CONSENT: "hipaa_consent",
-    TREATMENT_CONSENT: "treatment_consent",
+export const THERAPIST_VERIFICATION_FIELDS = Object.freeze({
+    LICENSE:   "licenseVerified",
+    INSURANCE: "insuranceVerified",
+});
+
+export const THERAPIST_SPECIALTIES    = Object.freeze(["Neuro", "Ortho", "Geriatrics", "Pediatrics", "Lymphedema", "Home Health"]);
+export const THERAPIST_LANGUAGES      = Object.freeze(["English", "Spanish", "French", "Mandarin", "Cantonese", "Arabic", "Portuguese", "Tagalog", "Korean", "Vietnamese", "Russian", "Hindi", "Haitian Creole", "Polish", "Italian", "Japanese"]);
+export const THERAPIST_CERTIFICATIONS = Object.freeze(["LSVT", "NDT", "Wound Care", "VitalStim"]);
+export const THERAPIST_PAST_SETTINGS  = Object.freeze(["SNF", "Outpatient", "Acute Care", "Home Health"]);
+export const THERAPIST_POPULATIONS    = Object.freeze(["Pediatrics", "Geriatrics", "Neurological", "Post-surgical", "Cardiac", "Oncology", "Orthopedic", "Pulmonary"]);
+
+
+export const AGREEMENT_VERSION = "v1.0";
+
+export const AGREEMENT_ROLE_SECTIONS = Object.freeze({
+    therapist: [1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15],
+    customer: [1, 2, 3, 8, 9, 11, 12, 13, 14, 15],
+    agency: [1, 2, 3, 7, 10, 11, 12, 13, 14, 15, 16],
 });
 
 export const NOTIFICATION_DEDUP_WINDOW_MS = 60 * 1000; // 60 seconds
@@ -175,4 +201,11 @@ export const ONE_HOUR_AGO_MS = 60 * 60 * 1000;
 export const REPORT_MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 export const MAX_SEARCH_RADIUS_MILES = 100;
+
+export const STRIPE_CAPABILITY = Object.freeze({
+    ACTIVE: "active",
+    INACTIVE: "inactive",
+    PENDING: "pending",
+    UNREQUESTED: "unrequested",
+});
 export const MAX_VISIT_TITLE_LENGTH = 100;

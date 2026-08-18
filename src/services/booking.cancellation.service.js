@@ -28,6 +28,8 @@ const getBookingForCancellation = async (bookingId) =>
                     id: true,
                     userId: true,
                     fullName: true,
+                    customerType: true,
+                    agencyName: true,
                     stripeAccountId: true,
                     stripeOnboardingComplete: true,
                     user: { select: { email: true } },
@@ -41,6 +43,7 @@ const getBookingForCancellation = async (bookingId) =>
                     user: { select: { email: true } },
                 },
             },
+            patient: { select: { id: true, fullName: true } },
         },
     });
 
@@ -84,11 +87,25 @@ export const requestCancellation = async (bookingId, userId, reason) => {
             logger.warn("[CancellationService] PaymentIntent cancel failed", { bookingId, error: err.message });
         }
 
+        const nonCancelledSessionCount = booking.sessions?.filter(
+            (s) => s.status !== SESSION_STATUS.CANCELLED
+        ).length ?? 0;
+
         await prisma.$transaction(async (tx) => {
             await tx.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
             await tx.booking.update({ where: { id: bookingId }, data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: reason } });
             if (booking.sessions?.length > 0) {
                 await tx.session.updateMany({ where: { bookingId }, data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason } });
+            }
+            if (nonCancelledSessionCount > 0) {
+                await tx.subscription.updateMany({
+                    where: {
+                        customerId: booking.customer.id,
+                        status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                        sessionsUsed: { gte: nonCancelledSessionCount },
+                    },
+                    data: { sessionsUsed: { decrement: nonCancelledSessionCount } },
+                });
             }
         }, { timeout: 15000 });
 
@@ -174,6 +191,10 @@ export const executeCancellationApproval = async (bookingId, { isAuto = false, a
         refundResult = { customerRefund, transfer: stripeTransfer };
     }
 
+    const nonCancelledCount = booking.sessions?.filter(
+        (s) => s.status !== SESSION_STATUS.CANCELLED
+    ).length ?? 0;
+
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({ where: { id: payment.id }, data: { status: "refunded", refundedAt: new Date(), refundedAmount: refundAmount } });
         await tx.booking.update({
@@ -189,6 +210,16 @@ export const executeCancellationApproval = async (bookingId, { isAuto = false, a
             await tx.session.updateMany({
                 where: { bookingId },
                 data: { status: SESSION_STATUS.CANCELLED, cancellationReason: booking.cancellationReason },
+            });
+        }
+        if (nonCancelledCount > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: nonCancelledCount },
+                },
+                data: { sessionsUsed: { decrement: nonCancelledCount } },
             });
         }
     }, { timeout: 15000 });

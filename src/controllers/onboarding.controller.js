@@ -2,7 +2,6 @@ import {
     advanceToFinalReview,
     completeOnboarding,
     deleteDocument,
-    getComplianceContent,
     getDocumentSignedUrl,
     getOnboardingData,
     getOnboardingStatus,
@@ -13,23 +12,19 @@ import {
     saveInsurance,
     savePersonalInfo,
     saveProfessionalProfile,
-    signComplianceDocument,
+    saveHipaaAttestation,
     submitBackgroundCheck,
     getAgencyOnboardingStatus,
     getAgencyOnboardingData,
     saveAgencyBusinessProfile,
     saveAgencyUploadDocuments,
     deleteAgencyDocument,
-    getAgencyComplianceContent,
-    signAgencyComplianceDocument,
     completeAgencyOnboarding,
     getIndividualOnboardingStatus,
     getIndividualOnboardingData,
     saveIndividualPersonalInfo,
     saveIndividualMedicalInfo,
     deleteIndividualDocument,
-    getIndividualConsentContent,
-    signIndividualConsentDocument,
     completeIndividualOnboarding,
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument, uploadIndividualDocument } from "../services/upload.service.js";
@@ -133,14 +128,30 @@ export const savePersonalInfoController = async (req, res, next) => {
  */
 export const saveProfessionalProfileController = async (req, res, next) => {
     try {
-        const { yearsOfExperience, primaryLicenseType, specialization, professionalSummary, profilePhotoUrl } = req.body;
+        const {
+            yearsOfExperience,
+            primaryLicenseType,
+            specialties,
+            languages,
+            certifications,
+            pastSettings,
+            populationExperience,
+            yearsInHomeHealth,
+            professionalSummary,
+            profilePhotoUrl,
+        } = req.body;
 
         const result = await saveProfessionalProfile(req.user.id, {
             yearsOfExperience,
             primaryLicenseType,
-            specialization,
+            specialties,
+            languages,
+            certifications,
+            pastSettings,
+            populationExperience,
+            yearsInHomeHealth,
             professionalSummary,
-            profilePhotoUrl
+            profilePhotoUrl,
         });
 
         res.status(200).json({
@@ -169,20 +180,22 @@ export const saveCredentialsController = async (req, res, next) => {
             licenseDocuments,
             ratePerVisit,
             attemptedVisitRate,
+            evaluationRate,
+            travelFee,
         } = req.body;
         const uploadIp = getClientIp(req);
 
-        const result = await saveCredentials(req.user.id,
-            {
-                licenseNumber,
-                licenseState,
-                npiNumber,
-                additionalLicenseStates,
-                licenseDocuments,
-                ratePerVisit,
-                attemptedVisitRate,
-            }, uploadIp
-        );
+        const result = await saveCredentials(req.user.id, {
+            licenseNumber,
+            licenseState,
+            npiNumber,
+            additionalLicenseStates,
+            licenseDocuments,
+            ratePerVisit,
+            attemptedVisitRate,
+            evaluationRate,
+            travelFee,
+        }, uploadIp);
 
         res.status(200).json({
             success: true,
@@ -203,11 +216,12 @@ export const saveCredentialsController = async (req, res, next) => {
  */
 export const saveAvailabilityController = async (req, res, next) => {
     try {
-        const { schedule, acceptingNewPatients, workAreas } = req.body;
+        const { schedule, availableFrom, caseloadCapacity, workAreas } = req.body;
 
         const result = await saveAvailability(req.user.id, {
             schedule,
-            acceptingNewPatients,
+            availableFrom,
+            caseloadCapacity,
             workAreas: workAreas || [],
         });
 
@@ -270,38 +284,20 @@ export const saveIdentityVerificationController = async (req, res, next) => {
 }
 
 /**
- * GET /api/therapist/onboarding/compliance/content
- * Get the Compliance Forms step's rendered document previews + sign status (Step 7)
+ * POST /api/therapist/onboarding/hipaa
+ * Save HIPAA attestation + optional certificate upload (Step 7)
  */
-export const getComplianceContentController = async (req, res, next) => {
+export const saveHipaaAttestationController = async (req, res, next) => {
     try {
-        const result = await getComplianceContent(req.user.id);
+        const { attested, document } = req.body;
+        const uploadIp = getClientIp(req);
 
-        res.status(200).json({
-            success: true,
-            data: result,
-        });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * POST /api/therapist/onboarding/compliance/sign
- * Record a signature on one of the 3 Compliance Forms e-signature documents (Step 7)
- */
-export const signComplianceController = async (req, res, next) => {
-    try {
-        const { documentType, signature } = req.body;
-
-        const result = await signComplianceDocument(req.user.id, { documentType, signature });
+        const result = await saveHipaaAttestation(req.user.id, { attested, document }, uploadIp);
 
         res.status(200).json({
             success: true,
             message: result.message,
-            data: {
-                therapist: result.therapist,
-            },
+            data: { therapist: result.therapist },
         });
     } catch (error) {
         next(error);
@@ -335,7 +331,7 @@ export const submitBackgroundCheckController = async (req, res, next) => {
 
 /**
  * POST /api/therapist/onboarding/advance-to-review
- * Advance to Final Review (step 9) after Stripe is finished or skipped
+ * Advance to Final Review (step 8) after Stripe is finished or skipped
  */
 export const advanceToFinalReviewController = async (req, res, next) => {
     try {
@@ -521,33 +517,6 @@ export const deleteAgencyDocumentController = async (req, res, next) => {
 };
 
 /**
- * GET /api/agency/onboarding/compliance/content/:documentType
- * Return the rendered preview text for one agency compliance document.
- */
-export const getAgencyComplianceContentController = async (req, res, next) => {
-    try {
-        const result = await getAgencyComplianceContent(req.user.id, req.params.documentType);
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * POST /api/agency/onboarding/compliance/sign
- * Record an agency's signature on a compliance document.
- */
-export const signAgencyComplianceController = async (req, res, next) => {
-    try {
-        const { documentType, signature } = req.body;
-        const result = await signAgencyComplianceDocument(req.user.id, { documentType, signature });
-        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
  * POST /api/agency/onboarding/complete
  * Complete agency onboarding — sets approvalStatus approved + onboardingComplete true.
  */
@@ -627,31 +596,6 @@ export const deleteIndividualDocumentController = async (req, res, next) => {
     try {
         const result = await deleteIndividualDocument(req.user.id, req.params.documentId);
         res.status(200).json({ success: true, message: result.message });
-    } catch (error) {
-        next(error);
-    }
-};
-
-export const getIndividualConsentContentController = async (req, res, next) => {
-    try {
-        const result = await getIndividualConsentContent(req.user.id, req.params.documentType);
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-export const signIndividualConsentController = async (req, res, next) => {
-    try {
-        const { documentType, signature, representativeName, representativeRelationship, representativeAuthority } = req.body;
-        const result = await signIndividualConsentDocument(req.user.id, {
-            documentType,
-            signature,
-            representativeName,
-            representativeRelationship,
-            representativeAuthority,
-        });
-        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
     } catch (error) {
         next(error);
     }

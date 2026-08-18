@@ -1,6 +1,11 @@
-import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
-import { prisma } from "../config/prisma.js"
+import { USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
+import { prisma } from "../config/prisma.js";
+import {
+    queryLatestMessagesPerConversation,
+    queryContextMessagesPerConversation,
+} from "./message.queries.js";
 import { sendNewMessageNotification } from "./email.service.js";
+import { smsTherNewMessage, smsCustNewMessage } from "./sms.service.js";
 import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js"
 import { getIO } from "../socket/index.js";
@@ -16,25 +21,30 @@ const emitToRoom = (room, event, payload) => {
     io.to(room).emit(event, payload);
 };
 
-export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
+/**
+ * @param {string} userIdA
+ * @param {string} userIdB
+ * @param {string|null} [patientId]
+ * @returns {Promise<import("@prisma/client").DirectConversation>}
+ */
+export const findOrCreateDirectConversation = async (userIdA, userIdB, patientId = null) => {
     const [user1Id, user2Id] = userIdA < userIdB
         ? [userIdA, userIdB]
         : [userIdB, userIdA];
 
-    const existing = await prisma.directConversation.findUnique({
-        where: { user1Id_user2Id: { user1Id, user2Id } },
+    const existing = await prisma.directConversation.findFirst({
+        where: { user1Id, user2Id, patientId: patientId ?? null },
     });
     if (existing) return existing;
 
     try {
         return await prisma.directConversation.create({
-            data: { user1Id, user2Id },
+            data: { user1Id, user2Id, patientId: patientId ?? null },
         });
     } catch (err) {
-        // P2002 = unique constraint violation — another request created it first
         if (err.code === "P2002") {
-            const found = await prisma.directConversation.findUnique({
-                where: { user1Id_user2Id: { user1Id, user2Id } },
+            const found = await prisma.directConversation.findFirst({
+                where: { user1Id, user2Id, patientId: patientId ?? null },
             });
             if (found) return found;
         }
@@ -133,10 +143,28 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
     const unreadCount = await getUnreadCount(recipientId);
     emitToRoom(`user:${recipientId}`, "message:unread_update", { count: unreadCount });
 
-    // Email notification — fire and forget, non-blocking
+    // Email + SMS notification — fire and forget, non-blocking
+    // Both gate on shouldEmailNotify (first unread only) to prevent notification spam
     if (!isRecipientOnline && shouldEmailNotify) {
         sendNewMessageNotification({ message, recipientId }).catch((err) => {
             logger.error("[MessageService] Email notification failed", { error: err.message });
+        });
+
+        prisma.user.findUnique({
+            where: { id: recipientId },
+            select: {
+                role: true,
+                therapistProfile: { select: { phone: true, smsOptIn: true } },
+                customerProfile: { select: { phone: true, smsOptIn: true } },
+            },
+        }).then((recipient) => {
+            if (recipient?.role === USER_ROLES.THERAPIST) {
+                smsTherNewMessage(recipient.therapistProfile);
+            } else if (recipient?.role === USER_ROLES.CUSTOMER) {
+                smsCustNewMessage(recipient.customerProfile);
+            }
+        }).catch((err) => {
+            logger.error("[MessageService] SMS notification failed", { error: err.message });
         });
     }
 
@@ -331,7 +359,7 @@ export const getUserPublicInfo = async (requesterId, targetUserId) => {
  * The "currentContext" badge (booking > offer > direct) is derived from the most recent
  * non-system message that has a bookingId or offerId. If neither exists, it's "direct".
  */
-export const getUserConversations = async (userId, callerRole = "customer") => {
+export const getUserConversations = async (userId) => {
     const userSelect = {
         id: true,
         role: true,
@@ -347,6 +375,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         include: {
             user1: { select: userSelect },
             user2: { select: userSelect },
+            patient: { select: { id: true, fullName: true } },
         },
     });
 
@@ -357,63 +386,20 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
     // 2. Fetch the latest message per conversation (single query, partitioned by conversationId)
     //    Also fetch the latest context-bearing message (bookingId or offerId set) for the badge.
     //    And unread counts per conversation.
-    const isCustomer = callerRole === USER_ROLES.CUSTOMER;
-
-    const [latestMessages, unreadCounts, contextMessages, patientMessages] = await Promise.all([
-        // Latest message per conversation
-        prisma.$queryRaw`
-            SELECT DISTINCT ON (conversation_id)
-                id, sender_id AS "senderId", content, created_at AS "createdAt",
-                read_at AS "readAt", conversation_id AS "conversationId", system_type AS "systemType",
-                EXISTS (
-                    SELECT 1 FROM message_attachments WHERE message_id = messages.id
-                ) AS "hasAttachments"
-            FROM messages
-            WHERE conversation_id = ANY(${conversationIds}::uuid[])
-            ORDER BY conversation_id, created_at DESC
-        `,
-        // Unread counts per conversation
+    const [latestMessages, unreadCounts, contextMessages] = await Promise.all([
+        queryLatestMessagesPerConversation(conversationIds),
         prisma.message.groupBy({
             by: ["conversationId"],
-            where: {
-                conversationId: { in: conversationIds },
-                recipientId: userId,
-                readAt: null,
-                systemType: null,
-            },
+            where: { conversationId: { in: conversationIds }, recipientId: userId, readAt: null, systemType: null },
             _count: { id: true },
         }),
-        // Latest context-bearing message per conversation (for badge: booking > offer > direct)
-        prisma.$queryRaw`
-            SELECT DISTINCT ON (conversation_id)
-                conversation_id AS "conversationId",
-                offer_id AS "offerId",
-                booking_id AS "bookingId",
-                patient_id AS "patientId"
-            FROM messages
-            WHERE conversation_id = ANY(${conversationIds}::uuid[])
-              AND (offer_id IS NOT NULL OR booking_id IS NOT NULL)
-            ORDER BY conversation_id, created_at DESC
-        `,
-        // Patient info only for customers — therapists must not see patient PHI
-        isCustomer
-            ? prisma.$queryRaw`
-                SELECT DISTINCT ON (conversation_id)
-                    conversation_id AS "conversationId",
-                    patient_id AS "patientId"
-                FROM messages
-                WHERE conversation_id = ANY(${conversationIds}::uuid[])
-                  AND patient_id IS NOT NULL
-                ORDER BY conversation_id, created_at DESC
-              `
-            : Promise.resolve([]),
+        queryContextMessagesPerConversation(conversationIds),
     ]);
 
     // Build lookup maps
     const lastMsgMap = new Map(latestMessages.map(m => [m.conversationId, m]));
     const unreadMap = new Map(unreadCounts.map(u => [u.conversationId, u._count.id]));
     const contextMap = new Map(contextMessages.map(c => [c.conversationId, c]));
-    const patientMap = new Map(patientMessages.map(p => [p.conversationId, p.patientId]));
 
     // 3. If any conversations have context (offer/booking), fetch those entities for badge data
     const offerIds = new Set();
@@ -423,7 +409,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         else if (ctx.offerId) offerIds.add(ctx.offerId);
     }
 
-    const [offers, bookings, patients] = await Promise.all([
+    const [offers, bookings] = await Promise.all([
         offerIds.size > 0
             ? prisma.offer.findMany({
                 where: { id: { in: Array.from(offerIds) } },
@@ -436,17 +422,10 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
                 select: { id: true, status: true, scheduledDate: true, sessionType: true },
             })
             : [],
-        patientMap.size > 0
-            ? prisma.patient.findMany({
-                where: { id: { in: Array.from(patientMap.values()).filter(Boolean) } },
-                select: { id: true, fullName: true },
-            })
-            : [],
     ]);
 
     const offerMap = new Map(offers.map(o => [o.id, o]));
     const bookingMap = new Map(bookings.map(b => [b.id, b]));
-    const patientDataMap = new Map(patients.map(p => [p.id, p]));
 
     // 4. Assemble the response
     const result = conversations.map(conv => {
@@ -454,8 +433,7 @@ export const getUserConversations = async (userId, callerRole = "customer") => {
         const lastMsg = lastMsgMap.get(conv.id);
         const unreadCount = unreadMap.get(conv.id) ?? 0;
         const ctx = contextMap.get(conv.id);
-        const patientId = isCustomer ? patientMap.get(conv.id) : null;
-        const patient = patientId ? patientDataMap.get(patientId) ?? null : null;
+        const patient = conv.patient ?? null;
 
         // Determine badge context: booking > offer > direct
         let currentContext;

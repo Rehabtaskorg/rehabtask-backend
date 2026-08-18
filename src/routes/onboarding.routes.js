@@ -3,18 +3,17 @@ import {
     advanceToFinalReviewController,
     completeOnboardingController,
     deleteDocumentController,
-    getComplianceContentController,
     getDocumentSignedUrlController,
     getOnboardingDataController,
     getOnboardingStatusController,
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveHipaaAttestationController,
     saveIdentityVerificationController,
     saveInsuranceController,
     savePersonalInfoController,
     saveProfessionalProfileController,
-    signComplianceController,
     submitBackgroundCheckController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
@@ -24,9 +23,9 @@ import {
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
+    hipaaSchema,
     insuranceSchema,
     identitySchema,
-    signComplianceSchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
 import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
@@ -103,17 +102,12 @@ router.post(
 );
 
 /**
- * GET /api/therapist/onboarding/compliance/content
- */
-router.get("/compliance/content", getComplianceContentController);
-
-/**
- * POST /api/therapist/onboarding/compliance/sign
+ * POST /api/therapist/onboarding/hipaa
  */
 router.post(
-    "/compliance/sign",
-    validate(signComplianceSchema),
-    signComplianceController
+    "/hipaa",
+    validate(hipaaSchema),
+    saveHipaaAttestationController
 );
 
 /**

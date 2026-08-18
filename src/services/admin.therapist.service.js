@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS } from "../utils/constants.js";
+import { APPROVAL_STATUS, THERAPIST_VERIFICATION_FIELDS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -35,6 +35,7 @@ export const listTherapists = async ({
                         id: true,
                         fullName: true,
                         phone: true,
+                        profilePhotoUrl: true,
                         approvalStatus: true,
                         approvedAt: true,
                         rejectionReason: true,
@@ -152,6 +153,38 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
     });
     return therapist;
 }
+
+export const updateTherapistVerification = async (therapistUserId, field, value, adminId) => {
+    if (!Object.values(THERAPIST_VERIFICATION_FIELDS).includes(field)) {
+        throw new BadRequestError("Invalid verification field");
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: therapistUserId },
+        include: { therapistProfile: true },
+    });
+    if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
+
+    const therapist = await prisma.therapistProfile.update({
+        where: { userId: therapistUserId },
+        data: { [field]: value },
+        select: {
+            id: true,
+            fullName: true,
+            licenseVerified: true,
+            insuranceVerified: true,
+        },
+    });
+
+    logger.info("[AdminTherapistService] Verification updated", {
+        therapistUserId,
+        field,
+        value,
+        byAdmin: adminId,
+    });
+
+    return therapist;
+};
 
 export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({

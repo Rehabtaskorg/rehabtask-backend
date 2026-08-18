@@ -1,12 +1,10 @@
 import { prisma } from "../config/prisma.js";
 import { getActiveSubscription } from "../services/subscription.service.js";
-import { BOOKING_STATUS } from "../utils/constants.js";
 
 /**
  * Middleware: Enforce visit limit based on subscription plan.
  * Applied to POST /offers/:offerId/accept
- * A visit = a booking that reaches confirmed status.
- * Count resets on currentPeriodStart (falls back to subscription createdAt for Free plan).
+ * Reads sessionsUsed directly from the subscription record — no aggregation query.
  */
 export const enforceVisitLimit = async (req, res, next) => {
     try {
@@ -17,23 +15,13 @@ export const enforceVisitLimit = async (req, res, next) => {
 
         if (subscription.visitLimit >= 999999) return next();
 
-        const periodStart = subscription.currentPeriodStart ?? subscription.createdAt;
-
-        const visitCount = await prisma.booking.count({
-            where: {
-                customerId,
-                status: BOOKING_STATUS.CONFIRMED,
-                createdAt: { gte: periodStart },
-            },
-        });
-
-        if (visitCount >= subscription.visitLimit) {
+        if (subscription.sessionsUsed >= subscription.visitLimit) {
             return res.status(403).json({
                 success: false,
                 code: "VISIT_LIMIT_REACHED",
-                message: `You've reached your visit limit (${visitCount}/${subscription.visitLimit}) for this billing period. Upgrade your plan to continue.`,
+                message: `You've reached your visit limit (${subscription.sessionsUsed}/${subscription.visitLimit}) for this billing period. Upgrade your plan to continue.`,
                 limit: subscription.visitLimit,
-                current: visitCount,
+                current: subscription.sessionsUsed,
                 planType: subscription.planType,
             });
         }
