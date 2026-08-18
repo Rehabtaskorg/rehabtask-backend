@@ -626,7 +626,7 @@ model DirectConversation {
   messages    Message[]
   attachments MessageAttachment[]
 
-  @@unique([user1Id, user2Id])
+  @@index([user1Id, user2Id])
   @@index([patientId])
   @@map("direct_conversations")
 }
