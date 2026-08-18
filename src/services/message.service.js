@@ -527,14 +527,14 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
         throw new BadRequestError("Only customers and therapists can send direct messages");
     }
 
-    // Normalize user order — smaller UUID as user1 for unique constraint
+    // Normalize user order for the existence probe
     const [user1Id, user2Id] = senderId < recipientId
         ? [senderId, recipientId]
         : [recipientId, senderId];
 
-    // Get or create the DirectConversation (race-safe with try/catch on unique constraint)
-    let conversation = await prisma.directConversation.findUnique({
-        where: { user1Id_user2Id: { user1Id, user2Id } },
+    // Probe for existing direct (non-patient-scoped) conversation
+    let conversation = await prisma.directConversation.findFirst({
+        where: { user1Id, user2Id, patientId: null },
     });
 
     if (!conversation) {
@@ -543,21 +543,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
             throw new AuthorizationError("Therapists cannot initiate direct conversations. The customer must message you first.");
         }
 
-        try {
-            conversation = await prisma.directConversation.create({
-                data: { user1Id, user2Id },
-            });
-        } catch (err) {
-            // P2002 = unique constraint violation — another request created it first, just fetch it
-            if (err.code === "P2002") {
-                conversation = await prisma.directConversation.findUnique({
-                    where: { user1Id_user2Id: { user1Id, user2Id } },
-                });
-                if (!conversation) throw new BadRequestError("Failed to create conversation");
-            } else {
-                throw err;
-            }
-        }
+        conversation = await findOrCreateDirectConversation(senderId, recipientId, null);
     } else if (sender.role === USER_ROLES.THERAPIST) {
         // Therapist replying — verify customer has sent at least one message
         const customerMessage = await prisma.message.findFirst({
