@@ -95,6 +95,9 @@ jobs:
             echo "MESSAGE_ATTACHMENTS_BUCKET_SECRET=MESSAGE_ATTACHMENTS_BUCKET_PROD" >> $GITHUB_ENV
             echo "POSTHOG_SECRET=POSTHOG_API_KEY" >> $GITHUB_ENV
             echo "TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER_PROD }}" >> $GITHUB_ENV
+            echo "TWILIO_ACCOUNT_SID_SECRET=TWILIO_ACCOUNT_SID_PROD" >> $GITHUB_ENV
+            echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_PROD" >> $GITHUB_ENV
+            echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_PROD" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "staging" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-staging" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
