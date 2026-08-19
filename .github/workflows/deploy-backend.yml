@@ -98,6 +98,8 @@ jobs:
             echo "TWILIO_ACCOUNT_SID_SECRET=TWILIO_ACCOUNT_SID_PROD" >> $GITHUB_ENV
             echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_PROD" >> $GITHUB_ENV
             echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_PROD" >> $GITHUB_ENV
+            echo "SMS_ENVIRONMENT=production" >> $GITHUB_ENV
+            echo "TEST_SMS_ALLOWED_NUMBERS=" >> $GITHUB_ENV
           elif [[ "${{ github.ref_name }}" == "staging" ]]; then
             echo "SERVICE_NAME=rehabtask-backend-staging" >> $GITHUB_ENV
             echo "RUNTIME_SA=rehabtask-backend-staging@rehabtask-db9bb.iam.gserviceaccount.com" >> $GITHUB_ENV
@@ -164,6 +166,8 @@ jobs:
             echo "TWILIO_AUTH_TOKEN_SECRET=TWILIO_AUTH_TOKEN_DEV" >> $GITHUB_ENV
             echo "TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER_DEV }}" >> $GITHUB_ENV
             echo "TWILIO_MESSAGING_SERVICE_SID_SECRET=TWILIO_MESSAGING_SERVICE_SID_DEV" >> $GITHUB_ENV
+            echo "SMS_ENVIRONMENT=development" >> $GITHUB_ENV
+            echo "TEST_SMS_ALLOWED_NUMBERS_SECRET=TEST_SMS_ALLOWED_NUMBERS_DEV" >> $GITHUB_ENV
           fi
 
       - name: Sanitize branch name for image tag
@@ -216,6 +220,9 @@ jobs:
           if [[ -n "${{ env.TWILIO_ACCOUNT_SID_SECRET }}" ]]; then
             SECRETS="$SECRETS,TWILIO_ACCOUNT_SID=${{ env.TWILIO_ACCOUNT_SID_SECRET }}:latest,TWILIO_AUTH_TOKEN=${{ env.TWILIO_AUTH_TOKEN_SECRET }}:latest,TWILIO_MESSAGING_SERVICE_SID=${{ env.TWILIO_MESSAGING_SERVICE_SID_SECRET }}:latest"
           fi
+          if [[ -n "${{ env.TEST_SMS_ALLOWED_NUMBERS_SECRET }}" ]]; then
+            SECRETS="$SECRETS,TEST_SMS_ALLOWED_NUMBERS=${{ env.TEST_SMS_ALLOWED_NUMBERS_SECRET }}:latest"
+          fi
           if [[ "${{ env.IS_PROD }}" == "true" ]]; then
             SERVICE_EXISTS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
@@ -244,7 +251,7 @@ jobs:
             $NO_TRAFFIC_FLAG \
             --async \
             --timeout=300 \
-            --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }},TWILIO_PHONE_NUMBER=${{ env.TWILIO_PHONE_NUMBER }}" \
+            --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }},TWILIO_PHONE_NUMBER=${{ env.TWILIO_PHONE_NUMBER }},SMS_ENVIRONMENT=${{ env.SMS_ENVIRONMENT }}" \
             --set-secrets "$SECRETS" \
             --quiet
           echo "Waiting 20s for revision registration..."

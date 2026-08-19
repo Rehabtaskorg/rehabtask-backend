@@ -1,5 +1,5 @@
 import twilio from "twilio";
-import { env } from "../config/env.js";
+import { env, SMS_ENVIRONMENT, TEST_SMS_ALLOWED_NUMBERS } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
 
@@ -33,6 +33,21 @@ export const sendSms = async ({ to, body }) => {
     if (!smsEnabled()) {
         logger.info("[SmsService] Skipping — credentials not configured or NODE_ENV=test");
         return;
+    }
+
+    if (!to.startsWith("+1")) {
+        logger.warn("[SmsService] SMS BLOCKED – UNSUPPORTED COUNTRY", { to });
+        return;
+    }
+
+    if (SMS_ENVIRONMENT !== "production") {
+        const allowlist = TEST_SMS_ALLOWED_NUMBERS
+            ? TEST_SMS_ALLOWED_NUMBERS.split(",").map((n) => n.trim())
+            : [];
+        if (!allowlist.includes(to)) {
+            logger.warn("[SmsService] SMS BLOCKED – NON-TEST NUMBER", { to });
+            return;
+        }
     }
 
     const message = await getClient().messages.create({
