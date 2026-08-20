@@ -7,6 +7,7 @@ import { sendOfferAccepted } from "./email.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 import { getActiveSubscription } from "./subscription.service.js";
 import { APIError } from "../utils/errors.js";
+import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 
 /**
  * @param {string} offerId
@@ -81,7 +82,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     numberOfWeeks: effectivePlan.numberOfWeeks,
                 },
                 include: {
-                    therapist: { include: { user: { select: { id: true, email: true } } } },
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
                     customer: { include: { user: { select: { id: true, email: true } } } },
                     offer: { include: { request: true } },
                     patient: { select: { id: true, fullName: true } },
@@ -92,7 +93,7 @@ export const acceptOffer = async (offerId, customerId) => {
                 txBooking = await tx.booking.findFirst({
                     where: { offerId: offer.id },
                     include: {
-                        therapist: { include: { user: { select: { id: true, email: true } } } },
+                        therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
                         customer: { include: { user: { select: { id: true, email: true } } } },
                         offer: { include: { request: true } },
                         patient: { select: { id: true, fullName: true } },
