@@ -1,5 +1,5 @@
 import { OFFER_STATUS, BOOKING_STATUS } from "../utils/constants.js";
-import { THERAPIST_SAFE_SELECT, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
+import { THERAPIST_SAFE_SELECT, therapistSelectFor, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { addHours } from "date-fns";
 import {
@@ -91,7 +91,7 @@ export const createOffer = async (therapistId, data) => {
         },
         include: {
             visitTypeRef: true,
-            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true, user: { select: { id: true } } } },
+            therapist: { select: { ...therapistSelectFor(true), user: { select: { id: true } } } },
             request: {
                 include: {
                     visitTypeRef: true,
@@ -204,7 +204,7 @@ export const getOfferById = async (offerId, userId) => {
                     },
                 },
             },
-            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true } },
+            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true } },
         }
     });
 
@@ -223,16 +223,19 @@ export const getOfferById = async (offerId, userId) => {
         throw err;
     }
 
-    const canViewContact = await hasContactAccessByProfileId(
+    const canViewContact = isTherapist || await hasContactAccessByProfileId(
         offer.request.customer.id,
         offer.therapistId
     );
 
-    const { phone, ...therapistWithoutPhone } = offer.therapist;
-    return {
-        ...offer,
-        therapist: canViewContact ? offer.therapist : therapistWithoutPhone,
-    };
+    if (!canViewContact) return offer;
+
+    const therapistWithPhone = await prisma.therapistProfile.findUnique({
+        where: { id: offer.therapistId },
+        select: therapistSelectFor(true),
+    });
+
+    return { ...offer, therapist: therapistWithPhone };
 }
 
 /**
@@ -305,7 +308,7 @@ export const reviseOffer = async (therapistId, offerId, data) => {
         },
         include: {
             visitTypeRef: true,
-            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true } },
+            therapist: { select: therapistSelectFor(true) },
             request: {
                 include: {
                     visitTypeRef: true,
@@ -551,7 +554,7 @@ export const withdrawOffer = async (offerId, therapistId) => {
                     },
                 },
             },
-            therapist: { select: { ...THERAPIST_SAFE_SELECT, userId: true, phone: true, smsOptIn: true } },
+            therapist: { select: { ...therapistSelectFor(true), smsOptIn: true } },
         },
     });
 
