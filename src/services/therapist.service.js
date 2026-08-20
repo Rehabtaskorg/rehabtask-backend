@@ -426,6 +426,7 @@ export const getTherapistPublicProfile = async (therapistId, viewerUserId = null
         id: therapist.id,
         userId: therapist.userId,
         fullName: therapist.fullName,
+        canViewContact,
         ...(canViewContact && { phone: therapist.phone }),
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
