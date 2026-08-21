@@ -1,9 +1,19 @@
 import { z } from "zod";
 
+const preferredDateField = z.string()
+    .regex(
+        /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/,
+        "Preferred date must be a valid date"
+    )
+    .refine(
+        (val) => new Date(val).getTime() >= Date.now() - 24 * 60 * 60 * 1000,
+        "Preferred date cannot be in the past"
+    );
+
 export const createRequestSchema = z.object({
     serviceType: z.string().trim().min(1, "Service type is required").max(100),
     description: z.string().trim().min(10, "Description must be at least 10 characters"),
-    preferredDate: z.string().min(1, "Preferred date is required"),
+    preferredDate: preferredDateField,
     location: z.string().trim().min(1, "Location is required"),
     latitude: z.number({ coerce: true }),
     longitude: z.number({ coerce: true }),
@@ -27,7 +37,7 @@ export const createRequestSchema = z.object({
 export const updateRequestSchema = z.object({
     serviceType: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().min(10, "Description must be at least 10 characters").optional(),
-    preferredDate: z.string().min(1).optional(),
+    preferredDate: preferredDateField.optional(),
     location: z.string().trim().min(1).optional(),
     latitude: z.number({ coerce: true }).optional(),
     longitude: z.number({ coerce: true }).optional(),
