@@ -138,10 +138,26 @@ export const getCustomerDetail = async (customerUserId) => {
                     agencyLicenseDocuments: {
                         where: { isDeleted: false },
                         orderBy: { uploadedAt: "desc" },
+                        select: {
+                            id: true,
+                            fileName: true,
+                            documentType: true,
+                            fileSize: true,
+                            mimeType: true,
+                            uploadedAt: true,
+                        },
                     },
                     customerLicenseDocuments: {
                         where: { isDeleted: false },
                         orderBy: { uploadedAt: "desc" },
+                        select: {
+                            id: true,
+                            fileName: true,
+                            documentType: true,
+                            fileSize: true,
+                            mimeType: true,
+                            uploadedAt: true,
+                        },
                     },
                     agencyComplianceSignatures: {
                         orderBy: { signedAt: "desc" },
