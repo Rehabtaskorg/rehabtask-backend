@@ -1315,3 +1315,41 @@ export const cancellationAutoApprovedToCustomer = ({ customer, therapist, bookin
         ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
     `),
 });
+
+// ─── Customer Approval Flow (CA-3) ────────────────────────────────────────────
+
+const customerDisplayName = (customer) =>
+    customer?.agencyName || customer?.fullName || 'there';
+
+export const customerApproved = ({ customer }) => ({
+    subject: 'Your RehabTask account has been approved',
+    html: layout(`
+        ${heading(`You're approved, ${customerDisplayName(customer)}!`)}
+        ${text('Great news — your RehabTask account has been reviewed and <strong>approved</strong>. You now have full access to the platform.')}
+        ${text('Here\'s what you can do next:')}
+        <ul style="color:#4a4a4a;font-size:14px;line-height:24px;margin:12px 0 20px 20px;">
+            <li>Post a therapy request and start receiving offers</li>
+            <li>Browse and message qualified therapists directly</li>
+            <li>Add patients and manage their care from one place</li>
+        </ul>
+        ${button(`${FRONTEND_URL}/customer/dashboard`, 'Go to Dashboard')}
+        ${muted('If you have any questions about getting started, contact our support team.')}
+    `),
+});
+
+export const customerRejected = ({ customer, reason }) => ({
+    subject: 'Update on your RehabTask account',
+    html: layout(`
+        ${heading('Account Update')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('Thank you for your interest in RehabTask. After reviewing your account, we\'re unable to approve it at this time.')}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('If you believe this was made in error or have questions, please reach out to our support team.')}
+        ${button('mailto:support@rehabtask.com', 'Contact Support')}
+    `),
+});

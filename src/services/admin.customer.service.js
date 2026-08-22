@@ -8,6 +8,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { getSignedUrl } from "./storage.service.js";
+import { sendCustomerApproved, sendCustomerRejected } from "./email.service.js";
 
 const CUSTOMER_LIST_PROFILE_SELECT = {
     id: true,
@@ -215,12 +216,7 @@ export const approveCustomer = async (customerUserId, adminId) => {
         },
     });
 
-    // TODO: CA-3 — send customer approval email here (fire-and-forget).
-    // Add to src/services/email.service.js:
-    //   export const sendCustomerApproved = async ({ customer }) =>
-    //       dispatch(customer.user.email, customerApprovedTemplate, { customer });
-    // Then call:
-    //   sendCustomerApproved({ customer }).catch(() => {});
+    sendCustomerApproved({ customer }).catch(() => { });
 
     logger.info("[AdminCustomerService] Customer approved", {
         customerUserId,
@@ -278,12 +274,7 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
         },
     });
 
-    // TODO: CA-3 — send customer rejection email here (fire-and-forget).
-    // Add to src/services/email.service.js:
-    //   export const sendCustomerRejected = async ({ customer, reason }) =>
-    //       dispatch(customer.user.email, customerRejectedTemplate, { customer, reason });
-    // Then call:
-    //   sendCustomerRejected({ customer, reason: trimmedReason }).catch(() => {});
+    sendCustomerRejected({ customer, reason: trimmedReason }).catch(() => { });
 
     logger.info("[AdminCustomerService] Customer rejected", {
         customerUserId,

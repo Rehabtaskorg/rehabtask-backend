@@ -74,6 +74,8 @@ import {
     sessionCancellationRequestedToOtherParty,
     sessionCancellationApprovedToRequester,
     sessionCancellationRejectedToRequester,
+    customerApproved,
+    customerRejected,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -497,3 +499,17 @@ export const sendAdminDirectMessage = async ({ to, subject, message }) => {
 
 export const sendSessionCancellationRejectedToRequester = async ({ requester, session, rejectionReason }) =>
     dispatch(requester.user.email, sessionCancellationRejectedToRequester, { requester, session, rejectionReason });
+
+/**
+ * Admin approved a customer account.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, user: {email: string}}}} opts
+ */
+export const sendCustomerApproved = async ({ customer }) =>
+    dispatch(customer.user.email, customerApproved, { customer });
+
+/**
+ * Admin rejected a customer account.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, user: {email: string}}, reason: string}} opts
+ */
+export const sendCustomerRejected = async ({ customer, reason }) =>
+    dispatch(customer.user.email, customerRejected, { customer, reason });
