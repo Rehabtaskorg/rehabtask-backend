@@ -75,7 +75,7 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
         }),
         prisma.user.findUnique({
             where: { id: senderId },
-            select: { role: true, customerProfile: { select: { onboardingComplete: true } } },
+            select: { role: true, customerProfile: { select: { onboardingComplete: true, approvalStatus: true } } },
         }),
     ]);
 
@@ -88,8 +88,19 @@ export const sendMessageByConversation = async (senderId, conversationId, conten
         throw new AuthorizationError("You are not a participant in this conversation");
     }
 
-    if (sender?.role === USER_ROLES.CUSTOMER && !sender.customerProfile?.onboardingComplete) {
-        throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
+    if (sender?.role === USER_ROLES.CUSTOMER) {
+        if (!sender.customerProfile?.onboardingComplete) {
+            throw new AuthorizationError(
+                "Your account setup is not complete. Finish onboarding before messaging therapists.",
+                "ONBOARDING_INCOMPLETE"
+            );
+        }
+        if (sender.customerProfile?.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+            throw new AuthorizationError(
+                "Your account is pending approval. You'll be able to message therapists once an admin approves your account.",
+                "NOT_APPROVED"
+            );
+        }
     }
 
     const recipientId = conversation.user1Id === senderId ? conversation.user2Id : conversation.user1Id;
@@ -492,7 +503,7 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
             where: { id: senderId },
             select: {
                 id: true, role: true,
-                customerProfile: { select: { customerType: true, onboardingComplete: true } },
+                customerProfile: { select: { onboardingComplete: true, approvalStatus: true } },
             },
         }),
         prisma.user.findUnique({
@@ -510,17 +521,25 @@ export const createDirectMessage = async ({ senderId, recipientId, content, repl
     // Access control
     if (sender.role === USER_ROLES.CUSTOMER) {
         if (!sender.customerProfile?.onboardingComplete) {
-            throw new AuthorizationError("Your account setup is not complete. Finish onboarding before messaging therapists.");
+            throw new AuthorizationError(
+                "Your account setup is not complete. Finish onboarding before messaging therapists.",
+                "ONBOARDING_INCOMPLETE"
+            );
         }
-        if (recipient.role !== "therapist") {
+        if (sender.customerProfile?.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+            throw new AuthorizationError(
+                "Your account is pending approval. You'll be able to message therapists once an admin approves your account.",
+                "NOT_APPROVED"
+            );
+        }
+        if (recipient.role !== USER_ROLES.THERAPIST) {
             throw new BadRequestError("Customers can only direct message therapists");
         }
         if (recipient.therapistProfile?.approvalStatus !== APPROVAL_STATUS.APPROVED) {
             throw new BadRequestError("This therapist is not available for messaging");
         }
     } else if (sender.role === USER_ROLES.THERAPIST) {
-        // Therapist can only reply — conversation must already exist with messages from customer
-        if (recipient.role !== "customer") {
+        if (recipient.role !== USER_ROLES.CUSTOMER) {
             throw new BadRequestError("Therapists can only direct message customers");
         }
     } else {
