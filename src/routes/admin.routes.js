@@ -9,6 +9,7 @@ import { createFaqSchema, updateFaqSchema, } from "../validators/faq.schema.js";
 import {
     listUsersQuerySchema, userIdParamSchema, listTherapistsQuerySchema, therapistUserIdParamSchema, therapistDocumentParamSchema, rejectTherapistSchema,
     updateTherapistVerificationSchema,
+    listCustomersQuerySchema, customerUserIdParamSchema, customerDocumentParamSchema, rejectCustomerSchema,
     adminListDisputesQuerySchema, disputeIdParamSchema, assignDisputeSchema, adminUpdateDisputeSchema, adminListBookingsQuerySchema,
     bookingIdParamSchema, adminCancelBookingSchema, adminDenyRescheduleSchema, adminListSubscriptionsQuerySchema, subscriptionIdParamSchema,
     adminListPaymentsQuerySchema, paymentIdParamSchema, adminRefundPaymentSchema, adminReleasePaymentSchema,
@@ -43,6 +44,14 @@ import {
     updateTherapistVerificationController,
     getDocumentSignedUrlController,
 } from "../controllers/admin.therapist.controller.js";
+
+import {
+    listCustomersController,
+    getCustomerDetailController,
+    approveCustomerController,
+    rejectCustomerController,
+    getCustomerDocumentSignedUrlController,
+} from "../controllers/admin.customer.controller.js";
 
 import {
     adminListDisputesController,
@@ -144,6 +153,13 @@ router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePe
 router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);
 router.put("/therapists/:therapistUserId/verification", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: updateTherapistVerificationSchema }), updateTherapistVerificationController);
 router.get("/therapists/:therapistUserId/documents/:documentId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistDocumentParamSchema, "params"), getDocumentSignedUrlController);
+
+// Customer Management
+router.get("/customers", ...adminOrSubAdmin, requirePermission("customers"), validate(listCustomersQuerySchema, "query"), listCustomersController);
+router.get("/customers/:customerUserId", ...adminOrSubAdmin, requirePermission("customers"), validate(customerUserIdParamSchema, "params"), getCustomerDetailController);
+router.put("/customers/:customerUserId/approve", ...adminOrSubAdmin, requirePermission("customers"), validate(customerUserIdParamSchema, "params"), approveCustomerController);
+router.put("/customers/:customerUserId/reject", ...adminOrSubAdmin, requirePermission("customers"), validateMultiple({ params: customerUserIdParamSchema, body: rejectCustomerSchema }), rejectCustomerController);
+router.get("/customers/:customerUserId/documents/:documentId", ...adminOrSubAdmin, requirePermission("customers"), validate(customerDocumentParamSchema, "params"), getCustomerDocumentSignedUrlController);
 
 // Dispute Management
 router.get("/disputes", ...adminOrSubAdmin, requirePermission("disputes"), validate(adminListDisputesQuerySchema, "query"), adminListDisputesController);

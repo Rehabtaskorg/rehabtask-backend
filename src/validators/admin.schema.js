@@ -1,17 +1,6 @@
 import { z } from "zod";
-import { THERAPIST_VERIFICATION_FIELDS } from "../utils/constants.js";
-
-const VALID_PERMISSIONS = [
-    "users",
-    "therapists",
-    "disputes",
-    "bookings",
-    "payments",
-    "subscriptions",
-    "faqs",
-    "notifications",
-    "commission",
-];
+import { THERAPIST_VERIFICATION_FIELDS, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
+import { VALID_PERMISSIONS } from "../services/admin.subadmin.service.js";
 
 // ── User Management ──────────────────────────────────────────────────────────
 
@@ -56,7 +45,7 @@ export const updateUserSchema = z.object({
 // ── Therapist Management ─────────────────────────────────────────────────────
 
 export const listTherapistsQuerySchema = z.object({
-    approvalStatus: z.enum(["review", "pending", "approved", "rejected"]).optional(),
+    approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()
@@ -91,6 +80,43 @@ export const rejectTherapistSchema = z.object({
 export const updateTherapistVerificationSchema = z.object({
     field: z.enum(Object.values(THERAPIST_VERIFICATION_FIELDS)),
     value: z.boolean(),
+});
+
+// ── Customer Management ──────────────────────────────────────────────────────
+
+export const listCustomersQuerySchema = z.object({
+    approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
+    customerType: z.enum(Object.values(CUSTOMER_TYPES)).optional(),
+    search: z.string().max(200).optional(),
+    sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+    page: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1))
+        .optional()
+        .default("1"),
+    limit: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1).max(100))
+        .optional()
+        .default("20"),
+});
+
+export const customerUserIdParamSchema = z.object({
+    customerUserId: z.string().min(1, "Invalid customer user ID"),
+});
+
+export const customerDocumentParamSchema = z.object({
+    customerUserId: z.string().min(1, "Invalid customer user ID"),
+    documentId: z.string().uuid("Invalid document ID"),
+});
+
+export const rejectCustomerSchema = z.object({
+    reason: z
+        .string()
+        .min(10, "Rejection reason must be at least 10 characters")
+        .max(2000, "Rejection reason must be 2000 characters or less"),
 });
 
 // ── Dispute Management ───────────────────────────────────────────────────────
