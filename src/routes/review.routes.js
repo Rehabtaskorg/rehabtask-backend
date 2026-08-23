@@ -4,7 +4,7 @@ import {
     createReviewController,
     getCustomerReviewsController
 } from "../controllers/review.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorize, requireCustomerApproval } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { createReviewSchema } from "../validators/review.schema.js";
 
@@ -15,6 +15,7 @@ router.post(
     "/",
     authenticate,
     authorize([USER_ROLES.CUSTOMER]),
+    requireCustomerApproval,
     validate(createReviewSchema),
     createReviewController
 );

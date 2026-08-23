@@ -1,6 +1,6 @@
 import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorize, requireCustomerApproval } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { createPatientSchema, updatePatientSchema } from "../validators/patient.schema.js";
 import {
@@ -14,9 +14,9 @@ router.use(authenticate);
 router.use(authorize(USER_ROLES.CUSTOMER));
 
 router.get("/patients", listPatients);
-router.post("/patients", validate(createPatientSchema), addPatient);
+router.post("/patients", requireCustomerApproval, validate(createPatientSchema), addPatient);
 router.get("/patients/:patientId", getPatient);
-router.put("/patients/:patientId", validate(updatePatientSchema), editPatient);
-router.delete("/patients/:patientId", deletePatient);
+router.put("/patients/:patientId", requireCustomerApproval, validate(updatePatientSchema), editPatient);
+router.delete("/patients/:patientId", requireCustomerApproval, deletePatient);
 
 export default router;

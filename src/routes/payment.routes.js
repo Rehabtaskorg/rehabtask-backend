@@ -17,7 +17,7 @@ import {
     getCustomerRefundSummaryController,
     getCustomerRefundHistoryController,
 } from "../controllers/payment.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorize, requireCustomerApproval } from "../middleware/auth.js";
 import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
 import { createPaymentIntentSchema, paymentMethodIdParamSchema } from "../validators/payment.schema.js";
@@ -25,16 +25,16 @@ import { createPaymentIntentSchema, paymentMethodIdParamSchema } from "../valida
 const router = express.Router();
 
 // Customer routes
-router.post("/create-intent", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
+router.post("/create-intent", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(createPaymentIntentSchema), createPaymentIntentController);
 router.get("/history", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentHistoryController);
 // Saved payment methods
 router.get("/methods", authenticate, authorize([USER_ROLES.CUSTOMER]), getPaymentMethodsController);
-router.post("/methods/setup", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createSetupIntentController);
-router.delete("/methods/:paymentMethodId", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
-router.post("/methods/:paymentMethodId/default", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
+router.post("/methods/setup", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, createSetupIntentController);
+router.delete("/methods/:paymentMethodId", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), removePaymentMethodController);
+router.post("/methods/:paymentMethodId/default", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
 
 // Customer Connect account (for receiving refunds)
-router.post("/customer-connect/create", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createCustomerConnectAccountController);
+router.post("/customer-connect/create", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, createCustomerConnectAccountController);
 router.get("/customer-connect/status", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerConnectStatusController);
 router.post("/customer-connect/account-session", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createCustomerAccountSessionController);
 

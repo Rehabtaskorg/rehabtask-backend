@@ -177,6 +177,49 @@ export const requireEmailVerification = (req, res, next) => {
 };
 
 /**
+ * Require customer approval. Must run after `authenticate`.
+ * Non-customer roles pass through — role enforcement is `authorize`'s responsibility.
+ *
+ * @type {import("express").RequestHandler}
+ */
+export const requireCustomerApproval = (req, res, next) => {
+    if (!req.user) {
+        return next(new AuthenticationError("Authentication required"));
+    }
+
+    if (req.user.role !== USER_ROLES.CUSTOMER) {
+        return next();
+    }
+
+    if (!req.user.customerProfile) {
+        return next(new AuthorizationError("Customer profile not found", "PROFILE_NOT_FOUND"));
+    }
+
+    if (!req.user.customerProfile.onboardingComplete) {
+        return next(new AuthorizationError(
+            "Your account setup is not complete. Finish onboarding before accessing this feature.",
+            "ONBOARDING_INCOMPLETE"
+        ));
+    }
+
+    if (req.user.customerProfile.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+        const statusMessages = {
+            [APPROVAL_STATUS.PENDING]: "Your account is pending approval. You'll have full access once an admin reviews your application.",
+            [APPROVAL_STATUS.REVIEW]: "Your account is under review. You'll have full access once an admin approves your application.",
+            [APPROVAL_STATUS.REJECTED]: "Your account application was not approved. Please contact support for assistance.",
+        };
+
+        return next(new AuthorizationError(
+            statusMessages[req.user.customerProfile.approvalStatus] ||
+            "Your account is not approved.",
+            "NOT_APPROVED"
+        ));
+    }
+
+    next();
+};
+
+/**
  * Require therapist approval. Must be used after authenticate.
  *
  * @type {import("express").RequestHandler}
