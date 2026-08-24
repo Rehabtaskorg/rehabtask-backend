@@ -2,7 +2,7 @@ import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES,
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
-import { sendTherapistApplicationSubmitted } from "./email.service.js";
+import { sendTherapistApplicationSubmitted, sendCustomerApplicationSubmitted } from "./email.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
 import { getSignedUrl } from "./storage.service.js";
@@ -1104,8 +1104,13 @@ export const completeAgencyOnboarding = async (userId) => {
     }
 
     if (customer.onboardingComplete) {
+        const statusMessages = {
+            [APPROVAL_STATUS.REVIEW]: "Your application is under review. We'll notify you once a decision has been made.",
+            [APPROVAL_STATUS.APPROVED]: "Agency onboarding already complete. Your account is active.",
+            [APPROVAL_STATUS.REJECTED]: "Your application was not approved. Please contact support for assistance.",
+        };
         return {
-            message: "Agency onboarding already complete.",
+            message: statusMessages[customer.approvalStatus] || "Agency onboarding already complete.",
             customer: {
                 id: customer.id,
                 onboardingComplete: customer.onboardingComplete,
@@ -1114,19 +1119,32 @@ export const completeAgencyOnboarding = async (userId) => {
         };
     }
 
-    const updated = await withAdminAccess(async (db) => {
-        return db.customerProfile.update({
-            where: { userId },
+    const alreadyDecided = [APPROVAL_STATUS.APPROVED, APPROVAL_STATUS.REJECTED].includes(customer.approvalStatus);
+
+    const { count } = await withAdminAccess(async (db) => {
+        return db.customerProfile.updateMany({
+            where: { userId, onboardingComplete: false },
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                approvalStatus: APPROVAL_STATUS.APPROVED,
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
             },
         });
     });
 
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.findUnique({
+            where: { userId },
+            include: { user: { select: { email: true } } },
+        });
+    });
+
+    if (count === 1 && !alreadyDecided) {
+        sendCustomerApplicationSubmitted({ customer: updated }).catch(() => { });
+    }
+
     return {
-        message: "Agency onboarding completed. Your account is now active.",
+        message: "Agency onboarding submitted. Your account is under review.",
         customer: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
@@ -1316,8 +1334,13 @@ export const completeIndividualOnboarding = async (userId) => {
     }
 
     if (customer.onboardingComplete) {
+        const statusMessages = {
+            [APPROVAL_STATUS.REVIEW]: "Your application is under review. We'll notify you once a decision has been made.",
+            [APPROVAL_STATUS.APPROVED]: "Individual onboarding already complete. Your account is active.",
+            [APPROVAL_STATUS.REJECTED]: "Your application was not approved. Please contact support for assistance.",
+        };
         return {
-            message: "Individual onboarding already complete.",
+            message: statusMessages[customer.approvalStatus] || "Individual onboarding already complete.",
             customer: {
                 id: customer.id,
                 onboardingComplete: customer.onboardingComplete,
@@ -1326,19 +1349,32 @@ export const completeIndividualOnboarding = async (userId) => {
         };
     }
 
-    const updated = await withAdminAccess(async (db) => {
-        return db.customerProfile.update({
-            where: { userId },
+    const alreadyDecided = [APPROVAL_STATUS.APPROVED, APPROVAL_STATUS.REJECTED].includes(customer.approvalStatus);
+
+    const { count } = await withAdminAccess(async (db) => {
+        return db.customerProfile.updateMany({
+            where: { userId, onboardingComplete: false },
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                approvalStatus: APPROVAL_STATUS.APPROVED,
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
             },
         });
     });
 
+    const updated = await withAdminAccess(async (db) => {
+        return db.customerProfile.findUnique({
+            where: { userId },
+            include: { user: { select: { email: true } } },
+        });
+    });
+
+    if (count === 1 && !alreadyDecided) {
+        sendCustomerApplicationSubmitted({ customer: updated }).catch(() => { });
+    }
+
     return {
-        message: "Your account is now active. Welcome to RehabTask!",
+        message: "Your application has been submitted and is under review.",
         customer: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,

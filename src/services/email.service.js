@@ -76,6 +76,8 @@ import {
     sessionCancellationRejectedToRequester,
     customerApproved,
     customerRejected,
+    customerApplicationSubmitted,
+    customerApplicationSubmittedAdmin,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -499,6 +501,16 @@ export const sendAdminDirectMessage = async ({ to, subject, message }) => {
 
 export const sendSessionCancellationRejectedToRequester = async ({ requester, session, rejectionReason }) =>
     dispatch(requester.user.email, sessionCancellationRejectedToRequester, { requester, session, rejectionReason });
+
+/**
+ * Customer completed onboarding — notify customer and admin.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, customerType: string, user: {email: string}}}} opts
+ */
+export const sendCustomerApplicationSubmitted = async ({ customer }) => {
+    dispatch(customer.user.email, customerApplicationSubmitted, { customer }).catch(() => { });
+    // TODO: wire admin notification email once a dedicated admin inbox is configured
+    // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
+};
 
 /**
  * Admin approved a customer account.

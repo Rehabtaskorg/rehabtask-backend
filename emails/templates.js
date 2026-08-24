@@ -1316,10 +1316,35 @@ export const cancellationAutoApprovedToCustomer = ({ customer, therapist, bookin
     `),
 });
 
-// ─── Customer Approval Flow (CA-3) ────────────────────────────────────────────
+// ─── Customer Approval Flow (CA-3, CA-8) ──────────────────────────────────────
 
 const customerDisplayName = (customer) =>
     customer?.agencyName || customer?.fullName || 'there';
+
+export const customerApplicationSubmitted = ({ customer }) => ({
+    subject: 'Your RehabTask application has been received',
+    html: layout(`
+        ${heading('Application Received')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('Thank you for completing your application. Our team has received it and will review your account shortly.')}
+        ${text('This process typically takes <strong>2–5 business days</strong>. We\'ll email you as soon as a decision has been made.')}
+        ${muted('No further action is needed from you at this time.')}
+    `),
+});
+
+export const customerApplicationSubmittedAdmin = ({ customer }) => ({
+    subject: 'New Customer Application — Review Required',
+    html: layout(`
+        ${heading('New Customer Application')}
+        ${text('A customer has completed their onboarding and is awaiting your review.')}
+        ${hr()}
+        ${field('Name', customerDisplayName(customer))}
+        ${field('Type', customer?.customerType === 'agency' ? 'Agency' : 'Individual')}
+        ${field('Email', customer?.user?.email || 'N/A')}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/admin/customers`, 'Review Application')}
+    `),
+});
 
 export const customerApproved = ({ customer }) => ({
     subject: 'Your RehabTask account has been approved',
