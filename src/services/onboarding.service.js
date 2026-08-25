@@ -1176,8 +1176,14 @@ export const completeAgencyOnboarding = async (userId) => {
         sendCustomerApplicationSubmitted({ customer: updated }).catch(() => { });
     }
 
+    const statusMessages = {
+        [APPROVAL_STATUS.REVIEW]: "Agency onboarding submitted. Your account is under review.",
+        [APPROVAL_STATUS.APPROVED]: "Agency onboarding already complete. Your account is active.",
+        [APPROVAL_STATUS.REJECTED]: "Your application was not approved. Please contact support for assistance.",
+    };
+
     return {
-        message: "Agency onboarding submitted. Your account is under review.",
+        message: statusMessages[updated.approvalStatus] || "Agency onboarding submitted. Your account is under review.",
         customer: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
@@ -1488,8 +1494,14 @@ export const completeIndividualOnboarding = async (userId) => {
         sendCustomerApplicationSubmitted({ customer: updated }).catch(() => { });
     }
 
+    const statusMessages = {
+        [APPROVAL_STATUS.REVIEW]: "Your application has been submitted and is under review.",
+        [APPROVAL_STATUS.APPROVED]: "Individual onboarding already complete. Your account is active.",
+        [APPROVAL_STATUS.REJECTED]: "Your application was not approved. Please contact support for assistance.",
+    };
+
     return {
-        message: "Your application has been submitted and is under review.",
+        message: statusMessages[updated.approvalStatus] || "Your application has been submitted and is under review.",
         customer: {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
