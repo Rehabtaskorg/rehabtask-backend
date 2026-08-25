@@ -18,7 +18,7 @@ import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
-router.get("/current", authenticate, authorize([USER_ROLES.CUSTOMER]), getSubscriptionController);
+router.get("/current", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, getSubscriptionController);
 router.post("/checkout", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(createCheckoutSchema), createCheckoutController);
 router.post("/billing-portal", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createBillingPortalController);
 router.post("/cancel", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, cancelSubscriptionController);

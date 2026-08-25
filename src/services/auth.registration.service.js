@@ -9,7 +9,6 @@ import {
     sendPasswordResetEmail,
 } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { createTrialSubscription } from "./subscription.service.js";
 import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
 
 const frontendUrl = () => (env.FRONTEND_URL || "").replace(/\/$/, "");
@@ -100,7 +99,6 @@ export const registerCustomer = async ({ email, password, fullName, phone, smsOp
                 include: { customerProfile: true },
             });
 
-            await createTrialSubscription(createdUser.customerProfile.id, db);
             return createdUser;
         });
 
@@ -132,7 +130,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, smsOp
         }
 
         if (authUid) {
-            auth.deleteUser(authUid).catch(() => {});
+            auth.deleteUser(authUid).catch(() => { });
         }
 
         logger.error("[Auth] registerCustomer unexpected error", { email: normalizedEmail, code: error?.code, message: error?.message, stack: error?.stack });
@@ -194,7 +192,7 @@ export const registerTherapist = async ({ email, password, fullName, phone, smsO
         }
 
         if (authUid) {
-            auth.deleteUser(authUid).catch(() => {});
+            auth.deleteUser(authUid).catch(() => { });
         }
 
         throw new BadRequestError("Failed to process registration. Please try again.");
@@ -271,7 +269,6 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData, smsOp
                 include: { customerProfile: true },
             });
 
-            await createTrialSubscription(updated.customerProfile.id, db);
             return updated;
         }
 
@@ -293,7 +290,7 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData, smsOp
 
     if (role === USER_ROLES.THERAPIST) {
         message += ". Your account is pending admin approval.";
-        sendTherapistWelcome({ therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } } }).catch(() => {});
+        sendTherapistWelcome({ therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } } }).catch(() => { });
     }
 
     return {

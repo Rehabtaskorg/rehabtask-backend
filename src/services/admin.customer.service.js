@@ -9,6 +9,7 @@ import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.j
 import { logger } from "../config/logger.js";
 import { getSignedUrl } from "./storage.service.js";
 import { sendCustomerApproved, sendCustomerRejected } from "./email.service.js";
+import { createTrialSubscription } from "./subscription.service.js";
 
 const CUSTOMER_LIST_PROFILE_SELECT = {
     id: true,
@@ -232,7 +233,25 @@ export const approveCustomer = async (customerUserId, adminId) => {
         },
     });
 
-    sendCustomerApproved({ customer }).catch(() => { });
+    const existingSub = await prisma.subscription.findFirst({
+        where: { customerId: customer.id },
+        select: { id: true },
+    });
+    if (!existingSub) {
+        try {
+            await createTrialSubscription(customer.id);
+        } catch (err) {
+            logger.error("[approveCustomer] Failed to create trial subscription", {
+                customerUserId,
+                customerId: customer.id,
+                error: err.message,
+            });
+        }
+    }
+
+    sendCustomerApproved({ customer }).catch((err) =>
+        logger.error("[approveCustomer] email failed", { error: err.message })
+    );
 
     logger.info("[AdminCustomerService] Customer approved", {
         customerUserId,
@@ -290,7 +309,9 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
         },
     });
 
-    sendCustomerRejected({ customer, reason: trimmedReason }).catch(() => { });
+    sendCustomerRejected({ customer, reason: trimmedReason }).catch((err) =>
+        logger.error("[rejectCustomer] email failed", { error: err.message })
+    );
 
     logger.info("[AdminCustomerService] Customer rejected", {
         customerUserId,
