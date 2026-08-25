@@ -10,6 +10,7 @@ import { logger } from "../config/logger.js";
 import { getSignedUrl } from "./storage.service.js";
 import { sendCustomerApproved, sendCustomerRejected } from "./email.service.js";
 import { createTrialSubscription } from "./subscription.service.js";
+import { logAction } from "./audit.service.js";
 
 const CUSTOMER_LIST_PROFILE_SELECT = {
     id: true,
@@ -233,6 +234,14 @@ export const approveCustomer = async (customerUserId, adminId) => {
         },
     });
 
+    logAction({
+        actorId: adminId,
+        action: "customer.approved",
+        entityType: "customer_profile",
+        entityId: customer.id,
+        changes: { customerType: customer.customerType },
+    });
+
     const existingSub = await prisma.subscription.findFirst({
         where: { customerId: customer.id },
         select: { id: true },
@@ -307,6 +316,14 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
             rejectionReason: true,
             user: { select: { id: true, email: true } },
         },
+    });
+
+    logAction({
+        actorId: adminId,
+        action: "customer.rejected",
+        entityType: "customer_profile",
+        entityId: customer.id,
+        changes: { reason: trimmedReason },
     });
 
     sendCustomerRejected({ customer, reason: trimmedReason }).catch((err) =>

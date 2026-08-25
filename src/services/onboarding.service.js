@@ -1,8 +1,9 @@
 import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, THERAPIST_ATTRIBUTE_CATEGORIES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { NotFoundError, BadRequestError, ConflictError } from "../utils/errors.js";
+import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
-import { sendTherapistApplicationSubmitted, sendCustomerApplicationSubmitted } from "./email.service.js";
+import { sendTherapistApplicationSubmitted, sendCustomerApplicationSubmitted, sendCustomerApplicationResubmitted } from "./email.service.js";
+import { logAction } from "./audit.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
 import { getSignedUrl } from "./storage.service.js";
@@ -919,10 +920,38 @@ export const getAgencyOnboardingStatus = async (userId) => {
     };
 };
 
+const LOCKED_DOCUMENT_STATUSES = [APPROVAL_STATUS.REVIEW, APPROVAL_STATUS.APPROVED];
+
+/**
+ * Block document mutations while an application is under review or already approved.
+ * @param {{approvalStatus: string}} customerProfile
+ */
+const assertDocumentsMutable = (customerProfile) => {
+    if (LOCKED_DOCUMENT_STATUSES.includes(customerProfile?.approvalStatus)) {
+        throw new AuthorizationError(
+            "Documents cannot be modified while your application is under review or approved"
+        );
+    }
+};
+
 export const getAgencyOnboardingData = async (userId) => {
     const customer = await prisma.customerProfile.findUnique({
         where: { userId },
-        include: { user: { select: { email: true } } },
+        include: {
+            user: { select: { email: true } },
+            agencyLicenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+                select: {
+                    id: true,
+                    documentType: true,
+                    fileName: true,
+                    fileSize: true,
+                    mimeType: true,
+                    uploadedAt: true,
+                },
+            },
+        },
     });
 
     if (!customer) throw new NotFoundError("Customer profile not found");
@@ -944,6 +973,7 @@ export const getAgencyOnboardingData = async (userId) => {
             state: customer.state,
             zipCode: customer.zipCode,
         },
+        documents: customer.agencyLicenseDocuments,
     };
 };
 
@@ -987,6 +1017,7 @@ export const saveAgencyUploadDocuments = async (userId, data) => {
     });
 
     if (!customer) throw new NotFoundError("Customer profile not found");
+    assertDocumentsMutable(customer);
 
     const agencyDocs = data.documents.filter((d) => DOCUMENT_CATEGORIES.agency.includes(d.documentType));
     const REQUIRED_TYPES = ["home_health_license", "general_liability", "professional_liability"];
@@ -1061,6 +1092,8 @@ export const deleteAgencyDocument = async (userId, documentId) => {
     if (!customer || document.agencyId !== customer.id) {
         throw new BadRequestError("Not authorized to delete this document");
     }
+
+    assertDocumentsMutable(customer);
 
     await prisma.licenseDocument.update({
         where: { id: documentId },
@@ -1149,6 +1182,86 @@ export const completeAgencyOnboarding = async (userId) => {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
             approvalStatus: updated.approvalStatus,
+        },
+    };
+};
+
+/**
+ * Move a rejected agency application back into review after the customer
+ * has corrected it. Re-runs the same completeness checks as initial submission.
+ *
+ * @param {string} userId
+ * @param {string|null} [note] - Optional customer note explaining the changes
+ * @returns {Promise<{message: string, customer: object}>}
+ */
+export const resubmitAgencyApplication = async (userId, note = null) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            user: { select: { email: true } },
+            agencyLicenseDocuments: { where: { isDeleted: false } },
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer not found");
+    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+        throw new ConflictError("Application cannot be resubmitted in its current state");
+    }
+
+    const REQUIRED_DOC_TYPES = ["home_health_license", "general_liability", "professional_liability"];
+    const uploadedTypes = new Set(customer.agencyLicenseDocuments.map((d) => d.documentType));
+    const missingDocs = REQUIRED_DOC_TYPES.filter((t) => !uploadedTypes.has(t));
+    const hasBusinessProfile = !!(
+        customer.billingEmail &&
+        customer.addressLine1 &&
+        customer.city &&
+        customer.state &&
+        customer.zipCode
+    );
+
+    if (missingDocs.length > 0 || !hasBusinessProfile) {
+        const missing = [
+            !hasBusinessProfile && "businessProfile",
+            ...missingDocs,
+        ].filter(Boolean);
+        throw new BadRequestError(
+            `Your application is incomplete. Missing: ${missing.join(", ")}`
+        );
+    }
+
+    const result = await withAdminAccess(async (db) => {
+        return db.customerProfile.updateMany({
+            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            data: {
+                approvalStatus: APPROVAL_STATUS.REVIEW,
+                approvedBy: null,
+                approvedAt: null,
+            },
+        });
+    });
+
+    if (result.count === 0) {
+        throw new ConflictError("Application status changed — please refresh");
+    }
+
+    logAction({
+        actorId: userId,
+        action: "customer.application_resubmitted",
+        entityType: "customer_profile",
+        entityId: customer.id,
+        changes: { previousRejectionReason: customer.rejectionReason, note },
+    });
+
+    sendCustomerApplicationResubmitted({ customer }).catch((err) =>
+        logger.error("[resubmit] email failed", { error: err.message })
+    );
+
+    return {
+        message: "Your updated application has been submitted and is under review.",
+        customer: {
+            id: customer.id,
+            onboardingComplete: customer.onboardingComplete,
+            approvalStatus: APPROVAL_STATUS.REVIEW,
         },
     };
 };
@@ -1296,6 +1409,8 @@ export const deleteIndividualDocument = async (userId, documentId) => {
         throw new BadRequestError("Not authorized to delete this document");
     }
 
+    assertDocumentsMutable(customer);
+
     await prisma.licenseDocument.update({
         where: { id: documentId },
         data: { isDeleted: true, deletedAt: new Date() },
@@ -1379,6 +1494,85 @@ export const completeIndividualOnboarding = async (userId) => {
             id: updated.id,
             onboardingComplete: updated.onboardingComplete,
             approvalStatus: updated.approvalStatus,
+        },
+    };
+};
+
+/**
+ * Move a rejected individual application back into review after the customer
+ * has corrected it. Re-runs the same completeness checks as initial submission.
+ *
+ * @param {string} userId
+ * @param {string|null} [note] - Optional customer note explaining the changes
+ * @returns {Promise<{message: string, customer: object}>}
+ */
+export const resubmitIndividualApplication = async (userId, note = null) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            user: { select: { email: true } },
+            customerLicenseDocuments: { where: { isDeleted: false } },
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer not found");
+    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+        throw new ConflictError("Application cannot be resubmitted in its current state");
+    }
+
+    const hasPersonalInfo = !!(
+        customer.dateOfBirth &&
+        customer.addressLine1 &&
+        customer.city &&
+        customer.state &&
+        customer.zipCode
+    );
+    const hasMedicalInfo = !!customer.primaryDiagnosis;
+
+    const missing = [
+        !hasPersonalInfo && "personalInfo",
+        !hasMedicalInfo && "medicalInfo",
+    ].filter(Boolean);
+
+    if (missing.length > 0) {
+        throw new BadRequestError(
+            `Your application is incomplete. Missing: ${missing.join(", ")}`
+        );
+    }
+
+    const result = await withAdminAccess(async (db) => {
+        return db.customerProfile.updateMany({
+            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            data: {
+                approvalStatus: APPROVAL_STATUS.REVIEW,
+                approvedBy: null,
+                approvedAt: null,
+            },
+        });
+    });
+
+    if (result.count === 0) {
+        throw new ConflictError("Application status changed — please refresh");
+    }
+
+    logAction({
+        actorId: userId,
+        action: "customer.application_resubmitted",
+        entityType: "customer_profile",
+        entityId: customer.id,
+        changes: { previousRejectionReason: customer.rejectionReason, note },
+    });
+
+    sendCustomerApplicationResubmitted({ customer }).catch((err) =>
+        logger.error("[resubmit] email failed", { error: err.message })
+    );
+
+    return {
+        message: "Your updated application has been submitted and is under review.",
+        customer: {
+            id: customer.id,
+            onboardingComplete: customer.onboardingComplete,
+            approvalStatus: APPROVAL_STATUS.REVIEW,
         },
     };
 };

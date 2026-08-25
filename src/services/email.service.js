@@ -78,6 +78,7 @@ import {
     customerRejected,
     customerApplicationSubmitted,
     customerApplicationSubmittedAdmin,
+    customerApplicationResubmitted,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -508,6 +509,16 @@ export const sendSessionCancellationRejectedToRequester = async ({ requester, se
  */
 export const sendCustomerApplicationSubmitted = async ({ customer }) => {
     dispatch(customer.user.email, customerApplicationSubmitted, { customer }).catch(() => { });
+    // TODO: wire admin notification email once a dedicated admin inbox is configured
+    // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
+};
+
+/**
+ * Customer resubmitted a rejected application — confirm receipt to the customer.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, customerType: string, user: {email: string}}}} opts
+ */
+export const sendCustomerApplicationResubmitted = async ({ customer }) => {
+    dispatch(customer.user.email, customerApplicationResubmitted, { customer }).catch(() => { });
     // TODO: wire admin notification email once a dedicated admin inbox is configured
     // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
 };

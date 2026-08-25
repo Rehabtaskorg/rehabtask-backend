@@ -1,6 +1,6 @@
 import { prisma } from "../config/prisma.js";
 import { gcs } from "../config/gcs.js";
-import { NotFoundError, BadRequestError } from "../utils/errors.js";
+import { NotFoundError, BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
 import path from "path";
 import {
@@ -121,6 +121,10 @@ export const uploadAgencyDocument = async ({ userId, file, documentType, uploadI
     if (!user) throw new NotFoundError("User not found");
     if (!user.customerProfile) throw new NotFoundError("Customer profile not found");
 
+    if ([APPROVAL_STATUS.REVIEW, APPROVAL_STATUS.APPROVED].includes(user.customerProfile.approvalStatus)) {
+        throw new AuthorizationError("Documents cannot be modified while your application is under review or approved");
+    }
+
     const agencyId = user.customerProfile.id;
 
     await checkUploadRateLimit(userId);
@@ -179,7 +183,18 @@ export const uploadIndividualDocument = async ({ userId, file, documentType, upl
     if (!user) throw new NotFoundError("User not found");
     if (!user.customerProfile) throw new NotFoundError("Customer profile not found");
 
+    if ([APPROVAL_STATUS.REVIEW, APPROVAL_STATUS.APPROVED].includes(user.customerProfile.approvalStatus)) {
+        throw new AuthorizationError("Documents cannot be modified while your application is under review or approved");
+    }
+
     const customerId = user.customerProfile.id;
+
+    if (documentType === "therapy_order" && user.customerProfile.approvalStatus === APPROVAL_STATUS.REJECTED) {
+        await prisma.licenseDocument.updateMany({
+            where: { customerId, documentType: "therapy_order", isDeleted: false },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
+    }
 
     await checkUploadRateLimit(userId);
 

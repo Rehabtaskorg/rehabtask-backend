@@ -1346,6 +1346,16 @@ export const customerApplicationSubmittedAdmin = ({ customer }) => ({
     `),
 });
 
+export const customerApplicationResubmitted = ({ customer }) => ({
+    subject: 'We received your updated application',
+    html: layout(`
+        ${heading('Updated Application Received')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('We\'ve received your updated application and will review it within <strong>2–5 business days</strong>. You\'ll receive an email once a decision has been made.')}
+        ${button(`${FRONTEND_URL}/customer/pending-approval`, 'View Application Status')}
+    `),
+});
+
 export const customerApproved = ({ customer }) => ({
     subject: 'Your RehabTask account has been approved',
     html: layout(`
@@ -1367,7 +1377,7 @@ export const customerRejected = ({ customer, reason }) => ({
     html: layout(`
         ${heading('Account Update')}
         ${text(`Hi ${customerDisplayName(customer)},`)}
-        ${text('Thank you for your interest in RehabTask. After reviewing your account, we\'re unable to approve it at this time.')}
+        ${text('Thank you for your interest in RehabTask. After reviewing your account, your application needs a few updates before we can approve it.')}
         ${reason ? `
             <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
                 <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
@@ -1375,6 +1385,7 @@ export const customerRejected = ({ customer, reason }) => ({
             </div>
         ` : ''}
         ${text('If you believe this was made in error or have questions, please reach out to our support team.')}
-        ${button('mailto:support@rehabtask.com', 'Contact Support')}
+        ${button(`${FRONTEND_URL}/customer/application-review`, 'Update your application')}
+        ${muted('Need help? Email us at support@rehabtask.com')}
     `),
 });
