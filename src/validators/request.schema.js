@@ -22,6 +22,7 @@ export const createRequestSchema = z.object({
     visitType: z.string().trim().min(1).max(100).optional().nullable(),
     visitTypeId: z.string().uuid().optional().nullable(),
     emr: z.string().trim().min(1, "EMR system is required").max(100),
+    specialInstructions: z.string().trim().max(1000).optional().nullable(),
     visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
     requestType: z.enum(["PUBLIC", "DIRECT"]).optional().default("PUBLIC"),
@@ -45,6 +46,7 @@ export const updateRequestSchema = z.object({
     visitType: z.string().trim().min(1).max(100).optional().nullable(),
     visitTypeId: z.string().uuid().optional().nullable(),
     emr: z.string().trim().min(1).max(100).optional(),
+    specialInstructions: z.string().trim().max(1000).optional().nullable(),
     visitsPerWeek: z.number({ coerce: true }).int().min(1).max(7).optional().nullable(),
     numberOfWeeks: z.number({ coerce: true }).int().min(1).max(12).optional().nullable(),
 });

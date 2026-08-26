@@ -369,6 +369,7 @@ model TherapyRequest {
   visitType         String?           @map("visit_type") @db.VarChar(100)
   visitTypeId       String?           @map("visit_type_id") @db.Uuid
   emr               String?           @db.VarChar(100)
+  specialInstructions String?         @map("special_instructions")
   preferredDate     DateTime          @map("preferred_date") @db.Timestamptz(3)
   location          String
   latitude          Decimal           @db.Decimal(10, 8)

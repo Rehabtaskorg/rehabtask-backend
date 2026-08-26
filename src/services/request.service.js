@@ -13,7 +13,7 @@ import { NotFoundError, BadRequestError } from "../utils/errors.js";
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
         serviceType, description, preferredDate, location, latitude, longitude,
-        patientId, rate, visitType, visitTypeId, emr, visitsPerWeek, numberOfWeeks,
+        patientId, rate, visitType, visitTypeId, emr, specialInstructions, visitsPerWeek, numberOfWeeks,
         requestType = "PUBLIC", targetTherapistId,
     } = data;
 
@@ -69,6 +69,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
             ...(visitTypeId && { visitTypeId }),
             ...(!visitTypeId && visitType && { visitType }),
             ...(emr && { emr }),
+            ...(specialInstructions && { specialInstructions }),
             ...(visitsPerWeek != null && { visitsPerWeek }),
             ...(numberOfWeeks != null && { numberOfWeeks }),
             ...(requestType === "DIRECT" && targetTherapistId && { targetTherapistId }),
@@ -376,6 +377,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         updateData.visitType = data.visitType;
     }
     if (data.emr !== undefined) updateData.emr = data.emr;
+    if (data.specialInstructions !== undefined) updateData.specialInstructions = data.specialInstructions || null;
     if (data.visitsPerWeek !== undefined) updateData.visitsPerWeek = data.visitsPerWeek || null;
     if (data.numberOfWeeks !== undefined) updateData.numberOfWeeks = data.numberOfWeeks || null;
 
@@ -413,6 +415,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
     if (data.preferredDate) changes.preferredDate = data.preferredDate;
     if (data.location && data.location !== existing.location) changes.location = { from: existing.location, to: data.location };
     if (data.rate && data.rate !== parseFloat(existing.rate)) changes.rate = { from: parseFloat(existing.rate), to: data.rate };
+    if (data.specialInstructions !== undefined && data.specialInstructions !== existing.specialInstructions) changes.specialInstructions = "updated";
     if (hasActiveOffers) changes.offersWithdrawn = existing.offers.length;
 
     // Event: request.updated
