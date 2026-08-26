@@ -385,7 +385,7 @@ export const getTherapistPublicProfile = async (therapistId, viewerUserId = null
         prisma.therapistProfile.findUnique({
             where: { id: therapistId },
             include: {
-                user: { select: { isActive: true } },
+                user: { select: { isActive: true, email: true } },
                 attributes: true,
                 workAreas: true,
                 availability: true,
@@ -428,6 +428,7 @@ export const getTherapistPublicProfile = async (therapistId, viewerUserId = null
         fullName: therapist.fullName,
         canViewContact,
         ...(canViewContact && { phone: therapist.phone }),
+        ...(canViewContact && { email: therapist.user?.email }),
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
         yearsInHomeHealth: therapist.yearsInHomeHealth,
