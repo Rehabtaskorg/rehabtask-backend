@@ -13,7 +13,7 @@ import { NotFoundError, BadRequestError } from "../utils/errors.js";
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
         serviceType, description, preferredDate, location, latitude, longitude,
-        patientId, rate, visitType, visitTypeId, emr, specialInstructions, visitsPerWeek, numberOfWeeks,
+        patientId, visitType, visitTypeId, emr, specialInstructions, visitsPerWeek, numberOfWeeks,
         requestType = "PUBLIC", targetTherapistId,
     } = data;
 
@@ -65,7 +65,6 @@ export const createRequest = async (customerId, data, customerProfile) => {
             status: "created",
             requestType,
             ...(patientId && { patientId }),
-            ...(rate != null && { rate }),
             ...(visitTypeId && { visitTypeId }),
             ...(!visitTypeId && visitType && { visitType }),
             ...(emr && { emr }),
@@ -365,7 +364,6 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         updateData.latitude = geocoded.latitude;
         updateData.longitude = geocoded.longitude;
     }
-    if (data.rate !== undefined) updateData.rate = data.rate;
     // Visit type: prefer FK, keep legacy string as backup during transition window.
     // If the client sends visitTypeId, we also clear the string so there's no drift
     // between the two sources.
@@ -414,7 +412,6 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
     if (data.description && data.description !== existing.description) changes.description = "updated";
     if (data.preferredDate) changes.preferredDate = data.preferredDate;
     if (data.location && data.location !== existing.location) changes.location = { from: existing.location, to: data.location };
-    if (data.rate && data.rate !== parseFloat(existing.rate)) changes.rate = { from: parseFloat(existing.rate), to: data.rate };
     if (data.specialInstructions !== undefined && data.specialInstructions !== existing.specialInstructions) changes.specialInstructions = "updated";
     if (hasActiveOffers) changes.offersWithdrawn = existing.offers.length;
 
