@@ -4,6 +4,7 @@ import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { logger } from "../config/logger.js";
 import { getOrCreateStripeCustomer } from "./payment.shared.js";
+import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
 
 export const getCustomerPaymentHistory = async (customerId) => {
     return prisma.payment.findMany({
@@ -11,7 +12,7 @@ export const getCustomerPaymentHistory = async (customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: true,
+                    therapist: { select: THERAPIST_SAFE_SELECT },
                     offer: { include: { request: true } },
                     sessions: { orderBy: { sessionNumber: "asc" } },
                 },

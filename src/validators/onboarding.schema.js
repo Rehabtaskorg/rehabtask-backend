@@ -358,3 +358,7 @@ export const individualSignConsentSchema = z.object({
         path: ["representativeName"],
     }
 );
+
+export const resubmitApplicationSchema = z.object({
+    note: z.string().trim().max(500).nullish(),
+});

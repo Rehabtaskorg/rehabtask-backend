@@ -2,7 +2,7 @@ import express from "express";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { USER_ROLES } from "../utils/constants.js";
-import { agencyBusinessProfileSchema, agencyUploadDocumentsSchema } from "../validators/onboarding.schema.js";
+import { agencyBusinessProfileSchema, agencyUploadDocumentsSchema, resubmitApplicationSchema } from "../validators/onboarding.schema.js";
 import {
     getAgencyOnboardingStatusController,
     getAgencyOnboardingDataController,
@@ -11,6 +11,7 @@ import {
     saveAgencyUploadDocumentsController,
     deleteAgencyDocumentController,
     completeAgencyOnboardingController,
+    resubmitAgencyOnboardingController,
 } from "../controllers/onboarding.controller.js";
 import { uploadDocument as uploadDocumentMiddleware, handleMulterError } from "../middleware/upload.middleware.js";
 
@@ -26,5 +27,6 @@ router.post("/upload-document", uploadDocumentMiddleware, handleMulterError, upl
 router.post("/save-upload-documents", validate(agencyUploadDocumentsSchema), saveAgencyUploadDocumentsController);
 router.delete("/document/:documentId", deleteAgencyDocumentController);
 router.post("/complete", completeAgencyOnboardingController);
+router.post("/resubmit", validate(resubmitApplicationSchema), resubmitAgencyOnboardingController);
 
 export default router;

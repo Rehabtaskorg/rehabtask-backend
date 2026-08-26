@@ -71,6 +71,9 @@ model CustomerProfile {
   onboardingStep           Int              @default(1) @map("onboarding_step")
   onboardingComplete       Boolean          @default(false) @map("onboarding_complete")
   approvalStatus           ApprovalStatus   @default(pending) @map("approval_status")
+  approvedBy               String?          @map("approved_by") @db.VarChar(128)
+  approvedAt               DateTime?        @map("approved_at") @db.Timestamptz(3)
+  rejectionReason          String?          @map("rejection_reason")
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -91,6 +94,8 @@ model CustomerProfile {
   @@index([stripeCustomerId])
   @@index([stripeAccountId])
   @@index([approvalStatus])
+  @@index([approvalStatus, createdAt])
+  @@index([customerType, approvalStatus])
   @@index([onboardingComplete])
   @@map("customer_profiles")
 }
@@ -364,6 +369,7 @@ model TherapyRequest {
   visitType         String?           @map("visit_type") @db.VarChar(100)
   visitTypeId       String?           @map("visit_type_id") @db.Uuid
   emr               String?           @db.VarChar(100)
+  specialInstructions String?         @map("special_instructions")
   preferredDate     DateTime          @map("preferred_date") @db.Timestamptz(3)
   location          String
   latitude          Decimal           @db.Decimal(10, 8)

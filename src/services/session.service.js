@@ -1,5 +1,5 @@
 import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
-import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT } from "../utils/therapistContactAccess.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT, therapistSelectFor, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -137,10 +137,8 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: {
-                        include: { user: { select: { id: true, email: true } } }
-                    },
-                    customer: true,
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
+                    customer: { select: CUSTOMER_SAFE_SELECT },
                     patient: { select: { id: true, fullName: true } },
                 },
             },
@@ -1140,13 +1138,25 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
  * Get session by ID
  */
 export const getSessionById = async (sessionId, userId) => {
+    const bookingIds = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { booking: { select: { customerId: true, therapistId: true } } },
+    });
+
+    if (!bookingIds) {
+        throw new Error("Session not found");
+    }
+
+    const { customerId: customerProfileId, therapistId: therapistProfileId } = bookingIds.booking;
+    const canViewContact = await hasContactAccessByProfileId(customerProfileId, therapistProfileId);
+
     const session = await prisma.session.findUnique({
         where: { id: sessionId },
         include: {
             booking: {
                 include: {
                     customer: { select: CUSTOMER_SAFE_SELECT },
-                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true, user: { select: { id: true, email: true } } } },
+                    therapist: { select: { ...therapistSelectFor(canViewContact), user: { select: { id: true, email: true } } } },
                     offer: {
                         include: {
                             request: true,
@@ -1158,10 +1168,6 @@ export const getSessionById = async (sessionId, userId) => {
         },
     });
 
-    if (!session) {
-        throw new Error("Session not found");
-    }
-
     const isCustomer = session.booking.customer.userId === userId;
     const isTherapist = session.booking.therapist.userId === userId;
 
@@ -1170,7 +1176,6 @@ export const getSessionById = async (sessionId, userId) => {
     }
 
     return session;
-
 }
 
 /**
@@ -1182,7 +1187,7 @@ export const getCustomerSessions = async (customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true } },
+                    therapist: { select: therapistSelectFor(true) },
                     offer: {
                         include: {
                             request: true,

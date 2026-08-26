@@ -20,12 +20,14 @@ import {
     saveAgencyUploadDocuments,
     deleteAgencyDocument,
     completeAgencyOnboarding,
+    resubmitAgencyApplication,
     getIndividualOnboardingStatus,
     getIndividualOnboardingData,
     saveIndividualPersonalInfo,
     saveIndividualMedicalInfo,
     deleteIndividualDocument,
     completeIndividualOnboarding,
+    resubmitIndividualApplication,
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument, uploadIndividualDocument } from "../services/upload.service.js";
 import { BadRequestError } from "../utils/errors.js";
@@ -529,6 +531,19 @@ export const completeAgencyOnboardingController = async (req, res, next) => {
     }
 };
 
+/**
+ * POST /api/agency/onboarding/resubmit
+ * Move a rejected agency application back into review.
+ */
+export const resubmitAgencyOnboardingController = async (req, res, next) => {
+    try {
+        const result = await resubmitAgencyApplication(req.user.id, req.body?.note ?? null);
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const getIndividualOnboardingStatusController = async (req, res, next) => {
     try {
         const result = await getIndividualOnboardingStatus(req.user.id);
@@ -604,6 +619,19 @@ export const deleteIndividualDocumentController = async (req, res, next) => {
 export const completeIndividualOnboardingController = async (req, res, next) => {
     try {
         const result = await completeIndividualOnboarding(req.user.id);
+        res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/individual/onboarding/resubmit
+ * Move a rejected individual application back into review.
+ */
+export const resubmitIndividualOnboardingController = async (req, res, next) => {
+    try {
+        const result = await resubmitIndividualApplication(req.user.id, req.body?.note ?? null);
         res.status(200).json({ success: true, message: result.message, data: { customer: result.customer } });
     } catch (error) {
         next(error);

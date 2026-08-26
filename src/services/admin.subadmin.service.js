@@ -9,6 +9,7 @@ import { sendAccountDeactivated, sendSubAdminInviteEmail } from "./email.service
 export const VALID_PERMISSIONS = [
     "users",
     "therapists",
+    "customers",
     "disputes",
     "bookings",
     "payments",

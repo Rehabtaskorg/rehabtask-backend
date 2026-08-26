@@ -167,6 +167,7 @@ export const getCurrentUser = async (userId) => {
                         onboardingComplete: true,
                         onboardingStep: true,
                         approvalStatus: true,
+                        rejectionReason: true,
                     },
                 },
                 therapistProfile: {

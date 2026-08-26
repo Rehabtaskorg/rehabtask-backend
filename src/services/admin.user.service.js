@@ -31,7 +31,7 @@ export const listUsers = async ({ role, isActive, search, page = 1, limit = 20 }
                 emailVerified: true,
                 deactivatedAt: true,
                 createdAt: true,
-                customerProfile: { select: { id: true, fullName: true, customerType: true, agencyName: true } },
+                customerProfile: { select: { id: true, fullName: true, customerType: true, agencyName: true, approvalStatus: true, approvedAt: true } },
                 therapistProfile: { select: { id: true, fullName: true, approvalStatus: true, approvedAt: true, primaryLicenseType: true, profilePhotoUrl: true } },
                 subAdminProfile: { select: { id: true, permissions: true, isActive: true } },
             },
@@ -82,7 +82,7 @@ export const deactivateUser = async (userId, adminId, callerRole) => {
     });
 
     const auth = getIdentityPlatformAuth();
-    auth.revokeRefreshTokens(userId).catch(() => {});
+    auth.revokeRefreshTokens(userId).catch(() => { });
 
     logger.info("[AdminUserService] User deactivated", { userId, byAdmin: adminId });
 
@@ -90,7 +90,7 @@ export const deactivateUser = async (userId, adminId, callerRole) => {
         where: { id: userId },
         include: { customerProfile: true, therapistProfile: true },
     });
-    sendAccountDeactivated({ user: userWithProfile }).catch(() => {});
+    sendAccountDeactivated({ user: userWithProfile }).catch(() => { });
 
     return updated;
 };

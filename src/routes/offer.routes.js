@@ -7,7 +7,7 @@ import {
     withdrawOfferController,
     reviseOfferController
 } from "../controllers/offer.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorize, requireCustomerApproval } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { requestChangeSchema } from "../validators/offer.schema.js";
 import { enforceVisitLimit } from "../middleware/subscriptionLimits.js";
@@ -23,8 +23,8 @@ router.post("/:offerId/withdraw", authenticate, authorize([USER_ROLES.THERAPIST]
 
 
 // Customer routes
-router.post("/:offerId/accept", authenticate, authorize([USER_ROLES.CUSTOMER]), enforceVisitLimit, acceptOfferController);
-router.post("/:offerId/decline", authenticate, authorize([USER_ROLES.CUSTOMER]), declineOfferController);
-router.post("/:offerId/request-change", authenticate, authorize([USER_ROLES.CUSTOMER]), validate(requestChangeSchema), requestOfferChangeController);
+router.post("/:offerId/accept", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, enforceVisitLimit, acceptOfferController);
+router.post("/:offerId/decline", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, declineOfferController);
+router.post("/:offerId/request-change", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, validate(requestChangeSchema), requestOfferChangeController);
 
 export default router;

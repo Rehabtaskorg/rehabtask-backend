@@ -4,7 +4,7 @@ import { logger } from "../config/logger.js";
 import { BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { getUnreadCount } from "./message.service.js";
 import { getIO } from "../socket/index.js";
-import { TIME_MS, MESSAGE_ATTACHMENTS_BUCKET } from "../utils/constants.js";
+import { TIME_MS, MESSAGE_ATTACHMENTS_BUCKET, USER_ROLES, APPROVAL_STATUS } from "../utils/constants.js";
 
 const MAX_ATTACHMENTS_PER_HOUR = 20;
 const SIGNED_URL_TTL_SECONDS = 300;
@@ -35,7 +35,29 @@ const verifyParticipant = async (userId, conversationId) => {
 export const uploadMessageAttachments = async (senderId, conversationId, files, content = "", replyToId = null, bookingId = null) => {
     if (!files || files.length === 0) throw new BadRequestError("At least one file is required");
 
-    const conversation = await verifyParticipant(senderId, conversationId);
+    const [conversation, sender] = await Promise.all([
+        verifyParticipant(senderId, conversationId),
+        prisma.user.findUnique({
+            where: { id: senderId },
+            select: { role: true, customerProfile: { select: { onboardingComplete: true, approvalStatus: true } } },
+        }),
+    ]);
+
+    if (sender?.role === USER_ROLES.CUSTOMER) {
+        if (!sender.customerProfile?.onboardingComplete) {
+            throw new AuthorizationError(
+                "Your account setup is not complete. Finish onboarding before messaging therapists.",
+                "ONBOARDING_INCOMPLETE"
+            );
+        }
+        if (sender.customerProfile?.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+            throw new AuthorizationError(
+                "Your account is pending approval. You'll be able to message therapists once an admin approves your account.",
+                "NOT_APPROVED"
+            );
+        }
+    }
+
     const recipientId = conversation.user1Id === senderId
         ? conversation.user2Id
         : conversation.user1Id;

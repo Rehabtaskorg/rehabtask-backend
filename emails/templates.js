@@ -1315,3 +1315,77 @@ export const cancellationAutoApprovedToCustomer = ({ customer, therapist, bookin
         ${button(`${FRONTEND_URL}/customer/payments`, 'View Payment History')}
     `),
 });
+
+// ─── Customer Approval Flow (CA-3, CA-8) ──────────────────────────────────────
+
+const customerDisplayName = (customer) =>
+    customer?.agencyName || customer?.fullName || 'there';
+
+export const customerApplicationSubmitted = ({ customer }) => ({
+    subject: 'Your RehabTask application has been received',
+    html: layout(`
+        ${heading('Application Received')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('Thank you for completing your application. Our team has received it and will review your account shortly.')}
+        ${text('This process typically takes <strong>2–5 business days</strong>. We\'ll email you as soon as a decision has been made.')}
+        ${muted('No further action is needed from you at this time.')}
+    `),
+});
+
+export const customerApplicationSubmittedAdmin = ({ customer }) => ({
+    subject: 'New Customer Application — Review Required',
+    html: layout(`
+        ${heading('New Customer Application')}
+        ${text('A customer has completed their onboarding and is awaiting your review.')}
+        ${hr()}
+        ${field('Name', customerDisplayName(customer))}
+        ${field('Type', customer?.customerType === 'agency' ? 'Agency' : 'Individual')}
+        ${field('Email', customer?.user?.email || 'N/A')}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/admin/customers`, 'Review Application')}
+    `),
+});
+
+export const customerApplicationResubmitted = ({ customer }) => ({
+    subject: 'We received your updated application',
+    html: layout(`
+        ${heading('Updated Application Received')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('We\'ve received your updated application and will review it within <strong>2–5 business days</strong>. You\'ll receive an email once a decision has been made.')}
+        ${button(`${FRONTEND_URL}/customer/pending-approval`, 'View Application Status')}
+    `),
+});
+
+export const customerApproved = ({ customer }) => ({
+    subject: 'Your RehabTask account has been approved',
+    html: layout(`
+        ${heading(`You're approved, ${customerDisplayName(customer)}!`)}
+        ${text('Great news — your RehabTask account has been reviewed and <strong>approved</strong>. You now have full access to the platform.')}
+        ${text('Here\'s what you can do next:')}
+        <ul style="color:#4a4a4a;font-size:14px;line-height:24px;margin:12px 0 20px 20px;">
+            <li>Post a therapy request and start receiving offers</li>
+            <li>Browse and message qualified therapists directly</li>
+            <li>Add patients and manage their care from one place</li>
+        </ul>
+        ${button(`${FRONTEND_URL}/customer/dashboard`, 'Go to Dashboard')}
+        ${muted('If you have any questions about getting started, contact our support team.')}
+    `),
+});
+
+export const customerRejected = ({ customer, reason }) => ({
+    subject: 'Update on your RehabTask account',
+    html: layout(`
+        ${heading('Account Update')}
+        ${text(`Hi ${customerDisplayName(customer)},`)}
+        ${text('Thank you for your interest in RehabTask. After reviewing your account, your application needs a few updates before we can approve it.')}
+        ${reason ? `
+            <div style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px;border-radius:4px;margin:20px 0;">
+                <p style="color:#991b1b;font-size:12px;font-weight:600;text-transform:uppercase;margin:0 0 4px;">Reason</p>
+                <p style="color:#1a1a1a;font-size:14px;line-height:22px;margin:0;">${reason}</p>
+            </div>
+        ` : ''}
+        ${text('If you believe this was made in error or have questions, please reach out to our support team.')}
+        ${button(`${FRONTEND_URL}/customer/application-review`, 'Update your application')}
+        ${muted('Need help? Email us at support@rehabtask.com')}
+    `),
+});

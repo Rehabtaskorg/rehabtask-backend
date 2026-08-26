@@ -72,7 +72,8 @@ const getTherapistPublicProfileController = async (req, res, next) => {
     try {
         const { therapistId } = req.params;
         const viewerUserId = req.user?.id ?? null;
-        const profile = await getTherapistPublicProfileService(therapistId, viewerUserId);
+        const viewerRole = req.user?.role ?? null;
+        const profile = await getTherapistPublicProfileService(therapistId, viewerUserId, viewerRole);
 
         if (req.user && req.user.role === USER_ROLES.CUSTOMER) {
             const customerProfile = await prisma.customerProfile.findUnique({

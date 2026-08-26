@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES } from "../utils/constants.js";
+import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
 import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
@@ -380,12 +380,12 @@ function sortTherapists(therapists, sortBy) {
     }
 }
 
-export const getTherapistPublicProfile = async (therapistId, viewerUserId = null) => {
+export const getTherapistPublicProfile = async (therapistId, viewerUserId = null, viewerRole = null) => {
     const [therapist, completedVisitCount, canViewContact] = await Promise.all([
         prisma.therapistProfile.findUnique({
             where: { id: therapistId },
             include: {
-                user: { select: { isActive: true } },
+                user: { select: { isActive: true, email: true } },
                 attributes: true,
                 workAreas: true,
                 availability: true,
@@ -426,12 +426,14 @@ export const getTherapistPublicProfile = async (therapistId, viewerUserId = null
         id: therapist.id,
         userId: therapist.userId,
         fullName: therapist.fullName,
+        canViewContact,
         ...(canViewContact && { phone: therapist.phone }),
+        ...(canViewContact && { email: therapist.user?.email }),
         profilePhotoUrl: therapist.profilePhotoUrl,
         yearsOfExperience: therapist.yearsOfExperience,
         yearsInHomeHealth: therapist.yearsInHomeHealth,
         primaryLicenseType: therapist.primaryLicenseType,
-        ...(viewerUserId && { npiNumber: therapist.npiNumber }),
+        ...(viewerRole === USER_ROLES.CUSTOMER && { npiNumber: therapist.npiNumber }),
         professionalSummary: therapist.professionalSummary,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,
