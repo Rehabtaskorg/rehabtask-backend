@@ -61,6 +61,9 @@ export const runReviewExpirySms = async () => {
                 skipped++;
             }
         } catch (err) {
+            // TODO: [BUG] If smsCustWorkReviewExpiring throws (Twilio error), the prisma.session.update stamp
+            // is skipped and this session is re-queried on every subsequent scheduler run indefinitely.
+            // Fix: move the stamp into its own try/catch so Twilio errors don't prevent it from being written.
             logger.error(`[ReviewExpirySms] Failed for session ${session.id}`, { error: err.message });
         }
     }
