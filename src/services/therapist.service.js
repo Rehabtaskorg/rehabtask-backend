@@ -10,6 +10,7 @@ export const getTherapistProfile = async (userId) => {
         prisma.therapistProfile.findUnique({
             where: { userId },
             include: {
+                user: { select: { email: true } },
                 attributes: true,
                 workAreas: true,
                 availability: true,
@@ -42,6 +43,8 @@ export const getTherapistProfile = async (userId) => {
 
     return {
         ...therapist,
+        user: undefined,
+        email: therapist.user?.email ?? null,
         specialties: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY] ?? [],
         languages: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE] ?? [],
         certifications: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION] ?? [],
