@@ -1,4 +1,31 @@
 import { z } from "zod";
+import { STRIPE_BUSINESS_STRUCTURE } from "../utils/constants.js";
+
+export const createConnectAccountSchema = z.object({
+    businessStructure: z.enum(
+        [
+            STRIPE_BUSINESS_STRUCTURE.INDIVIDUAL,
+            STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP,
+            STRIPE_BUSINESS_STRUCTURE.SINGLE_MEMBER_LLC,
+            STRIPE_BUSINESS_STRUCTURE.MULTI_MEMBER_LLC,
+            STRIPE_BUSINESS_STRUCTURE.PRIVATE_CORPORATION,
+        ],
+        "Select how your practice is registered"
+    ),
+});
+
+export const createCustomerConnectAccountSchema = z.object({
+    businessStructure: z.enum(
+        [
+            STRIPE_BUSINESS_STRUCTURE.INDIVIDUAL,
+            STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP,
+            STRIPE_BUSINESS_STRUCTURE.SINGLE_MEMBER_LLC,
+            STRIPE_BUSINESS_STRUCTURE.MULTI_MEMBER_LLC,
+            STRIPE_BUSINESS_STRUCTURE.PRIVATE_CORPORATION,
+        ],
+        "Select how your organization is registered"
+    ),
+});
 
 export const createPaymentIntentSchema = z.object({
     bookingId: z.uuid("Invalid booking ID"),

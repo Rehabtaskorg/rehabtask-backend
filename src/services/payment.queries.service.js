@@ -1,7 +1,8 @@
-import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, STRIPE_BUSINESS_STRUCTURE, STRIPE_COMPANY_STRUCTURES, STRIPE_CAPABILITY, CUSTOMER_TYPES } from "../utils/constants.js";
 import { isConnectAccountReady } from "../utils/stripe.helpers.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
+import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { getOrCreateStripeCustomer } from "./payment.shared.js";
 import { THERAPIST_SAFE_SELECT } from "../utils/therapistContactAccess.js";
@@ -218,9 +219,8 @@ export const getConnectAccountStatus = async (therapistId) => {
 
     return {
         connected: true,
-        accountId: therapist.stripeAccountId,
         detailsSubmitted: account.details_submitted,
-        transfersActive: account.capabilities?.transfers === "active",
+        transfersActive: account.capabilities?.transfers === STRIPE_CAPABILITY.ACTIVE,
         payoutsEnabled: account.payouts_enabled,
         onboardingComplete: isConnectAccountReady(account),
         disabledReason: req.disabled_reason ?? null,
@@ -297,7 +297,7 @@ export const getPaymentMethods = async (userId) => {
     }
 
     if (duplicates.length > 0) {
-        Promise.allSettled(duplicates.map((id) => stripe.paymentMethods.detach(id))).catch(() => {});
+        Promise.allSettled(duplicates.map((id) => stripe.paymentMethods.detach(id))).catch(() => { });
     }
 
     return Array.from(seen.values()).map((pm) => ({
@@ -338,13 +338,16 @@ export const setDefaultPaymentMethod = async (userId, paymentMethodId) => {
     return { success: true };
 };
 
-export const createOrGetConnectAccount = async (therapistId, userId) => {
+export const createOrGetConnectAccount = async (therapistId, userId, businessStructure) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { id: therapistId }, include: { user: true } });
     if (!therapist) throw new Error("Therapist not found");
     if (therapist.userId !== userId) throw new Error("Unauthorized");
     if (therapist.stripeAccountId) return { accountId: therapist.stripeAccountId };
 
-    const account = await stripe.accounts.create({
+    const isCompany = STRIPE_COMPANY_STRUCTURES.has(businessStructure);
+    const businessType = isCompany ? "company" : "individual";
+
+    const accountParams = {
         country: "US",
         email: therapist.user.email,
         capabilities: { transfers: { requested: true } },
@@ -354,11 +357,22 @@ export const createOrGetConnectAccount = async (therapistId, userId) => {
             losses: { payments: "application" },
             fees: { payer: "application" },
         },
+        business_type: businessType,
+        business_profile: { url: env.FRONTEND_URL, mcc: "8099" },
         metadata: { therapistId: therapist.id, userId: therapist.userId },
-    });
+    };
+
+    if (isCompany && businessStructure !== STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP) {
+        accountParams.company = { structure: businessStructure };
+    }
+
+    const account = await stripe.accounts.create(accountParams);
 
     await withAdminAccess(async (db) => {
-        await db.therapistProfile.update({ where: { id: therapistId }, data: { stripeAccountId: account.id } });
+        await db.therapistProfile.update({
+            where: { id: therapistId },
+            data: { stripeAccountId: account.id, stripeBusinessStructure: businessStructure },
+        });
     });
 
     return { accountId: account.id };
@@ -393,10 +407,6 @@ export const createAccountSession = async (therapistId, userId) => {
                     ...(platformOwnsRequirements && { disable_stripe_user_authentication: true }),
                 },
             },
-            payments: {
-                enabled: true,
-                features: { refund_management: false, dispute_management: true, capture_payments: false },
-            },
             payouts_list: { enabled: true },
         },
     });
@@ -404,13 +414,21 @@ export const createAccountSession = async (therapistId, userId) => {
     return { clientSecret: session.client_secret };
 };
 
-export const createOrGetCustomerConnectAccount = async (customerId, userId) => {
+export const createOrGetCustomerConnectAccount = async (customerId, userId, businessStructure) => {
     const customer = await prisma.customerProfile.findUnique({ where: { id: customerId }, include: { user: true } });
     if (!customer) throw new Error("Customer not found");
     if (customer.userId !== userId) throw new Error("Unauthorized");
     if (customer.stripeAccountId) return { accountId: customer.stripeAccountId };
 
-    const account = await stripe.accounts.create({
+    const isAgency = customer.customerType === CUSTOMER_TYPES.AGENCY;
+    if (isAgency && businessStructure === STRIPE_BUSINESS_STRUCTURE.INDIVIDUAL) {
+        throw new Error("Agency accounts must select a registered business structure");
+    }
+    if (!isAgency && businessStructure !== STRIPE_BUSINESS_STRUCTURE.INDIVIDUAL) {
+        throw new Error("Individual accounts must select the individual business structure");
+    }
+
+    const accountParams = {
         country: "US",
         email: customer.user.email,
         capabilities: { transfers: { requested: true } },
@@ -420,11 +438,25 @@ export const createOrGetCustomerConnectAccount = async (customerId, userId) => {
             losses: { payments: "application" },
             fees: { payer: "application" },
         },
+        business_type: isAgency ? "company" : "individual",
+        business_profile: { url: env.FRONTEND_URL, mcc: "8099" },
         metadata: { customerId: customer.id, userId: customer.userId, accountPurpose: "customer_refund_recipient" },
-    });
+    };
+
+    if (isAgency) {
+        accountParams.company = {
+            ...(businessStructure !== STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP && { structure: businessStructure }),
+            name: customer.agencyName ?? undefined,
+        };
+    }
+
+    const account = await stripe.accounts.create(accountParams);
 
     await withAdminAccess(async (db) => {
-        await db.customerProfile.update({ where: { id: customerId }, data: { stripeAccountId: account.id } });
+        await db.customerProfile.update({
+            where: { id: customerId },
+            data: { stripeAccountId: account.id, stripeBusinessStructure: businessStructure },
+        });
     });
 
     return { accountId: account.id };

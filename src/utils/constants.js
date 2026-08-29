@@ -208,4 +208,19 @@ export const STRIPE_CAPABILITY = Object.freeze({
     PENDING: "pending",
     UNREQUESTED: "unrequested",
 });
+
+export const STRIPE_BUSINESS_STRUCTURE = Object.freeze({
+    INDIVIDUAL: "individual",
+    SOLE_PROPRIETORSHIP: "sole_proprietorship",
+    SINGLE_MEMBER_LLC: "single_member_llc",
+    MULTI_MEMBER_LLC: "multi_member_llc",
+    PRIVATE_CORPORATION: "private_corporation",
+});
+
+export const STRIPE_COMPANY_STRUCTURES = new Set([
+    STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP,
+    STRIPE_BUSINESS_STRUCTURE.SINGLE_MEMBER_LLC,
+    STRIPE_BUSINESS_STRUCTURE.MULTI_MEMBER_LLC,
+    STRIPE_BUSINESS_STRUCTURE.PRIVATE_CORPORATION,
+]);
 export const MAX_VISIT_TITLE_LENGTH = 100;

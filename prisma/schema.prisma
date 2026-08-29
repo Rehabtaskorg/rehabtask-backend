@@ -52,6 +52,7 @@ model CustomerProfile {
   location                 String?
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean          @default(false) @map("stripe_onboarding_complete")
   // Agency-specific fields
   dbaName                  String?          @map("dba_name") @db.VarChar(255)
@@ -163,6 +164,7 @@ model TherapistProfile {
   workArea                 String?                @map("work_area")
   doesHomeVisits           Boolean                @default(false) @map("does_home_visits")
   stripeAccountId          String?                @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean                @default(false) @map("stripe_onboarding_complete")
   backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")
   backgroundCheckSignature String?                @map("background_check_signature") @db.VarChar(255)
@@ -864,6 +866,14 @@ enum UserRole {
 enum CustomerType {
   individual
   agency
+}
+
+enum StripeBusinessStructure {
+  individual
+  sole_proprietorship
+  single_member_llc
+  multi_member_llc
+  private_corporation
 }
 
 enum ApprovalStatus {
