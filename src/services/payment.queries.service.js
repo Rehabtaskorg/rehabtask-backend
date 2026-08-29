@@ -362,7 +362,7 @@ export const createOrGetConnectAccount = async (therapistId, userId, businessStr
         metadata: { therapistId: therapist.id, userId: therapist.userId },
     };
 
-    if (isCompany && businessStructure !== STRIPE_BUSINESS_STRUCTURE.SOLE_PROPRIETORSHIP) {
+    if (isCompany) {
         accountParams.company = { structure: businessStructure };
     }
 
