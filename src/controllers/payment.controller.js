@@ -76,8 +76,8 @@ const createConnectAccountController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const userId = req.user.id;
-        const { businessStructure } = req.body;
-        const result = await createOrGetConnectAccount(therapistId, userId, businessStructure);
+        const { businessStructure, productDescription } = req.body;
+        const result = await createOrGetConnectAccount(therapistId, userId, businessStructure, productDescription);
 
         res.status(200).json({ success: true, data: result });
     } catch (error) {

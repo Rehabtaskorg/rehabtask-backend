@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { STRIPE_BUSINESS_STRUCTURE } from "../utils/constants.js";
+import { STRIPE_BUSINESS_STRUCTURE, PRODUCT_DESCRIPTION_MIN_LENGTH, PRODUCT_DESCRIPTION_MAX_LENGTH } from "../utils/constants.js";
 
 export const createConnectAccountSchema = z.object({
     businessStructure: z.enum(
@@ -12,6 +12,10 @@ export const createConnectAccountSchema = z.object({
         ],
         "Select how your practice is registered"
     ),
+    productDescription: z.string()
+        .trim()
+        .min(PRODUCT_DESCRIPTION_MIN_LENGTH, `Description must be at least ${PRODUCT_DESCRIPTION_MIN_LENGTH} characters`)
+        .max(PRODUCT_DESCRIPTION_MAX_LENGTH, `Description must not exceed ${PRODUCT_DESCRIPTION_MAX_LENGTH} characters`),
 });
 
 export const createCustomerConnectAccountSchema = z.object({

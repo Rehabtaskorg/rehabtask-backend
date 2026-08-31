@@ -338,7 +338,7 @@ export const setDefaultPaymentMethod = async (userId, paymentMethodId) => {
     return { success: true };
 };
 
-export const createOrGetConnectAccount = async (therapistId, userId, businessStructure) => {
+export const createOrGetConnectAccount = async (therapistId, userId, businessStructure, productDescription) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { id: therapistId }, include: { user: true } });
     if (!therapist) throw new Error("Therapist not found");
     if (therapist.userId !== userId) throw new Error("Unauthorized");
@@ -358,7 +358,7 @@ export const createOrGetConnectAccount = async (therapistId, userId, businessStr
             fees: { payer: "application" },
         },
         business_type: businessType,
-        business_profile: { url: env.FRONTEND_URL, mcc: "8099" },
+        business_profile: { product_description: productDescription.trim(), mcc: "8099" },
         metadata: { therapistId: therapist.id, userId: therapist.userId },
     };
 
