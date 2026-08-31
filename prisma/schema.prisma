@@ -591,6 +591,7 @@ model CustomerRefund {
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
   stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
   reason                String?              @db.VarChar(255)
+  payoutFailureReason   String?              @map("payout_failure_reason") @db.VarChar(255)
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
   fallbackRefundAt      DateTime?            @map("fallback_refund_at") @db.Timestamptz(3)
   transferredAt         DateTime?            @map("transferred_at") @db.Timestamptz(3)
@@ -973,6 +974,7 @@ enum CustomerRefundStatus {
   pending_connect
   transferred
   refunded_to_card
+  payout_failed
 }
 
 enum DayOfWeek {
