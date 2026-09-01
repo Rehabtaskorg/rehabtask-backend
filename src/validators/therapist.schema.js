@@ -12,9 +12,10 @@ export const updateProfileSchema = z.object({
     smsOptIn: z.boolean().optional(),
     professionalSummary: z
         .string()
-        .min(100, "Professional summary must be at least 100 characters")
         .max(2000, "Professional summary must be 2000 characters or less")
-        .optional(),
+        .refine((val) => val === "" || val.length >= 100, "Must be at least 100 characters if provided")
+        .optional()
+        .or(z.literal("")),
     specialization: z
         .string()
         .max(500, "Specialization must be 500 characters or less")

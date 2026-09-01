@@ -76,7 +76,8 @@ const createConnectAccountController = async (req, res, next) => {
     try {
         const therapistId = req.user.therapistProfile.id;
         const userId = req.user.id;
-        const result = await createOrGetConnectAccount(therapistId, userId);
+        const { businessStructure, productDescription } = req.body;
+        const result = await createOrGetConnectAccount(therapistId, userId, businessStructure, productDescription);
 
         res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -173,7 +174,8 @@ const createCustomerConnectAccountController = async (req, res, next) => {
     try {
         const customerId = req.user.customerProfile.id;
         const userId = req.user.id;
-        const result = await createOrGetCustomerConnectAccount(customerId, userId);
+        const { businessStructure } = req.body;
+        const result = await createOrGetCustomerConnectAccount(customerId, userId, businessStructure);
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);

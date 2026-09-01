@@ -20,7 +20,7 @@ import {
 import { authenticate, authorize, requireCustomerApproval } from "../middleware/auth.js";
 import { sensitiveOperationRateLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
-import { createPaymentIntentSchema, paymentMethodIdParamSchema } from "../validators/payment.schema.js";
+import { createPaymentIntentSchema, paymentMethodIdParamSchema, createConnectAccountSchema, createCustomerConnectAccountSchema } from "../validators/payment.schema.js";
 
 const router = express.Router();
 
@@ -34,7 +34,7 @@ router.delete("/methods/:paymentMethodId", authenticate, authorize([USER_ROLES.C
 router.post("/methods/:paymentMethodId/default", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(paymentMethodIdParamSchema, "params"), setDefaultPaymentMethodController);
 
 // Customer Connect account (for receiving refunds)
-router.post("/customer-connect/create", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, createCustomerConnectAccountController);
+router.post("/customer-connect/create", authenticate, authorize([USER_ROLES.CUSTOMER]), requireCustomerApproval, sensitiveOperationRateLimiter, validate(createCustomerConnectAccountSchema), createCustomerConnectAccountController);
 router.get("/customer-connect/status", authenticate, authorize([USER_ROLES.CUSTOMER]), getCustomerConnectStatusController);
 router.post("/customer-connect/account-session", authenticate, authorize([USER_ROLES.CUSTOMER]), sensitiveOperationRateLimiter, createCustomerAccountSessionController);
 
@@ -52,7 +52,7 @@ router.get("/commission-rate", authenticate, async (req, res, next) => {
 });
 
 // Therapist routes
-router.post("/connect/create", authenticate, authorize([USER_ROLES.THERAPIST]), createConnectAccountController);
+router.post("/connect/create", authenticate, authorize([USER_ROLES.THERAPIST]), sensitiveOperationRateLimiter, validate(createConnectAccountSchema), createConnectAccountController);
 router.get("/connect/status", authenticate, authorize([USER_ROLES.THERAPIST]), getConnectAccountStatusController);
 
 // Account Session — creates a short-lived client_secret for the frontend

@@ -27,7 +27,6 @@ const computeOnboardingSteps = (therapist) => {
         profile: !!(
             therapist.yearsOfExperience !== null &&
             therapist.primaryLicenseType &&
-            therapist.professionalSummary &&
             hasSpecialty
         ),
         credentials: !!(

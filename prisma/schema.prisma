@@ -52,6 +52,7 @@ model CustomerProfile {
   location                 String?
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean          @default(false) @map("stripe_onboarding_complete")
   // Agency-specific fields
   dbaName                  String?          @map("dba_name") @db.VarChar(255)
@@ -163,6 +164,7 @@ model TherapistProfile {
   workArea                 String?                @map("work_area")
   doesHomeVisits           Boolean                @default(false) @map("does_home_visits")
   stripeAccountId          String?                @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean                @default(false) @map("stripe_onboarding_complete")
   backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")
   backgroundCheckSignature String?                @map("background_check_signature") @db.VarChar(255)
@@ -589,6 +591,7 @@ model CustomerRefund {
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
   stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
   reason                String?              @db.VarChar(255)
+  payoutFailureReason   String?              @map("payout_failure_reason") @db.VarChar(255)
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
   fallbackRefundAt      DateTime?            @map("fallback_refund_at") @db.Timestamptz(3)
   transferredAt         DateTime?            @map("transferred_at") @db.Timestamptz(3)
@@ -866,6 +869,14 @@ enum CustomerType {
   agency
 }
 
+enum StripeBusinessStructure {
+  individual
+  sole_proprietorship
+  single_member_llc
+  multi_member_llc
+  private_corporation
+}
+
 enum ApprovalStatus {
   review
   approved
@@ -963,6 +974,7 @@ enum CustomerRefundStatus {
   pending_connect
   transferred
   refunded_to_card
+  payout_failed
 }
 
 enum DayOfWeek {
