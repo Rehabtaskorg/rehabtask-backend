@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, THERAPIST_ATTRIBUTE_CATEGORIES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, IDENTITY_DOCUMENT_TYPES, COMPLIANCE_DOCUMENT_TYPES, THERAPIST_ATTRIBUTE_CATEGORIES, THERAPIST_DOCUMENTS_BUCKET, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -40,7 +40,8 @@ const computeOnboardingSteps = (therapist) => {
             hasDocumentType(["professional_liability"]) &&
             (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
         ),
-        identity: hasDocumentType(["government_id_front"]),
+        identity: hasDocumentType([IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT]) &&
+            hasDocumentType([IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE]),
         hipaa: therapist.hipaaAttested === true,
     };
 };
@@ -196,7 +197,7 @@ export const getOnboardingData = async (userId) => {
         hipaa: {
             attested: therapist.hipaaAttested,
             attestedAt: therapist.hipaaAttestedAt,
-            document: documentsByCategory(DOCUMENT_CATEGORIES.compliance.filter(t => t === "hipaa_certificate"))[0] ?? null,
+            document: documentsByCategory([COMPLIANCE_DOCUMENT_TYPES.HIPAA_CERTIFICATE])[0] ?? null,
         },
     };
 };
@@ -513,7 +514,7 @@ export const saveHipaaAttestation = async (userId, data, uploadIp = null) => {
             where: {
                 therapistId: therapist.id,
                 isDeleted: false,
-                documentType: "hipaa_certificate",
+                documentType: COMPLIANCE_DOCUMENT_TYPES.HIPAA_CERTIFICATE,
                 documentUrl: { not: data.document.path },
             },
         });
@@ -614,18 +615,29 @@ export const saveIdentityVerification = async (userId, data) => {
     const submittedPaths = new Set(data.documents.map((doc) => doc.path));
 
     if (submittedPaths.size > 0) {
-        await prisma.licenseDocument.updateMany({
-            where: {
-                therapistId: therapist.id,
-                isDeleted: false,
-                documentType: { in: DOCUMENT_CATEGORIES.identity },
-                documentUrl: { notIn: [...submittedPaths] },
-            },
-            data: {
-                isDeleted: true,
-                deletedAt: new Date(),
-            },
+        const supersededWhere = {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+            documentUrl: { notIn: [...submittedPaths] },
+        };
+
+        const superseded = await prisma.licenseDocument.findMany({
+            where: supersededWhere,
+            select: { id: true, bucket: true, documentUrl: true },
         });
+
+        if (superseded.length > 0) {
+            await prisma.licenseDocument.updateMany({
+                where: { id: { in: superseded.map((d) => d.id) } },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
+            await Promise.allSettled(
+                superseded.map((d) =>
+                    deleteFileFromStorage(d.bucket ?? THERAPIST_DOCUMENTS_BUCKET, d.documentUrl)
+                )
+            );
+        }
     }
 
     const activeDocuments = await prisma.licenseDocument.findMany({
@@ -856,6 +868,20 @@ export const deleteDocument = async (userId, documentId) => {
         throw new BadRequestError("Not authorized to delete this document");
     }
 
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        select: { id: true, approvalStatus: true },
+    });
+
+    const isIdentityDocument = DOCUMENT_CATEGORIES.identity.includes(document.documentType);
+    const isLockedProfile = therapist?.approvalStatus === APPROVAL_STATUS.APPROVED;
+
+    if (isLockedProfile && isIdentityDocument) {
+        throw new AuthorizationError(
+            "Approved identity documents cannot be deleted. Contact support to request a replacement."
+        );
+    }
+
     if (document.isDeleted) {
         throw new BadRequestError("Document already deleted");
     }
@@ -871,6 +897,14 @@ export const deleteDocument = async (userId, documentId) => {
     });
 
     await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
+
+    await logAction({
+        actorId: userId,
+        action: "onboarding.document_deleted",
+        entityType: "license_document",
+        entityId: document.id,
+        changes: { documentType: document.documentType },
+    });
 
     return {
         message: "Document deleted successfully",

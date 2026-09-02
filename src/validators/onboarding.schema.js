@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IDENTITY_DOCUMENT_TYPES } from "../utils/constants.js";
 
 const US_STATE_CODES = [
     "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -238,18 +239,25 @@ export const insuranceSchema = z.object({
 );
 
 const identityDocumentSchema = z.object({
-    path: z.string(),
-    fileName: z.string(),
-    fileSize: z.number(),
-    documentType: z.enum(["government_id_front", "government_id_back"]),
+    path: z.string().min(1, "Document path is required"),
+    fileName: z.string().min(1, "File name is required"),
+    fileSize: z.number().positive("File size must be greater than zero"),
+    documentType: z.enum([
+        IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT,
+        IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_BACK,
+        IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE,
+    ]),
     mimeType: z.string().optional(),
 });
 
 export const identitySchema = z.object({
     documents: z.array(identityDocumentSchema),
 }).refine(
-    (data) => data.documents.some((d) => d.documentType === "government_id_front"),
+    (data) => data.documents.some((d) => d.documentType === IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT),
     { message: "Government ID (front) is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE),
+    { message: "Driver's license is required", path: ["documents"] }
 );
 
 

@@ -11,10 +11,12 @@ import {
     INDIVIDUAL_DOCUMENTS_BUCKET,
     PROFILE_IMAGES_BUCKET,
     DOCUMENT_CATEGORIES,
+    PHOTO_ONLY_DOCUMENT_TYPES,
+    PHOTO_MIME_TYPES,
 } from "../utils/constants.js";
 import { logger } from "../config/logger.js";
 
-const UPLOAD_RATE_LIMIT = 10;
+const UPLOAD_RATE_LIMIT = 15;
 
 const buildDocumentPath = (userId, folder, originalName) => {
     const timestamp = Date.now();
@@ -54,6 +56,12 @@ export const uploadDocument = async ({ userId, file, category = "license", docum
     if (!allowedTypes) throw new BadRequestError(`Unknown document category: ${category}`);
     if (!allowedTypes.includes(documentType)) {
         throw new BadRequestError(`Invalid documentType "${documentType}" for category "${category}"`);
+    }
+
+    if (PHOTO_ONLY_DOCUMENT_TYPES.includes(documentType) && !PHOTO_MIME_TYPES.includes(file.mimetype)) {
+        throw new BadRequestError(
+            "Photo ID documents must be a JPEG or PNG image. PDFs are not accepted for identity verification."
+        );
     }
 
     const user = await prisma.user.findUnique({
