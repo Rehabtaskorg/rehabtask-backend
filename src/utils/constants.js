@@ -157,12 +157,31 @@ export const INDIVIDUAL_DOCUMENTS_BUCKET = process.env.INDIVIDUAL_DOCUMENTS_BUCK
 export const PROFILE_IMAGES_BUCKET = process.env.PROFILE_IMAGES_BUCKET;
 export const MESSAGE_ATTACHMENTS_BUCKET = process.env.MESSAGE_ATTACHMENTS_BUCKET;
 
+export const IDENTITY_DOCUMENT_TYPES = Object.freeze({
+    GOVERNMENT_ID_FRONT: "government_id_front",
+    GOVERNMENT_ID_BACK: "government_id_back",
+    DRIVERS_LICENSE: "drivers_license",
+});
+
+export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
+    W9: "w9",
+    HIPAA_CERTIFICATE: "hipaa_certificate",
+});
+
+export const PHOTO_ONLY_DOCUMENT_TYPES = Object.freeze([
+    IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT,
+    IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_BACK,
+    IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE,
+]);
+
+export const PHOTO_MIME_TYPES = Object.freeze(["image/jpeg", "image/jpg", "image/png"]);
+
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({
     license: ["license"],
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
-    identity: ["government_id_front", "government_id_back"],
-    compliance: ["w9", "hipaa_certificate"],
+    identity: Object.values(IDENTITY_DOCUMENT_TYPES),
+    compliance: Object.values(COMPLIANCE_DOCUMENT_TYPES),
     agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
     individual: ["therapy_order"],
 });
