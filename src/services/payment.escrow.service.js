@@ -8,6 +8,7 @@ import { findOrCreateDirectConversation, createSystemMessage } from "./message.s
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 import { sendPaymentConfirmation } from "./email.service.js";
 import { getOrCreateStripeCustomer } from "./payment.shared.js";
+import { NonRetryableWebhookError } from "../utils/errors.js";
 
 export const createPaymentIntent = async (bookingId, userId, paymentMethodId = null, idempotencyKey = null) => {
     const booking = await prisma.booking.findUnique({
@@ -191,7 +192,7 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
         },
     });
 
-    if (!payment) throw new Error("Payment not found");
+    if (!payment) throw new NonRetryableWebhookError(`No payment record for intent ${paymentIntentId}`);
     if (payment.status === "escrowed") return payment;
 
     const plan = resolveVisitPlan({
@@ -201,8 +202,8 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
     });
     const totalSessions = computeTotalSessions(plan);
 
-    const stripeIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["charges"] });
-    const tds = stripeIntent.charges?.data?.[0]?.payment_method_details?.card?.three_d_secure;
+    const stripeIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] });
+    const tds = stripeIntent.latest_charge?.payment_method_details?.card?.three_d_secure;
     if (tds?.result === "not_supported" || tds?.result == null) {
         logger.warn("[PaymentService] No 3DS liability shift", { paymentIntentId, bookingId: payment.bookingId, result: tds?.result ?? "none" });
     }

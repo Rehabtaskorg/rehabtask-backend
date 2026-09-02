@@ -3,6 +3,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendBookingCancelledByAdmin } from "./email.service.js";
+import { resolveCreditsToRestore } from "../utils/visitCredits.js";
 
 const BOOKING_INCLUDE = {
     customer: {
@@ -148,9 +149,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         );
     }
 
-    const nonCancelledCount = booking.sessions?.filter(
-        (s) => s.status !== SESSION_STATUS.CANCELLED
-    ).length ?? 0;
+    const nonCancelledCount = resolveCreditsToRestore(booking);
 
     const updated = await prisma.$transaction(async (tx) => {
         const txBooking = await tx.booking.update({
@@ -183,7 +182,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.CUSTOMER,
-    }).catch(() => {});
+    }).catch(() => { });
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.therapist.user.email,
@@ -191,7 +190,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.THERAPIST,
-    }).catch(() => {});
+    }).catch(() => { });
 
     logger.info("[AdminBookingService] Booking cancelled", {
         bookingId,
