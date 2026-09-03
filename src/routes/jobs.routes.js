@@ -12,6 +12,7 @@ import {
     triggerSessionCancellationExpiry,
     triggerPurgeWebhookEvents,
     triggerReviewExpirySms,
+    triggerRevisionExpirySms,
 } from "../controllers/jobs.controller.js";
 
 const router = Router();
@@ -29,5 +30,6 @@ router.post("/cancellation-expiry", triggerCancellationExpiry);
 router.post("/session-cancellation-expiry", triggerSessionCancellationExpiry);
 router.post("/purge-webhook-events", triggerPurgeWebhookEvents);
 router.post("/review-expiry-sms", triggerReviewExpirySms);
+router.post("/revision-expiry-sms", triggerRevisionExpirySms);
 
 export default router;
