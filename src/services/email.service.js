@@ -18,7 +18,9 @@ import {
     sessionCompletionRequest,
     sessionConfirmed,
     sessionRevisionRequested,
+    sessionRevisionResponded,
     sessionRevisionSubmitted,
+    sessionRevisionExtended,
     payoutConfirmation,
     newMessageNotification,
     offerDeclined,
@@ -194,8 +196,15 @@ export const sendSessionConfirmed = async ({ therapist, customer, session, booki
 /**
  * Customer requested a revision on a session — notify therapist
  */
-export const sendSessionRevisionRequested = async ({ therapist, customer, session, booking, reason }) => {
-    return dispatch(therapist.user.email, sessionRevisionRequested, { therapist, customer, session, booking, reason });
+export const sendSessionRevisionRequested = async ({ therapist, customer, session, booking }) => {
+    return dispatch(therapist.user.email, sessionRevisionRequested, { therapist, customer, session, booking });
+};
+
+/**
+ * Therapist acknowledged a revision request and committed to a due date — notify customer
+ */
+export const sendSessionRevisionResponded = async ({ customer, therapist, session, booking }) => {
+    return dispatch(customer.user.email, sessionRevisionResponded, { customer, therapist, session, booking });
 };
 
 /**
@@ -203,6 +212,13 @@ export const sendSessionRevisionRequested = async ({ therapist, customer, sessio
  */
 export const sendSessionRevisionSubmitted = async ({ customer, therapist, session, booking }) => {
     return dispatch(customer.user.email, sessionRevisionSubmitted, { customer, therapist, session, booking });
+};
+
+/**
+ * Therapist extended the revision deadline — notify customer
+ */
+export const sendSessionRevisionExtended = async ({ customer, therapist, session, booking }) => {
+    return dispatch(customer.user.email, sessionRevisionExtended, { customer, therapist, session, booking });
 };
 
 /**

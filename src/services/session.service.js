@@ -7,9 +7,11 @@ import {
     sendSessionCompletionRequest,
     sendSessionConfirmed,
     sendSessionRevisionRequested,
+    sendSessionRevisionResponded,
     sendSessionRevisionSubmitted,
+    sendSessionRevisionExtended,
 } from "./email.service.js";
-import { smsCustWorkSubmittedForReview, smsTherPaymentReleased, smsTherRevisionRequested, smsCustRevisionExtended } from "./sms.service.js";
+import { smsCustWorkSubmittedForReview, smsTherPaymentReleased, smsTherRevisionRequested, smsCustRevisionResponded, smsCustRevisionExtended } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
 import {
     releaseSessionPayout,
@@ -389,7 +391,6 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
         customer: session.booking.customer,
         session: updatedSession,
         booking: session.booking,
-        reason: trimmedReason,
     }).catch((err) => {
         logger.error("[SessionService] Revision requested email failed", { error: err.message });
     });
@@ -448,7 +449,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
         throw new Error("Unauthorized");
     }
 
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be responded to.",
             "INVALID_SESSION_STATUS"
@@ -494,7 +495,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
         });
 
     // Notify customer that therapist acknowledged
-    sendSessionRevisionSubmitted({
+    sendSessionRevisionResponded({
         customer: session.booking.customer,
         therapist: session.booking.therapist,
         session: updatedSession,
@@ -502,6 +503,8 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     }).catch((err) => {
         logger.error("[SessionService] Revision responded email failed", { error: err.message });
     });
+
+    smsCustRevisionResponded(session.booking.customer, session.bookingId, dueByDate);
 
     return updatedSession;
 };
@@ -536,7 +539,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
         throw new Error("Unauthorized");
     }
 
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be resubmitted.",
             "INVALID_SESSION_STATUS"
@@ -555,7 +558,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
     const updatedSession = await prisma.session.update({
         where: { id: sessionId },
         data: {
-            status: "completed_by_therapist",
+            status: SESSION_STATUS.COMPLETED_BY_THERAPIST,
             completedAt: now,
             revisionLastSubmittedAt: now,
             revisionExpirySmsSentAt: null,
@@ -605,15 +608,6 @@ export const resubmitSession = async (sessionId, therapistId) => {
 };
 
 /**
- * @deprecated Use respondToRevision + resubmitSession instead.
- * Kept for backward compat during the transition window.
- */
-export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
-    await respondToRevision(sessionId, therapistId, { dueBy });
-    return resubmitSession(sessionId, therapistId);
-};
-
-/**
  * Therapist extends the revision deadline by REVISION_EXTEND_DAYS days.
  *
  * New deadline = max(currentRevisionDueBy, now) + REVISION_EXTEND_DAYS days.
@@ -640,7 +634,7 @@ export const extendRevision = async (sessionId, therapistId) => {
 
     if (!session) throw new Error("Session not found");
     if (session.booking.therapistId !== therapistId) throw new Error("Unauthorized");
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be extended.",
             "INVALID_SESSION_STATUS"
@@ -686,6 +680,15 @@ export const extendRevision = async (sessionId, therapistId) => {
         .catch((err) => {
             logger.error("[SessionService] System message (session_revision_extended) failed", { error: err.message });
         });
+
+    sendSessionRevisionExtended({
+        customer: session.booking.customer,
+        therapist: session.booking.therapist,
+        session: updatedSession,
+        booking: session.booking,
+    }).catch((err) => {
+        logger.error("[SessionService] Revision extended email failed", { error: err.message });
+    });
 
     smsCustRevisionExtended(session.booking.customer, session.bookingId, newDueBy);
 
