@@ -47,24 +47,22 @@ export const runReviewExpirySms = async () => {
     let skipped = 0;
 
     for (const session of sessions) {
+        let wasSent = false;
         try {
-            const wasSent = await smsCustWorkReviewExpiring(session.booking.customer, session.booking.id);
+            wasSent = await smsCustWorkReviewExpiring(session.booking.customer, session.booking.id);
+            if (wasSent) sent++;
+            else skipped++;
+        } catch (err) {
+            logger.error(`[ReviewExpirySms] Send failed for session ${session.id}`, { error: err.message });
+        }
 
+        try {
             await prisma.session.update({
                 where: { id: session.id },
                 data: { reviewExpirySmsSentAt: now },
             });
-
-            if (wasSent) {
-                sent++;
-            } else {
-                skipped++;
-            }
         } catch (err) {
-            // TODO: [BUG] If smsCustWorkReviewExpiring throws (Twilio error), the prisma.session.update stamp
-            // is skipped and this session is re-queried on every subsequent scheduler run indefinitely.
-            // Fix: move the stamp into its own try/catch so Twilio errors don't prevent it from being written.
-            logger.error(`[ReviewExpirySms] Failed for session ${session.id}`, { error: err.message });
+            logger.error(`[ReviewExpirySms] Stamp failed for session ${session.id}`, { error: err.message });
         }
     }
 
