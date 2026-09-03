@@ -45,6 +45,7 @@ export const SESSION_STATUS = {
     ATTEMPTED:                  "attempted",
     CANCELLED:                  "cancelled",
     COMPLETED:                  "completed",
+    IN_REVISION:                "in_revision",
     CANCELLATION_REQUESTED:     "cancellation_requested",
 };
 

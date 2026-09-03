@@ -107,6 +107,7 @@ export const syncTwilioOptStatus = async (phone, optIn) => {
 };
 
 // ─── Therapist triggers ────────────────────────────────────────────────────
+// SMS bodies: static copy, dates, and URLs only. Never free text, patient identifiers, or clinical detail (no Twilio BAA).
 
 /**
  * Customer sent a direct request to this therapist.
@@ -142,6 +143,33 @@ export const smsTherNewMessage = (therapistProfile) => {
         therapistProfile,
         `You have a new message on RehabTask. Open the app to reply: ${env.FRONTEND_URL}/therapist/messages`,
         "therNewMessage"
+    );
+};
+
+/**
+ * Customer requested a revision on a session the therapist submitted.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ */
+export const smsTherRevisionRequested = (therapistProfile, bookingId) => {
+    dispatch(
+        therapistProfile,
+        `A customer has requested changes to your session on RehabTask. Please review and set your revision date: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`,
+        "therRevisionRequested"
+    );
+};
+
+/**
+ * Therapist's revision deadline is within 24h. Called by revisionExpirySms cron.
+ * Uses dispatchAwaitable so the job can stamp revisionExpirySmsSentAt after send.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ * @returns {Promise<boolean>}
+ */
+export const smsTherRevisionExpiringSoon = (therapistProfile, bookingId) => {
+    return dispatchAwaitable(
+        therapistProfile,
+        `Reminder: your revision deadline expires in 24 hours on RehabTask. Please resubmit your session work: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`
     );
 };
 
@@ -199,5 +227,34 @@ export const smsCustNewMessage = (customerProfile) => {
         customerProfile,
         `You have a new message on RehabTask. Open the app to reply: ${env.FRONTEND_URL}/customer/messages`,
         "custNewMessage"
+    );
+};
+
+/**
+ * Therapist extended their revision deadline.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @param {Date} newDueBy
+ */
+export const smsCustRevisionExtended = (customerProfile, bookingId, newDueBy) => {
+    const formattedDate = new Date(newDueBy).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    dispatch(
+        customerProfile,
+        `Your therapist has extended their revision deadline to ${formattedDate} on RehabTask: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`,
+        "custRevisionExtended"
+    );
+};
+
+/**
+ * Customer notified their therapist's revision deadline is within 24h.
+ * Same idempotency stamp as smsTherRevisionExpiringSoon — one stamp covers both sends.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @returns {Promise<boolean>}
+ */
+export const smsCustRevisionExpiringSoon = (customerProfile, bookingId) => {
+    return dispatchAwaitable(
+        customerProfile,
+        `Your therapist's revision deadline expires in 24 hours on RehabTask. Check your booking for updates: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`
     );
 };

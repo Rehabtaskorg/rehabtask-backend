@@ -9,7 +9,7 @@ import {
     sendSessionRevisionRequested,
     sendSessionRevisionSubmitted,
 } from "./email.service.js";
-import { smsCustWorkSubmittedForReview, smsTherPaymentReleased } from "./sms.service.js";
+import { smsCustWorkSubmittedForReview, smsTherPaymentReleased, smsTherRevisionRequested, smsCustRevisionExtended } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
 import {
     releaseSessionPayout,
@@ -394,6 +394,8 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
         logger.error("[SessionService] Revision requested email failed", { error: err.message });
     });
 
+    smsTherRevisionRequested(session.booking.therapist, session.bookingId);
+
     return updatedSession;
 };
 
@@ -556,6 +558,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
             status: "completed_by_therapist",
             completedAt: now,
             revisionLastSubmittedAt: now,
+            revisionExpirySmsSentAt: null,
         },
     });
 
@@ -683,6 +686,8 @@ export const extendRevision = async (sessionId, therapistId) => {
         .catch((err) => {
             logger.error("[SessionService] System message (session_revision_extended) failed", { error: err.message });
         });
+
+    smsCustRevisionExtended(session.booking.customer, session.bookingId, newDueBy);
 
     return updatedSession;
 };
