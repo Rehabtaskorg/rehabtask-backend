@@ -503,6 +503,7 @@ model Session {
   revisionDueBy           DateTime? @map("revision_due_by") @db.Timestamptz(3)
   revisionCount           Int       @default(0) @map("revision_count")
   revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
+  revisionExpirySmsSentAt DateTime? @map("revision_expiry_sms_sent_at") @db.Timestamptz(3)
 
   missedReason String?       @map("missed_reason") @db.VarChar(500)
   missedBy     MissedByRole? @map("missed_by")
@@ -590,6 +591,7 @@ model CustomerRefund {
   status                CustomerRefundStatus
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
   stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
+  stripePayoutId        String?              @map("stripe_payout_id") @db.VarChar(255)
   reason                String?              @db.VarChar(255)
   payoutFailureReason   String?              @map("payout_failure_reason") @db.VarChar(255)
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
@@ -609,6 +611,7 @@ model CustomerRefund {
   @@index([paymentId])
   @@index([bookingId])
   @@index([sessionId])
+  @@index([stripePayoutId])
   @@map("customer_refunds")
 }
 

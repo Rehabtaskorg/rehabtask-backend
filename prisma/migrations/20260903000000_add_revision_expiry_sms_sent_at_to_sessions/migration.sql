@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "revision_expiry_sms_sent_at" TIMESTAMPTZ(3);
