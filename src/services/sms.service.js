@@ -231,6 +231,21 @@ export const smsCustNewMessage = (customerProfile) => {
 };
 
 /**
+ * Therapist acknowledged the revision request and committed to a due date.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @param {Date} dueBy
+ */
+export const smsCustRevisionResponded = (customerProfile, bookingId, dueBy) => {
+    const formattedDate = new Date(dueBy).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    dispatch(
+        customerProfile,
+        `Your therapist will have your revision ready by ${formattedDate} on RehabTask: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`,
+        "custRevisionResponded"
+    );
+};
+
+/**
  * Therapist extended their revision deadline.
  * @param {{ phone: string, smsOptIn: boolean }} customerProfile
  * @param {string} bookingId

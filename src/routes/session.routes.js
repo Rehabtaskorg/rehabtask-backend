@@ -5,7 +5,7 @@ import {
     confirmByCustomerController, getCustomerSessionsController,
     getSessionController, getTherapistSessionsController, scheduleSessionController,
     updateSessionTitleController,
-    requestRevisionController, submitRevisionController,
+    requestRevisionController,
     respondToRevisionController, resubmitSessionController, extendRevisionController,
     markMissedByTherapistController, markMissedByCustomerController,
     markAttemptedByTherapistController,
@@ -27,9 +27,6 @@ router.post("/:sessionId/cancellation/reject", authenticate, rejectSessionCancel
 router.post("/:sessionId/schedule", authenticate, authorize([USER_ROLES.THERAPIST]), scheduleSessionController);
 router.post("/:sessionId/title", authenticate, authorize([USER_ROLES.THERAPIST]), updateSessionTitleController);
 router.post("/:sessionId/request-revision", authenticate, authorize([USER_ROLES.CUSTOMER]), requestRevisionController);
-// Legacy endpoint — kept for backward compat. Calls respondToRevision + resubmitSession in sequence.
-router.post("/:sessionId/submit-revision", authenticate, authorize([USER_ROLES.THERAPIST]), submitRevisionController);
-// New two-step revision flow
 router.post("/:sessionId/revision-respond", authenticate, authorize([USER_ROLES.THERAPIST]), respondToRevisionController);
 router.post("/:sessionId/revision-resubmit", authenticate, authorize([USER_ROLES.THERAPIST]), resubmitSessionController);
 router.post("/:sessionId/revision-extend", authenticate, authorize([USER_ROLES.THERAPIST]), extendRevisionController);
