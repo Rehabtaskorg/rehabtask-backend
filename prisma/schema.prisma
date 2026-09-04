@@ -937,6 +937,7 @@ enum OfferStatus {
 
 enum BookingStatus {
   pending
+  pending_payment
   accepted
   confirmed
   in_progress
