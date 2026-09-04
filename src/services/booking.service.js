@@ -138,7 +138,7 @@ export const getCustomerBookings = async (customerId) => {
  */
 export const getTherapistBookings = async (therapistId) => {
     const bookings = await prisma.booking.findMany({
-        where: { therapistId },
+        where: { therapistId, status: { not: BOOKING_STATUS.PENDING_PAYMENT } },
         include: {
             customer: {
                 select: {
