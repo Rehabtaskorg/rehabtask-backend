@@ -1,0 +1,1 @@
+ALTER TYPE "BookingStatus" ADD VALUE IF NOT EXISTS 'pending_payment' BEFORE 'accepted';
