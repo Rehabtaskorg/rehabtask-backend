@@ -4,6 +4,7 @@ import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 import { sendOfferAccepted } from "./email.service.js";
+import { smsTherOfferAccepted } from "./sms.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 import { getActiveSubscription } from "./subscription.service.js";
 import { APIError } from "../utils/errors.js";
@@ -82,7 +83,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     numberOfWeeks: effectivePlan.numberOfWeeks,
                 },
                 include: {
-                    therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true, smsOptIn: true, user: { select: { id: true, email: true } } } },
                     customer: { include: { user: { select: { id: true, email: true } } } },
                     offer: { include: { request: true } },
                     patient: { select: { id: true, fullName: true } },
@@ -93,7 +94,7 @@ export const acceptOffer = async (offerId, customerId) => {
                 txBooking = await tx.booking.findFirst({
                     where: { offerId: offer.id },
                     include: {
-                        therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
+                        therapist: { select: { ...THERAPIST_SAFE_SELECT, phone: true, smsOptIn: true, user: { select: { id: true, email: true } } } },
                         customer: { include: { user: { select: { id: true, email: true } } } },
                         offer: { include: { request: true } },
                         patient: { select: { id: true, fullName: true } },
@@ -162,6 +163,8 @@ export const acceptOffer = async (offerId, customerId) => {
     sendOfferAccepted({ therapist: booking.therapist, customer: booking.customer, booking, offer: booking.offer }).catch((err) => {
         logger.error("[OfferService] Offer accepted notification failed", { error: err.message });
     });
+
+    smsTherOfferAccepted(booking.therapist, booking.id);
 
     return { offer: updatedOffer, booking };
 };

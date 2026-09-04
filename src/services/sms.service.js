@@ -123,6 +123,32 @@ export const smsTherDirectOfferReceived = (therapistProfile, requestId) => {
 };
 
 /**
+ * A public request within the therapist's work area and discipline was posted.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} requestId
+ */
+export const smsTherNearbyRequestAvailable = (therapistProfile, requestId) => {
+    dispatch(
+        therapistProfile,
+        `A new request is available near you on RehabTask. Open the app to review and submit an offer: ${env.FRONTEND_URL}/therapist/requests/${requestId}`,
+        "therNearbyRequestAvailable"
+    );
+};
+
+/**
+ * Customer accepted the therapist's offer.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ */
+export const smsTherOfferAccepted = (therapistProfile, bookingId) => {
+    dispatch(
+        therapistProfile,
+        `Your offer was accepted on RehabTask. View the booking: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`,
+        "therOfferAccepted"
+    );
+};
+
+/**
  * Payment released to therapist after session confirmed.
  * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
  */
