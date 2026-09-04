@@ -3,8 +3,6 @@ import { prisma } from "../config/prisma.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
-import { sendOfferAccepted } from "./email.service.js";
-import { smsTherOfferAccepted } from "./sms.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
 import { getActiveSubscription } from "./subscription.service.js";
 import { APIError } from "../utils/errors.js";
@@ -34,8 +32,18 @@ export const acceptOffer = async (offerId, customerId) => {
     const subscription = await getActiveSubscription(customerId);
 
     if (subscription.visitLimit < 999999) {
-        const remaining = subscription.visitLimit - subscription.sessionsUsed;
-        const projectedTotal = subscription.sessionsUsed + offerVisits;
+        const inFlightBookings = await prisma.booking.findMany({
+            where: { customerId, status: BOOKING_STATUS.PENDING_PAYMENT },
+            select: { visitsPerWeek: true, numberOfWeeks: true, visitTypeId: true },
+        });
+        const inFlightVisits = inFlightBookings.reduce(
+            (sum, inFlightBooking) => sum + computeTotalSessions(resolveVisitPlan({ booking: inFlightBooking })),
+            0
+        );
+
+        const committedVisits = subscription.sessionsUsed + inFlightVisits;
+        const remaining = Math.max(subscription.visitLimit - committedVisits, 0);
+        const projectedTotal = committedVisits + offerVisits;
 
         if (projectedTotal > subscription.visitLimit) {
             const err = new APIError(
@@ -43,7 +51,7 @@ export const acceptOffer = async (offerId, customerId) => {
                 403,
                 "VISIT_LIMIT_REACHED"
             );
-            err.errors = { offerVisits, remaining, limit: subscription.visitLimit, planType: subscription.planType };
+            err.errors = { offerVisits, remaining, limit: subscription.visitLimit, planType: subscription.planType, inFlightVisits };
             throw err;
         }
     }
@@ -51,12 +59,7 @@ export const acceptOffer = async (offerId, customerId) => {
     const { updatedOffer, booking } = await prisma.$transaction(async (tx) => {
         const txUpdatedOffer = await tx.offer.update({
             where: { id: offerId },
-            data: { status: BOOKING_STATUS.ACCEPTED },
-        });
-
-        await tx.offer.updateMany({
-            where: { requestId: offer.requestId, id: { not: offerId }, status: BOOKING_STATUS.PENDING },
-            data: { status: OFFER_STATUS.REJECTED },
+            data: { status: OFFER_STATUS.ACCEPTED },
         });
 
         await tx.therapyRequest.update({
@@ -75,7 +78,7 @@ export const acceptOffer = async (offerId, customerId) => {
                     rate: offer.rate,
                     attemptedVisitRate: offer.attemptedVisitRate,
                     sessionType: offer.sessionType,
-                    status: BOOKING_STATUS.ACCEPTED,
+                    status: BOOKING_STATUS.PENDING_PAYMENT,
                     patientId: offer.request.patientId || null,
                     visitTypeId: effectivePlan.visitTypeId,
                     visitType: effectivePlan.visitType,
@@ -104,14 +107,6 @@ export const acceptOffer = async (offerId, customerId) => {
             }
             throw err;
         }
-
-        await tx.subscription.updateMany({
-            where: {
-                customerId,
-                status: { in: ["active", "trialing", "grace_period", "past_due"] },
-            },
-            data: { sessionsUsed: { increment: offerVisits } },
-        });
 
         return { updatedOffer: txUpdatedOffer, booking: txBooking };
     }, { timeout: 15000 });
@@ -159,12 +154,6 @@ export const acceptOffer = async (offerId, customerId) => {
         .catch((err) => {
             logger.error("[OfferService] System messages (offer_accepted/booking_created) failed", { error: err.message, offerId, bookingId: booking.id });
         });
-
-    sendOfferAccepted({ therapist: booking.therapist, customer: booking.customer, booking, offer: booking.offer }).catch((err) => {
-        logger.error("[OfferService] Offer accepted notification failed", { error: err.message });
-    });
-
-    smsTherOfferAccepted(booking.therapist, booking.id);
 
     return { offer: updatedOffer, booking };
 };

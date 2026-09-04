@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, SESSION_STATUS } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, OFFER_STATUS, SUBSCRIPTION_STATUS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe, stripeConfig } from "../config/stripe.js";
 import { logger } from "../config/logger.js";
@@ -6,7 +6,8 @@ import { getCommissionRate } from "./commission.service.js";
 import { logAction, logSystemEvent } from "./audit.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
 import { resolveVisitPlan, computeTotalSessions } from "../utils/visitPlan.js";
-import { sendPaymentConfirmation } from "./email.service.js";
+import { sendPaymentConfirmation, sendOfferAccepted } from "./email.service.js";
+import { smsTherOfferAccepted } from "./sms.service.js";
 import { getOrCreateStripeCustomer } from "./payment.shared.js";
 import { NonRetryableWebhookError } from "../utils/errors.js";
 
@@ -28,7 +29,8 @@ export const createPaymentIntent = async (bookingId, userId, paymentMethodId = n
 
     if (!booking) throw new Error("Booking not found");
     if (booking.customer.userId !== userId) throw new Error("Unauthorized");
-    if (!["pending", "accepted"].includes(booking.status)) throw new Error("Booking must be in pending or accepted status");
+    const PAYABLE_BOOKING_STATUSES = [BOOKING_STATUS.PENDING, BOOKING_STATUS.PENDING_PAYMENT, BOOKING_STATUS.ACCEPTED];
+    if (!PAYABLE_BOOKING_STATUSES.includes(booking.status)) throw new Error("Booking must be in pending, pending_payment, or accepted status");
 
     const plan = resolveVisitPlan({ booking, offer: booking.offer, request: booking.offer?.request });
     const totalSessions = computeTotalSessions(plan);
@@ -230,6 +232,26 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
             }));
             await tx.session.createMany({ data: sessionRows });
         }
+
+        const acceptedRequestId = payment.booking.offer?.requestId;
+        if (acceptedRequestId) {
+            await tx.offer.updateMany({
+                where: {
+                    requestId: acceptedRequestId,
+                    id: { not: payment.booking.offerId },
+                    status: OFFER_STATUS.PENDING,
+                },
+                data: { status: OFFER_STATUS.REJECTED },
+            });
+        }
+
+        await tx.subscription.updateMany({
+            where: {
+                customerId: payment.booking.customerId,
+                status: { in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.TRIALING, SUBSCRIPTION_STATUS.GRACE_PERIOD, SUBSCRIPTION_STATUS.PAST_DUE] },
+            },
+            data: { sessionsUsed: { increment: totalSessions } },
+        });
     }, { timeout: 15000 });
 
     logSystemEvent({
@@ -243,7 +265,9 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
         where: { id: payment.bookingId },
         include: {
             customer: { include: { user: { select: { id: true, email: true } } } },
-            therapist: { select: { userId: true, fullName: true } },
+            therapist: { select: { userId: true, fullName: true, phone: true, smsOptIn: true, user: { select: { id: true, email: true } } } },
+            patient: { select: { id: true, fullName: true } },
+            offer: { include: { request: true } },
         },
     });
 
@@ -263,10 +287,21 @@ export const handlePaymentSuccess = async (paymentIntentId, stripeEventId) => {
                         bookingId: payment.bookingId,
                     })
                 )
-                .catch(() => {});
+                .catch(() => { });
         }
 
-        sendPaymentConfirmation({ customer: bookingWithDetails.customer, booking: bookingWithDetails, payment }).catch(() => {});
+        sendPaymentConfirmation({ customer: bookingWithDetails.customer, booking: bookingWithDetails, payment }).catch(() => { });
+
+        sendOfferAccepted({
+            therapist: bookingWithDetails.therapist,
+            customer: bookingWithDetails.customer,
+            booking: bookingWithDetails,
+            offer: bookingWithDetails.offer,
+        }).catch((err) => {
+            logger.error("[PaymentService] Offer accepted notification failed", { error: err.message, bookingId: payment.bookingId });
+        });
+
+        smsTherOfferAccepted(bookingWithDetails.therapist, bookingWithDetails.id);
     }
 
     return payment;

@@ -102,10 +102,11 @@ export const adminListBookings = async ({
 };
 
 export const adminGetBookingStats = async () => {
-    const [total, pending, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
+    const [total, pending, pendingPayment, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
         await Promise.all([
             prisma.booking.count(),
             prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING_PAYMENT } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.ACCEPTED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.CONFIRMED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.IN_PROGRESS } }),
@@ -117,6 +118,7 @@ export const adminGetBookingStats = async () => {
     return {
         total,
         pending,
+        pendingPayment,
         accepted,
         confirmed,
         inProgress,
@@ -142,7 +144,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
 
-    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
+    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.PENDING_PAYMENT, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
     if (!cancellable.includes(booking.status)) {
         throw new ConflictError(
             `Booking cannot be cancelled in status '${booking.status}'`

@@ -25,6 +25,7 @@ export const APPROVAL_STATUS = {
 
 export const BOOKING_STATUS = {
     PENDING: "pending",
+    PENDING_PAYMENT: "pending_payment",
     ACCEPTED: "accepted",
     CONFIRMED: "confirmed",
     IN_PROGRESS: "in_progress",
@@ -50,7 +51,6 @@ export const SESSION_STATUS = {
 };
 
 export const CONTACT_UNLOCK_BOOKING_STATUSES = [
-    BOOKING_STATUS.ACCEPTED,
     BOOKING_STATUS.CONFIRMED,
     BOOKING_STATUS.IN_PROGRESS,
     BOOKING_STATUS.RESCHEDULE_REQUESTED,
