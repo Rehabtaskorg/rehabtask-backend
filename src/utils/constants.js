@@ -67,6 +67,16 @@ export const OFFER_STATUS = {
     CANCELLED: "cancelled",
 };
 
+export const REQUEST_STATUS = {
+    CREATED: "created",
+    OFFERS_RECEIVED: "offers_received",
+    OFFERS_ACCEPTED: "offers_accepted",
+    COMPLETED: "completed",
+    CANCELLED: "cancelled",
+};
+
+export const REOPENABLE_REQUEST_STATUSES = [REQUEST_STATUS.OFFERS_ACCEPTED];
+
 export const PLAN_TYPES = {
     FREE: "free",
     PRO: "pro",

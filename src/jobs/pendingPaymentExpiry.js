@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, TIME_MS } from "../utils/constants.js";
+import { BOOKING_STATUS, OFFER_STATUS, REQUEST_STATUS, REOPENABLE_REQUEST_STATUSES, TIME_MS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { logSystemEvent } from "../services/audit.service.js";
@@ -17,7 +17,10 @@ export const runPendingPaymentExpiry = async () => {
             status: BOOKING_STATUS.PENDING_PAYMENT,
             createdAt: { lt: expiryCutoff },
         },
-        include: { payment: true },
+        include: {
+            payment: true,
+            offer: { select: { id: true, requestId: true, expiresAt: true } },
+        },
     });
 
     if (bookings.length === 0) return;
@@ -60,13 +63,30 @@ export const runPendingPaymentExpiry = async () => {
                 if (payment) {
                     await tx.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
                 }
+
+                if (booking.offer) {
+                    await tx.therapyRequest.updateMany({
+                        where: { id: booking.offer.requestId, status: { in: REOPENABLE_REQUEST_STATUSES } },
+                        data: { status: REQUEST_STATUS.OFFERS_RECEIVED },
+                    });
+
+                    const offerStillValid = new Date(booking.offer.expiresAt) > new Date();
+                    await tx.offer.updateMany({
+                        where: { id: booking.offer.id, status: OFFER_STATUS.ACCEPTED },
+                        data: { status: offerStillValid ? OFFER_STATUS.PENDING : "expired" },
+                    });
+                }
             }, { timeout: 15000 });
 
             logSystemEvent({
                 action: "booking.pending_payment_expired",
                 entityType: "booking",
                 entityId: booking.id,
-                changes: { paymentId: payment?.id ?? null, stripePaymentIntentId: payment?.stripePaymentIntentId ?? null },
+                changes: {
+                    paymentId: payment?.id ?? null,
+                    stripePaymentIntentId: payment?.stripePaymentIntentId ?? null,
+                    reopenedRequestId: booking.offer?.requestId ?? null,
+                },
             });
 
             cancelled++;
