@@ -1,4 +1,4 @@
-import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES, OFFER_STATUS, REQUEST_STATUS, REOPENABLE_REQUEST_STATUSES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { NotFoundError, ConflictError, AuthorizationError } from "../utils/errors.js";
@@ -33,6 +33,7 @@ const getBookingForCancellation = async (bookingId) =>
         include: {
             payment: true,
             sessions: { orderBy: { sessionNumber: "asc" } },
+            offer: { select: { id: true, requestId: true, expiresAt: true } },
             customer: {
                 select: {
                     id: true,
@@ -94,6 +95,19 @@ const cancelUnpaidBooking = async (booking, userId, reason) => {
                     sessionsUsed: { gte: creditsToRestore },
                 },
                 data: { sessionsUsed: { decrement: creditsToRestore } },
+            });
+        }
+
+        if (booking.status === BOOKING_STATUS.PENDING_PAYMENT && booking.offer) {
+            await tx.therapyRequest.updateMany({
+                where: { id: booking.offer.requestId, status: { in: REOPENABLE_REQUEST_STATUSES } },
+                data: { status: REQUEST_STATUS.OFFERS_RECEIVED },
+            });
+
+            const offerStillValid = new Date(booking.offer.expiresAt) > new Date();
+            await tx.offer.updateMany({
+                where: { id: booking.offer.id, status: OFFER_STATUS.ACCEPTED },
+                data: { status: offerStillValid ? OFFER_STATUS.PENDING : "expired" },
             });
         }
     }, { timeout: 15000 });
