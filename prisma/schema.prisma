@@ -106,7 +106,7 @@ model Patient {
   agencyId           String           @map("agency_id") @db.Uuid
   email              String?          @db.VarChar(255)
   fullName           String           @map("full_name") @db.VarChar(255)
-  phone              String?          @db.VarChar(20)
+  phone              String           @db.VarChar(20)
   addressLine1       String?          @map("address_line_1") @db.VarChar(255)
   addressLine2       String?          @map("address_line_2") @db.VarChar(255)
   city               String?          @db.VarChar(100)
