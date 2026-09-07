@@ -68,7 +68,7 @@ export const createPatient = async (customerProfile, data) => {
             certificationEnd: certificationEnd ? new Date(certificationEnd) : null,
             gender: gender || null,
             email: email || null,
-            phone: phone || null,
+            phone,
             addressLine1: addressLine1 || null,
             addressLine2: addressLine2 || null,
             city: geocoded.city || city || null,
@@ -176,7 +176,7 @@ export const updatePatient = async (customerProfile, patientId, data) => {
             ...(data.certificationEnd !== undefined && { certificationEnd: data.certificationEnd ? new Date(data.certificationEnd) : null }),
             ...(data.gender !== undefined && { gender: data.gender || null }),
             ...(data.email !== undefined && { email: data.email || null }),
-            ...(data.phone !== undefined && { phone: data.phone || null }),
+            ...(data.phone !== undefined && { phone: data.phone }),
             ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),
             ...(data.addressLine2 !== undefined && { addressLine2: data.addressLine2 || null }),
             ...(geocoded ? {
