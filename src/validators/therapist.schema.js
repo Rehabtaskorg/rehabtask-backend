@@ -8,7 +8,8 @@ export const updateProfileSchema = z.object({
         .optional(),
     phone: z
         .string()
-        .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX"),
+        .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX")
+        .optional(),
     smsOptIn: z.boolean().optional(),
     professionalSummary: z
         .string()
