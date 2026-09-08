@@ -310,8 +310,8 @@ model CustomerConsentSignature {
   signedAt                   DateTime        @default(now()) @map("signed_at") @db.Timestamptz(3)
   customer                   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  @@unique([customerId, documentType])
   @@index([customerId])
+  @@index([customerId, documentType, signedAt])
   @@map("customer_consent_signatures")
 }
 
