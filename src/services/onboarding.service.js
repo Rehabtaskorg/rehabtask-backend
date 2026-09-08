@@ -7,6 +7,7 @@ import { logAction } from "./audit.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
 import { getSignedUrl } from "./storage.service.js";
+import { assertOnboardingMutable, ONBOARDING_LOCKED_STATUSES } from "../utils/onboardingAccess.js";
 
 const computeOnboardingSteps = (therapist) => {
     const hasDocumentType = (types) =>
@@ -211,6 +212,7 @@ export const savePersonalInfo = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -245,6 +247,7 @@ export const savePersonalInfo = async (userId, data) => {
 export const saveProfessionalProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
     if (!therapist) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(therapist);
 
     const categoryMap = {
         [THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY]:     data.specialties ?? [],
@@ -296,6 +299,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     // Check if license number already exists (for another therapist)
     const existingLicense = await prisma.therapistProfile.findFirst({
@@ -414,6 +418,7 @@ export const saveAvailability = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     // Delete existing availability
     await prisma.availability.deleteMany({
@@ -497,6 +502,7 @@ export const saveAvailability = async (userId, data) => {
 export const saveHipaaAttestation = async (userId, data, uploadIp = null) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
     if (!therapist) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -542,6 +548,7 @@ export const saveInsurance = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -602,6 +609,7 @@ export const saveIdentityVerification = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -632,11 +640,17 @@ export const saveIdentityVerification = async (userId, data) => {
                 where: { id: { in: superseded.map((d) => d.id) } },
                 data: { isDeleted: true, deletedAt: new Date() },
             });
-            await Promise.allSettled(
-                superseded.map((d) =>
-                    deleteFileFromStorage(d.bucket ?? THERAPIST_DOCUMENTS_BUCKET, d.documentUrl)
-                )
-            );
+            // Preserve the actual file when the profile is under review or approved -
+            // an admin may have relied on it. Belt-and-braces: assertOnboardingMutable()
+            // above already blocks this whole function in that state, but this stays
+            // correct if the deletion logic is ever reused elsewhere.
+            if (!ONBOARDING_LOCKED_STATUSES.includes(therapist.approvalStatus)) {
+                await Promise.allSettled(
+                    superseded.map((d) =>
+                        deleteFileFromStorage(d.bucket ?? THERAPIST_DOCUMENTS_BUCKET, d.documentUrl)
+                    )
+                );
+            }
         }
     }
 
@@ -896,7 +910,12 @@ export const deleteDocument = async (userId, documentId) => {
         },
     });
 
-    await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
+    // Preserve the actual file while the profile is under review or approved -
+    // an admin may have relied on it. Only hard-delete from storage while
+    // pending/rejected, where nothing has been verified yet.
+    if (!ONBOARDING_LOCKED_STATUSES.includes(therapist?.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
+    }
 
     await logAction({
         actorId: userId,
@@ -1133,7 +1152,9 @@ export const deleteAgencyDocument = async (userId, documentId) => {
         data: { isDeleted: true, deletedAt: new Date() },
     });
 
-    await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+    if (!ONBOARDING_LOCKED_STATUSES.includes(customer.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+    }
 
     return { message: "Document deleted successfully" };
 };
@@ -1455,7 +1476,9 @@ export const deleteIndividualDocument = async (userId, documentId) => {
         data: { isDeleted: true, deletedAt: new Date() },
     });
 
-    await deleteFileFromStorage(document.bucket || INDIVIDUAL_DOCUMENTS_BUCKET, document.documentUrl);
+    if (!ONBOARDING_LOCKED_STATUSES.includes(customer.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || INDIVIDUAL_DOCUMENTS_BUCKET, document.documentUrl);
+    }
 
     return { message: "Document deleted successfully" };
 };
