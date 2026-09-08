@@ -76,6 +76,7 @@ model CustomerProfile {
   approvedAt               DateTime?        @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?          @map("rejection_reason")
   pendingReviewAt          DateTime?        @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?        @map("review_started_at") @db.Timestamptz(3)
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -177,6 +178,7 @@ model TherapistProfile {
   approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?                @map("rejection_reason")
   pendingReviewAt          DateTime?              @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?              @map("review_started_at") @db.Timestamptz(3)
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)

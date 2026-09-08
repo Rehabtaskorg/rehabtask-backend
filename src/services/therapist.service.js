@@ -177,7 +177,7 @@ export const updateAvailability = async (userId, scheduleData) => {
         where: { therapistId: therapist.id }
     });
 
-    return updateAvailability;
+    return updatedAvailability;
 };
 
 export const searchTherapists = async ({
