@@ -75,6 +75,7 @@ model CustomerProfile {
   approvedBy               String?          @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?        @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?          @map("rejection_reason")
+  pendingReviewAt          DateTime?        @map("pending_review_at") @db.Timestamptz(3)
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -98,6 +99,7 @@ model CustomerProfile {
   @@index([approvalStatus, createdAt])
   @@index([customerType, approvalStatus])
   @@index([onboardingComplete])
+  @@index([pendingReviewAt], map: "idx_customer_profiles_pending_review")
   @@map("customer_profiles")
 }
 
@@ -174,6 +176,7 @@ model TherapistProfile {
   approvedBy               String?                @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?                @map("rejection_reason")
+  pendingReviewAt          DateTime?              @map("pending_review_at") @db.Timestamptz(3)
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
@@ -208,6 +211,7 @@ model TherapistProfile {
   @@index([stripeAccountId])
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
+  @@index([pendingReviewAt], map: "idx_therapist_profiles_pending_review")
   @@map("therapist_profiles")
 }
 
@@ -267,11 +271,14 @@ model LicenseDocument {
   userId        String?           @map("user_id") @db.VarChar(128)
   verifiedAt    DateTime?         @map("verified_at") @db.Timestamptz(3)
   verifiedBy    String?           @map("verified_by") @db.VarChar(128)
+  supersedesId  String?           @map("supersedes_id") @db.Uuid
   therapist     TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   agency        CustomerProfile?  @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Cascade)
   customer      CustomerProfile?  @relation("CustomerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
   user          User?             @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
   verifier      User?             @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
+  supersedes    LicenseDocument?  @relation("DocumentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy  LicenseDocument[] @relation("DocumentSupersession")
 
   @@index([therapistId])
   @@index([agencyId])
@@ -279,6 +286,7 @@ model LicenseDocument {
   @@index([userId], map: "idx_license_documents_user_active")
   @@index([status, uploadedAt])
   @@index([therapistId, status])
+  @@index([supersedesId])
   @@map("license_documents")
 }
 
