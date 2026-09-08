@@ -15,6 +15,7 @@ import {
     PHOTO_MIME_TYPES,
 } from "../utils/constants.js";
 import { logger } from "../config/logger.js";
+import { assertOnboardingMutable } from "../utils/onboardingAccess.js";
 
 const UPLOAD_RATE_LIMIT = 15;
 
@@ -70,6 +71,7 @@ export const uploadDocument = async ({ userId, file, category = "license", docum
     });
     if (!user) throw new NotFoundError("User not found");
     if (!user.therapistProfile) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(user.therapistProfile);
 
     const therapistId = user.therapistProfile.id;
 
