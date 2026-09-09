@@ -37,6 +37,20 @@ export const updateProfileSchema = z.object({
         .nullable()
         .optional()
         .transform(val => (val === 0 ? null : val)),
+    evaluationRate: z.coerce
+        .number()
+        .min(0, "Evaluation rate must be 0 or greater")
+        .max(10000, "Evaluation rate must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
+    travelFee: z.coerce
+        .number()
+        .min(0, "Travel fee must be 0 or greater")
+        .max(10000, "Travel fee must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
     yearsOfExperience: z.coerce
         .number()
         .int()

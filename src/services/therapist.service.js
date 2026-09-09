@@ -1,9 +1,12 @@
 import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
 import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { NotFoundError, BadRequestError } from "../utils/errors.js";
+import { NotFoundError, BadRequestError, ValidationError, AuthorizationError } from "../utils/errors.js";
 import { haversineDistance } from "../utils/distance.js";
-import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
+import { geocodeZipCode, geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
+import { logger } from "../config/logger.js";
+import { THERAPIST_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.js";
+import { buildReReviewPayload, recordReReview } from "../utils/reReview.js";
 
 export const getTherapistProfile = async (userId) => {
     const [therapist, completedSessionCount, reviewStats] = await Promise.all([
@@ -61,6 +64,8 @@ export const getTherapistProfile = async (userId) => {
     };
 }
 
+const ADDRESS_FIELDS = ["addressLine1", "addressLine2", "city", "state", "zipCode"];
+
 export const updateTherapistProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -74,31 +79,86 @@ export const updateTherapistProfile = async (userId, data) => {
         );
     }
 
-    const { licenseNumber, licenseState, ...allowedData } = data;
+    const { writable, reReviewTiers, locked, blocked, unknown } =
+        partitionByPolicy(data, THERAPIST_FIELD_POLICY, therapist.approvalStatus);
+
+    if (locked.length > 0 || unknown.length > 0) {
+        throw new ValidationError(
+            "One or more fields cannot be set directly",
+            [...locked, ...unknown].map((field) => ({
+                field,
+                message: locked.includes(field)
+                    ? "This field is managed by the system and cannot be changed"
+                    : "Unknown field",
+            }))
+        );
+    }
+
+    if (blocked.length > 0) {
+        throw new AuthorizationError(
+            `These fields cannot be changed while your application is under review: ${blocked.join(", ")}`
+        );
+    }
 
     // Cap guard: attemptedVisitRate cannot exceed ratePerVisit.
-    if (allowedData.attemptedVisitRate != null) {
-        const effectiveRate = allowedData.ratePerVisit !== undefined
-            ? allowedData.ratePerVisit
+    if (writable.attemptedVisitRate != null) {
+        const effectiveRate = writable.ratePerVisit !== undefined
+            ? writable.ratePerVisit
             : (therapist.ratePerVisit != null ? parseFloat(therapist.ratePerVisit) : null);
         if (effectiveRate == null) {
             throw new BadRequestError(
                 "Set your session rate before setting an attempted visit rate."
             );
         }
-        if (allowedData.attemptedVisitRate > effectiveRate) {
+        if (writable.attemptedVisitRate > effectiveRate) {
             throw new BadRequestError(
                 "Attempted visit rate cannot be greater than your session rate."
             );
         }
     }
 
+    // Re-geocode only when an address component is actually part of this update.
+    const touchesAddress = ADDRESS_FIELDS.some((f) => writable[f] !== undefined);
+    if (touchesAddress) {
+        const merged = {
+            addressLine1: writable.addressLine1 ?? therapist.addressLine1,
+            city: writable.city ?? therapist.city,
+            state: writable.state ?? therapist.state,
+            zipCode: writable.zipCode ?? therapist.zipCode,
+        };
+        const full = [merged.addressLine1, merged.city, merged.state, merged.zipCode]
+            .filter(Boolean).join(", ");
+        const geo = await geocodeAddress(full);
+        assertCoherenceOrLog(
+            `therapistProfile.${therapist.id}`,
+            writable.latitude ?? therapist.latitude,
+            writable.longitude ?? therapist.longitude,
+            geo.latitude, geo.longitude, 10
+        );
+        writable.latitude = geo.latitude;
+        writable.longitude = geo.longitude;
+    }
+
+    const reReviewPayload = buildReReviewPayload(reReviewTiers);
+
     const updated = await withAdminAccess(async (tx) => {
         return tx.therapistProfile.update({
             where: { userId },
-            data: allowedData,
+            data: { ...writable, ...reReviewPayload },
         });
     });
+
+    if (reReviewTiers.size > 0) {
+        recordReReview({
+            actorId: userId,
+            entityType: "therapist_profile",
+            entityId: therapist.id,
+            changedFields: Object.keys(writable),
+            tiers: reReviewTiers,
+        }).catch((err) =>
+            logger.error("[TherapistService] recordReReview failed", { error: err.message })
+        );
+    }
 
     return updated;
 }
@@ -131,6 +191,30 @@ export const updateWorkAreas = async (therapistId, workAreas) => {
 
         return tx.workArea.findMany({ where: { therapistId } });
     }, { timeout: 15000 });
+
+    // Log-only: flag work areas outside the therapist's licensed states. Never
+    // blocks the save — this is a visibility check for follow-up, not enforcement.
+    const profile = await prisma.therapistProfile.findUnique({
+        where: { id: therapistId },
+        select: { licenseState: true, additionalLicenseStates: true },
+    });
+
+    if (profile) {
+        const licensed = new Set(
+            [profile.licenseState, ...(profile.additionalLicenseStates ?? [])].filter(Boolean)
+        );
+        const unlicensed = [...new Set(
+            result.map((a) => a.state).filter((s) => s && !licensed.has(s))
+        )];
+
+        if (unlicensed.length > 0) {
+            logger.warn("[TherapistService] Work area outside licensed states", {
+                therapistId,
+                unlicensedStates: unlicensed,
+                licensedStates: [...licensed],
+            });
+        }
+    }
 
     return result;
 }
