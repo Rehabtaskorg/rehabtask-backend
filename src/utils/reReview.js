@@ -6,16 +6,21 @@ import { logger } from "../config/logger.js";
 /**
  * Build the profile-update payload that flags an approved account for re-review.
  * @param {Set<string>} reReviewTiers - from partitionByPolicy()
+ * @param {{clearVerificationFlags?: boolean}} [options] - clearVerificationFlags
+ *        defaults to true (TherapistProfile has licenseVerified/insuranceVerified);
+ *        pass false for models without those columns, e.g. CustomerProfile.
  * @returns {Object} partial Prisma update payload (empty when nothing to flag)
  */
-export const buildReReviewPayload = (reReviewTiers) => {
+export const buildReReviewPayload = (reReviewTiers, { clearVerificationFlags = true } = {}) => {
     if (!reReviewTiers || reReviewTiers.size === 0) return {};
 
     const payload = { pendingReviewAt: new Date() };
 
     if (reReviewTiers.has(FIELD_TIER.VERIFIED_HARD)) {
-        payload.licenseVerified = false;
-        payload.insuranceVerified = false;
+        if (clearVerificationFlags) {
+            payload.licenseVerified = false;
+            payload.insuranceVerified = false;
+        }
         payload.approvalStatus = APPROVAL_STATUS.REVIEW;
     }
 

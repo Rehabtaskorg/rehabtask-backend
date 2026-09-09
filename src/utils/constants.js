@@ -256,3 +256,10 @@ export const STRIPE_COMPANY_STRUCTURES = new Set([
 export const MAX_VISIT_TITLE_LENGTH = 100;
 export const PRODUCT_DESCRIPTION_MIN_LENGTH = 10;
 export const PRODUCT_DESCRIPTION_MAX_LENGTH = 500;
+
+export const US_STATE_CODES = [
+    "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA",
+    "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+    "VA","WA","WV","WI","WY",
+];
