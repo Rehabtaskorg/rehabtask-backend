@@ -57,7 +57,7 @@ export const updateProfileSchema = z.object({
         .min(0, "Must be 0 or greater")
         .max(50, "Must be 50 or less")
         .optional(),
-});
+}).passthrough();
 
 export const updateWorkAreasSchema = z.object({
     workAreas: z
