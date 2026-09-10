@@ -5,6 +5,7 @@ import {
     approveCustomer as approveCustomerService,
     rejectCustomer as rejectCustomerService,
     getCustomerDocumentSignedUrl as getCustomerDocumentSignedUrlService,
+    clearCustomerReReview as clearCustomerReReviewService,
 } from "../services/admin.customer.service.js";
 import { logAction } from "../services/audit.service.js";
 
@@ -16,10 +17,11 @@ import { logAction } from "../services/audit.service.js";
  */
 const listCustomersController = async (req, res, next) => {
     try {
-        const { approvalStatus, customerType, search, sortOrder, page, limit } = req.query;
+        const { approvalStatus, customerType, pendingReview, search, sortOrder, page, limit } = req.query;
         const result = await listCustomersService({
             approvalStatus,
             customerType,
+            pendingReview,
             search,
             sortOrder,
             page: parseInt(page) || 1,
@@ -119,10 +121,27 @@ const getCustomerDocumentSignedUrlController = async (req, res, next) => {
     }
 };
 
+/**
+ * PUT /admin/customers/:customerUserId/clear-review
+ * @param {import("express").Request} req
+ * @param {import("express").Response} res
+ * @param {import("express").NextFunction} next
+ */
+const clearCustomerReReviewController = async (req, res, next) => {
+    try {
+        const { customerUserId } = req.params;
+        const customer = await clearCustomerReReviewService(customerUserId, req.user.id);
+        res.status(200).json({ success: true, data: customer });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listCustomersController,
     getCustomerDetailController,
     approveCustomerController,
     rejectCustomerController,
     getCustomerDocumentSignedUrlController,
+    clearCustomerReReviewController,
 };

@@ -5,14 +5,16 @@ import {
     rejectTherapist as rejectTherapistService,
     updateTherapistVerification as updateTherapistVerificationService,
     getDocumentSignedUrl as getDocumentSignedUrlService,
+    clearTherapistReReview as clearTherapistReReviewService,
 } from "../services/admin.therapist.service.js";
 import { logAction } from "../services/audit.service.js";
 
 const listTherapistsController = async (req, res, next) => {
     try {
-        const { approvalStatus, search, page, limit } = req.query;
+        const { approvalStatus, pendingReview, search, page, limit } = req.query;
         const result = await listTherapistsService({
             approvalStatus,
+            pendingReview,
             search,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
@@ -99,6 +101,16 @@ const getDocumentSignedUrlController = async (req, res, next) => {
     }
 };
 
+const clearTherapistReReviewController = async (req, res, next) => {
+    try {
+        const { therapistUserId } = req.params;
+        const therapist = await clearTherapistReReviewService(therapistUserId, req.user.id);
+        res.status(200).json({ success: true, data: therapist });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listTherapistsController,
     getTherapistDetailController,
@@ -106,4 +118,5 @@ export {
     rejectTherapistController,
     updateTherapistVerificationController,
     getDocumentSignedUrlController,
+    clearTherapistReReviewController,
 };

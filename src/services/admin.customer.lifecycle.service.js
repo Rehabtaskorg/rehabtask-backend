@@ -35,6 +35,8 @@ export const approveCustomer = async (customerUserId, adminId) => {
             approvedAt: new Date(),
             approvedBy: adminId,
             rejectionReason: null,
+            pendingReviewAt: null,
+            reviewStartedAt: null,
         },
         select: {
             id: true,
@@ -45,6 +47,8 @@ export const approveCustomer = async (customerUserId, adminId) => {
             approvedAt: true,
             approvedBy: true,
             rejectionReason: true,
+            pendingReviewAt: true,
+            reviewStartedAt: true,
             user: { select: { id: true, email: true } },
         },
     });
@@ -119,6 +123,8 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
             approvedAt: null,
             approvedBy: null,
             rejectionReason: trimmedReason,
+            pendingReviewAt: null,
+            reviewStartedAt: null,
         },
         select: {
             id: true,
@@ -129,6 +135,8 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
             approvedAt: true,
             approvedBy: true,
             rejectionReason: true,
+            pendingReviewAt: true,
+            reviewStartedAt: true,
             user: { select: { id: true, email: true } },
         },
     });
@@ -150,6 +158,54 @@ export const rejectCustomer = async (customerUserId, reason, adminId) => {
         customerType: customer.customerType,
         byAdmin: adminId,
     });
+
+    return customer;
+};
+
+/**
+ * Clear a SOFT-tier re-review flag on an approved customer.
+ * HARD-tier re-reviews (status flipped to `review`) go through approve/reject instead.
+ */
+export const clearCustomerReReview = async (customerUserId, adminId) => {
+    const user = await prisma.user.findUnique({
+        where: { id: customerUserId },
+        include: { customerProfile: true },
+    });
+    if (!user || !user.customerProfile) throw new NotFoundError("Customer not found");
+
+    const profile = user.customerProfile;
+    if (profile.pendingReviewAt === null) {
+        throw new ConflictError("This account has no pending re-review to clear");
+    }
+    if (profile.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+        throw new ConflictError(
+            "This account is awaiting a full approval decision — use Approve or Reject instead"
+        );
+    }
+
+    const customer = await prisma.customerProfile.update({
+        where: { userId: customerUserId },
+        data: { pendingReviewAt: null, reviewStartedAt: null },
+        select: {
+            id: true,
+            fullName: true,
+            customerType: true,
+            agencyName: true,
+            approvalStatus: true,
+            pendingReviewAt: true,
+            reviewStartedAt: true,
+        },
+    });
+
+    logAction({
+        actorId: adminId,
+        action: "customer.re_review_cleared",
+        entityType: "customer_profile",
+        entityId: customer.id,
+        changes: null,
+    });
+
+    logger.info("[AdminCustomerService] Re-review cleared", { customerUserId, byAdmin: adminId });
 
     return customer;
 };
