@@ -15,6 +15,7 @@ import {
     rejectTherapistController,
     updateTherapistVerificationController,
     getDocumentSignedUrlController,
+    clearTherapistReReviewController,
 } from "../../controllers/admin.therapist.controller.js";
 import { adminOrSubAdmin } from "./adminMiddleware.js";
 
@@ -24,6 +25,7 @@ router.get("/therapists", ...adminOrSubAdmin, requirePermission("therapists"), v
 router.get("/therapists/:therapistUserId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), getTherapistDetailController);
 router.put("/therapists/:therapistUserId/approve", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), approveTherapistController);
 router.put("/therapists/:therapistUserId/reject", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: rejectTherapistSchema }), rejectTherapistController);
+router.put("/therapists/:therapistUserId/clear-review", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistUserIdParamSchema, "params"), clearTherapistReReviewController);
 router.put("/therapists/:therapistUserId/verification", ...adminOrSubAdmin, requirePermission("therapists"), validateMultiple({ params: therapistUserIdParamSchema, body: updateTherapistVerificationSchema }), updateTherapistVerificationController);
 router.get("/therapists/:therapistUserId/documents/:documentId", ...adminOrSubAdmin, requirePermission("therapists"), validate(therapistDocumentParamSchema, "params"), getDocumentSignedUrlController);
 

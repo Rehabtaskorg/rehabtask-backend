@@ -45,6 +45,7 @@ const CUSTOMER_LIST_PROFILE_SELECT = {
 export const listCustomers = async ({
     approvalStatus,
     customerType,
+    pendingReview,
     search,
     sortOrder = "asc",
     page = 1,
@@ -53,6 +54,7 @@ export const listCustomers = async ({
     const where = {};
     if (approvalStatus) where.approvalStatus = approvalStatus;
     if (customerType) where.customerType = customerType;
+    if (pendingReview === "true") where.pendingReviewAt = { not: null };
 
     if (search) {
         where.OR = [
@@ -121,6 +123,9 @@ export const getCustomerDetail = async (customerUserId) => {
                             fileSize: true,
                             mimeType: true,
                             uploadedAt: true,
+                            status: true,
+                            supersedesId: true,
+                            verifiedAt: true,
                         },
                     },
                     customerLicenseDocuments: {
@@ -133,6 +138,9 @@ export const getCustomerDetail = async (customerUserId) => {
                             fileSize: true,
                             mimeType: true,
                             uploadedAt: true,
+                            status: true,
+                            supersedesId: true,
+                            verifiedAt: true,
                         },
                     },
                     agencyComplianceSignatures: {

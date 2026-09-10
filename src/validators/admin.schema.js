@@ -46,6 +46,7 @@ export const updateUserSchema = z.object({
 
 export const listTherapistsQuerySchema = z.object({
     approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()
@@ -87,6 +88,7 @@ export const updateTherapistVerificationSchema = z.object({
 export const listCustomersQuerySchema = z.object({
     approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
     customerType: z.enum(Object.values(CUSTOMER_TYPES)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
     search: z.string().max(200).optional(),
     sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
     page: z
