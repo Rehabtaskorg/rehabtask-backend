@@ -19,14 +19,14 @@ import { assertOnboardingMutable } from "../utils/onboardingAccess.js";
 
 const UPLOAD_RATE_LIMIT = 15;
 
-const buildDocumentPath = (userId, folder, originalName) => {
+export const buildDocumentPath = (userId, folder, originalName) => {
     const timestamp = Date.now();
     const uniqueId = randomUUID();
     const sanitized = originalName.replace(/[^a-zA-Z0-9.-]/g, "_").substring(0, 100);
     return `${userId}/${folder}/${timestamp}_${uniqueId}_${sanitized}`;
 };
 
-const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, max-age=3600") => {
+export const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, max-age=3600") => {
     await gcs.bucket(bucketName).file(filePath).save(file.buffer, {
         contentType: file.mimetype,
         resumable: false,
@@ -34,7 +34,7 @@ const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, ma
     });
 };
 
-const checkUploadRateLimit = async (userId) => {
+export const checkUploadRateLimit = async (userId) => {
     const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
         where: { userId, uploadedAt: { gte: oneHourAgo }, isDeleted: false },

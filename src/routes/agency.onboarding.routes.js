@@ -12,6 +12,7 @@ import {
     deleteAgencyDocumentController,
     completeAgencyOnboardingController,
     resubmitAgencyOnboardingController,
+    replaceDocumentController,
 } from "../controllers/onboarding.controller.js";
 import { uploadDocument as uploadDocumentMiddleware, handleMulterError } from "../middleware/upload.middleware.js";
 
@@ -26,6 +27,7 @@ router.post("/business-profile", validate(agencyBusinessProfileSchema), saveAgen
 router.post("/upload-document", uploadDocumentMiddleware, handleMulterError, uploadAgencyDocumentController);
 router.post("/save-upload-documents", validate(agencyUploadDocumentsSchema), saveAgencyUploadDocumentsController);
 router.delete("/document/:documentId", deleteAgencyDocumentController);
+router.post("/document/:documentId/replace", uploadDocumentMiddleware, handleMulterError, replaceDocumentController);
 router.post("/complete", completeAgencyOnboardingController);
 router.post("/resubmit", validate(resubmitApplicationSchema), resubmitAgencyOnboardingController);
 

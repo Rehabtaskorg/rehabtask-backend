@@ -776,7 +776,7 @@ export const completeOnboarding = async (userId) => {
             where: { userId, onboardingComplete: false },
             data: {
                 ...(shouldMarkComplete && { onboardingComplete: true }),
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -1214,7 +1214,7 @@ export const completeAgencyOnboarding = async (userId) => {
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -1264,7 +1264,10 @@ export const resubmitAgencyApplication = async (userId, note = null) => {
     });
 
     if (!customer) throw new NotFoundError("Customer not found");
-    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+    const canResubmit =
+        customer.approvalStatus === APPROVAL_STATUS.REJECTED ||
+        (customer.approvalStatus === APPROVAL_STATUS.APPROVED && customer.pendingReviewAt !== null);
+    if (!canResubmit) {
         throw new ConflictError("Application cannot be resubmitted in its current state");
     }
 
@@ -1291,11 +1294,18 @@ export const resubmitAgencyApplication = async (userId, note = null) => {
 
     const result = await withAdminAccess(async (db) => {
         return db.customerProfile.updateMany({
-            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            where: {
+                userId,
+                OR: [
+                    { approvalStatus: APPROVAL_STATUS.REJECTED },
+                    { approvalStatus: APPROVAL_STATUS.APPROVED, pendingReviewAt: { not: null } },
+                ],
+            },
             data: {
                 approvalStatus: APPROVAL_STATUS.REVIEW,
                 approvedBy: null,
                 approvedAt: null,
+                reviewStartedAt: new Date(),
             },
         });
     });
@@ -1534,7 +1544,7 @@ export const completeIndividualOnboarding = async (userId) => {
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -1584,7 +1594,10 @@ export const resubmitIndividualApplication = async (userId, note = null) => {
     });
 
     if (!customer) throw new NotFoundError("Customer not found");
-    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+    const canResubmit =
+        customer.approvalStatus === APPROVAL_STATUS.REJECTED ||
+        (customer.approvalStatus === APPROVAL_STATUS.APPROVED && customer.pendingReviewAt !== null);
+    if (!canResubmit) {
         throw new ConflictError("Application cannot be resubmitted in its current state");
     }
 
@@ -1610,11 +1623,18 @@ export const resubmitIndividualApplication = async (userId, note = null) => {
 
     const result = await withAdminAccess(async (db) => {
         return db.customerProfile.updateMany({
-            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            where: {
+                userId,
+                OR: [
+                    { approvalStatus: APPROVAL_STATUS.REJECTED },
+                    { approvalStatus: APPROVAL_STATUS.APPROVED, pendingReviewAt: { not: null } },
+                ],
+            },
             data: {
                 approvalStatus: APPROVAL_STATUS.REVIEW,
                 approvedBy: null,
                 approvedAt: null,
+                reviewStartedAt: new Date(),
             },
         });
     });

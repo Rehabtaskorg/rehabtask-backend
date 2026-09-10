@@ -30,6 +30,7 @@ import {
     resubmitIndividualApplication,
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument, uploadIndividualDocument } from "../services/upload.service.js";
+import { replaceDocument } from "../services/document.replace.service.js";
 import { BadRequestError } from "../utils/errors.js";
 
 /**
@@ -481,6 +482,30 @@ export const uploadAgencyDocumentController = async (req, res, next) => {
         });
 
         res.status(201).json({ success: true, message: "Document uploaded successfully", data: result });
+    } catch (error) {
+        if (req.file) req.file.buffer = null;
+        next(error);
+    }
+};
+
+/**
+ * POST /api/onboarding/document/:documentId/replace
+ * Replace an existing document (therapist, agency, or individual) once the
+ * application is under review or approved. Separate from the wizard upload
+ * paths, which stay locked in those statuses.
+ */
+export const replaceDocumentController = async (req, res, next) => {
+    try {
+        if (!req.file) throw new BadRequestError("No file uploaded");
+
+        const result = await replaceDocument({
+            userId: req.user.id,
+            documentId: req.params.documentId,
+            file: req.file,
+            uploadIp: getClientIp(req),
+        });
+
+        res.status(201).json({ success: true, message: "Document replaced successfully", data: result });
     } catch (error) {
         if (req.file) req.file.buffer = null;
         next(error);

@@ -12,6 +12,7 @@ import {
     deleteIndividualDocumentController,
     completeIndividualOnboardingController,
     resubmitIndividualOnboardingController,
+    replaceDocumentController,
 } from "../controllers/onboarding.controller.js";
 import { uploadDocument as uploadDocumentMiddleware, handleMulterError } from "../middleware/upload.middleware.js";
 
@@ -26,6 +27,7 @@ router.post("/personal-info", validate(individualPersonalInfoSchema), saveIndivi
 router.post("/medical-info", validate(individualMedicalInfoSchema), saveIndividualMedicalInfoController);
 router.post("/upload-document", uploadDocumentMiddleware, handleMulterError, uploadIndividualDocumentController);
 router.delete("/document/:documentId", deleteIndividualDocumentController);
+router.post("/document/:documentId/replace", uploadDocumentMiddleware, handleMulterError, replaceDocumentController);
 router.post("/complete", completeIndividualOnboardingController);
 router.post("/resubmit", validate(resubmitApplicationSchema), resubmitIndividualOnboardingController);
 
