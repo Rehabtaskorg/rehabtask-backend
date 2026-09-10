@@ -81,6 +81,8 @@ import {
     customerApplicationSubmitted,
     customerApplicationSubmittedAdmin,
     customerApplicationResubmitted,
+    profileReReviewSubmitted,
+    profileReReviewAdmin,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -537,6 +539,24 @@ export const sendCustomerApplicationResubmitted = async ({ customer }) => {
     dispatch(customer.user.email, customerApplicationResubmitted, { customer }).catch(() => { });
     // TODO: wire admin notification email once a dedicated admin inbox is configured
     // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
+};
+
+/**
+ * Profile change triggered a re-review — notify the account holder.
+ * @param {{recipientEmail: string, displayName: string, tier: "soft"|"hard", isTherapist: boolean}} opts
+ */
+export const sendProfileReReviewSubmitted = async ({ recipientEmail, displayName, tier, isTherapist }) => {
+    const dashboardPath = isTherapist ? '/therapist/profile' : '/customer/profile';
+    return dispatch(recipientEmail, profileReReviewSubmitted, { displayName, tier, dashboardPath });
+};
+
+/**
+ * Profile change triggered a re-review — notify admin.
+ * @param {{displayName: string, accountType: string, tier: "soft"|"hard", changedFields: string[], isTherapist: boolean}} opts
+ */
+export const sendProfileReReviewAdmin = async ({ displayName, accountType, tier, changedFields, isTherapist }) => {
+    const reviewPath = isTherapist ? '/admin/therapists' : '/admin/customers';
+    return dispatch(env.ADMIN_EMAIL, profileReReviewAdmin, { displayName, accountType, tier, changedFields, reviewPath });
 };
 
 /**

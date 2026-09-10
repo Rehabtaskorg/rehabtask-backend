@@ -49,10 +49,18 @@ export const recordReReview = async ({ actorId, entityType, entityId, changedFie
         entityType, entityId, tier: isHard ? "hard" : "soft", fieldCount: changedFields.length,
     });
 
-    // TODO: [NEXT] Admin notification — templates built in 2c, intentionally not
-    // sending. Blocked on confirming the admin inbox address. To enable, uncomment:
+    // TODO: wire re-review notification emails once the admin inbox blocker is confirmed
+    // stale (env.ADMIN_EMAIL is already validated + in use — see docs/ONBOARDING-CHANGES-PLAN.md
+    // 2c-iii). Enabling also requires passing recipientEmail/displayName/accountType from the two
+    // recordReReview call sites (therapist.service.js, customer.service.js) — both already hold
+    // the profile in memory.
     //
-    // await sendAdminReReviewNotification({
-    //     entityType, entityId, tier: isHard ? "hard" : "soft", changedFields,
-    // }).catch(() => {});
+    // sendProfileReReviewSubmitted({
+    //     recipientEmail, displayName, tier: isHard ? "hard" : "soft", isTherapist: entityType === "therapist_profile",
+    // }).catch(() => { });
+    //
+    // sendProfileReReviewAdmin({
+    //     displayName, accountType, tier: isHard ? "hard" : "soft",
+    //     changedFields, isTherapist: entityType === "therapist_profile",
+    // }).catch(() => { });
 };

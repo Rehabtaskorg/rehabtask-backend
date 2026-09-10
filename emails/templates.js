@@ -1419,3 +1419,32 @@ export const customerRejected = ({ customer, reason }) => ({
         ${muted('Need help? Email us at support@rehabtask.com')}
     `),
 });
+
+export const profileReReviewSubmitted = ({ displayName, tier, dashboardPath }) => ({
+    subject: 'We received your profile update',
+    html: layout(`
+        ${heading('Update Received')}
+        ${text(`Hi ${displayName},`)}
+        ${text('We\'ve received the changes to your profile. Because they affect details we verify, our team will review them within <strong>2–5 business days</strong>.')}
+        ${tier === 'hard'
+            ? text('While this review is in progress, some parts of your profile will be temporarily locked and your account status has been set back to under review.')
+            : text('Your account remains active and you can continue using RehabTask as normal while we review.')}
+        ${muted('No further action is needed from you at this time.')}
+        ${button(`${FRONTEND_URL}${dashboardPath}`, 'View Your Profile')}
+    `),
+});
+
+export const profileReReviewAdmin = ({ displayName, accountType, tier, changedFields, reviewPath }) => ({
+    subject: 'Profile Update — Re-review Required',
+    html: layout(`
+        ${heading('Profile Update Pending Review')}
+        ${text('An approved account has changed verified profile details and is awaiting re-review.')}
+        ${hr()}
+        ${field('Name', displayName)}
+        ${field('Account Type', accountType)}
+        ${field('Change Type', tier === 'hard' ? 'Hard — verification flags cleared, status set to review' : 'Soft — account remains active')}
+        ${field('Fields Changed', changedFields.join(', '))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}${reviewPath}`, 'Review Changes')}
+    `),
+});
