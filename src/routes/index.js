@@ -15,7 +15,7 @@ import therapistPublicRoutes from "./therapistPublic.routes.js";
 import reviewRoutes from "./review.routes.js";
 import faqRoutes from "./faq.routes.js";
 import disputeRoutes from "./dispute.routes.js";
-import adminRoutes from "./admin.routes.js";
+import adminRoutes from "./admin/index.js";
 import agencyRoutes from "./agency.routes.js";
 import agencyOnboardingRoutes from "./agency.onboarding.routes.js";
 import individualOnboardingRoutes from "./individual.onboarding.routes.js";
