@@ -46,6 +46,7 @@ export const listTherapists = async ({
                         primaryLicenseType: true,
                         yearsOfExperience: true,
                         onboardingComplete: true,
+                        pendingReviewAt: true,
                         backgroundCheckStatus: true,
                         planTier: true,
                         licenseDocuments: {

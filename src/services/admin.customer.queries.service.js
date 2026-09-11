@@ -17,6 +17,7 @@ const CUSTOMER_LIST_PROFILE_SELECT = {
     rejectionReason: true,
     onboardingStep: true,
     onboardingComplete: true,
+    pendingReviewAt: true,
     createdAt: true,
     agencyLicenseDocuments: {
         where: { isDeleted: false },
