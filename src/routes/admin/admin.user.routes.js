@@ -1,15 +1,16 @@
 import express from "express";
 import { validate, validateMultiple } from "../../middleware/validate.js";
 import { requirePermission } from "../../middleware/permissions.js";
-import { listUsersQuerySchema, userIdParamSchema, updateUserSchema } from "../../validators/admin.schema.js";
+import { listUsersQuerySchema, userIdParamSchema, updateUserSchema, resetUserTwoFactorSchema } from "../../validators/admin.schema.js";
 import {
     listUsersController,
     getUserDetailController,
     deactivateUserController,
     reactivateUserController,
     updateUserController,
+    resetUserTwoFactorController,
 } from "../../controllers/admin.user.controller.js";
-import { adminOrSubAdmin } from "./adminMiddleware.js";
+import { adminOrSubAdmin, adminOnly } from "./adminMiddleware.js";
 
 const router = express.Router();
 
@@ -18,5 +19,6 @@ router.get("/users/:userId", ...adminOrSubAdmin, requirePermission("users"), val
 router.put("/users/:userId", ...adminOrSubAdmin, requirePermission("users"), validateMultiple({ params: userIdParamSchema, body: updateUserSchema }), updateUserController);
 router.put("/users/:userId/deactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), deactivateUserController);
 router.put("/users/:userId/reactivate", ...adminOrSubAdmin, requirePermission("users"), validate(userIdParamSchema, "params"), reactivateUserController);
+router.post("/users/:userId/2fa/reset", ...adminOnly, validateMultiple({ params: userIdParamSchema, body: resetUserTwoFactorSchema }), resetUserTwoFactorController);
 
 export default router;

@@ -4,6 +4,7 @@ import {
     deactivateUser as deactivateUserService,
     reactivateUser as reactivateUserService,
     updateUser as updateUserService,
+    resetUserTwoFactor as resetUserTwoFactorService,
 } from "../services/admin.user.service.js";
 import { sendAdminDirectMessage } from "../services/email.service.js";
 
@@ -66,6 +67,15 @@ const updateUserController = async (req, res, next) => {
     }
 };
 
+const resetUserTwoFactorController = async (req, res, next) => {
+    try {
+        const summary = await resetUserTwoFactorService(req.params.userId, req.user, req.body.reason);
+        res.status(200).json({ success: true, data: summary });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const sendEmailController = async (req, res, next) => {
     try {
         const { to, subject, message } = req.body;
@@ -85,5 +95,6 @@ export {
     deactivateUserController,
     reactivateUserController,
     updateUserController,
+    resetUserTwoFactorController,
     sendEmailController,
 };

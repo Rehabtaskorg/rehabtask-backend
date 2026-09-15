@@ -42,6 +42,10 @@ export const updateUserSchema = z.object({
     bio: z.string().max(1000).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, { message: "At least one field must be provided" });
 
+export const resetUserTwoFactorSchema = z.object({
+    reason: z.string().trim().min(10, "Recovery reason must be at least 10 characters").max(500),
+});
+
 // ── Therapist Management ─────────────────────────────────────────────────────
 
 export const listTherapistsQuerySchema = z.object({

@@ -3,8 +3,19 @@ import { COOKIE_MAX_AGE } from "../utils/constants.js";
 import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import {
     registerCustomer, registerTherapist, login, logout, getCurrentUser, requestPasswordReset,
-    refreshAccessToken, changePassword, resendVerificationEmail, completeOAuthOnboarding, markEmailVerified,
+    refreshAccessToken, changePassword, resendVerificationEmail, completeOAuthOnboarding, markEmailVerified, completeTwoFactorLogin, verifyCurrentPassword,
 } from "../services/auth.service.js";
+import {
+    completeEnrollment,
+    disableTwoFactor,
+    enableTwoFactor,
+    getTwoFactorStatus,
+    startDisableChallenge,
+    removeSmsMethod,
+    setPreferredMethod,
+    setTwoFactorEnabled,
+    verifyChallenge,
+} from "../services/twoFactor.service.js";
 
 const isSecureContext = process.env.COOKIE_SECURE === "true";
 
@@ -95,6 +106,15 @@ export const loginController = async (req, res, next) => {
         const { email, password } = req.body;
         const result = await login({ email, password });
 
+        if (result.requiresTwoFactor) {
+            return res.status(202).json({
+                success: true,
+                requiresTwoFactor: true,
+                message: "Two-factor verification required",
+                data: { user: result.user, challenge: result.challenge },
+            });
+        }
+
         res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
         res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
         res.cookie("app_role", result.user.role, getRoleCookieOptions());
@@ -107,6 +127,82 @@ export const loginController = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
+
+export const verifyTwoFactorLoginController = async (req, res, next) => {
+    try {
+        const { email, password, challengeId, challengeToken, code } = req.body;
+        const result = await completeTwoFactorLogin({ email, password, challengeId, challengeToken, code });
+        res.cookie("sb_access_token", result.session.accessToken, getAccessTokenCookieOptions());
+        res.cookie("sb_refresh_token", result.session.refreshToken, getRefreshTokenCookieOptions());
+        res.cookie("app_role", result.user.role, getRoleCookieOptions());
+        res.status(200).json({ success: true, message: "Login successful", data: { user: result.user } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const resendTwoFactorLoginController = async (req, res, next) => {
+    try {
+        const result = await login({ email: req.body.email, password: req.body.password, twoFactorMethod: req.body.method });
+        if (!result.requiresTwoFactor) return res.status(400).json({ success: false, code: "2FA_NOT_REQUIRED", message: "Two-factor authentication is not required" });
+        res.status(202).json({ success: true, requiresTwoFactor: true, data: { challenge: result.challenge } });
+    } catch (error) { next(error); }
+};
+
+export const getTwoFactorStatusController = async (req, res, next) => {
+    try { res.json({ success: true, data: await getTwoFactorStatus(req.user) }); } catch (error) { next(error); }
+};
+
+export const startTwoFactorEnrollmentController = async (req, res, next) => {
+    try {
+        const result = await enableTwoFactor({ user: req.user, method: req.body.method, phoneNumber: req.body.phoneNumber, ipAddress: req.ip, userAgent: req.get("user-agent") });
+        res.status(202).json({ success: true, data: { challenge: result } });
+    } catch (error) { next(error); }
+};
+
+export const verifyTwoFactorEnrollmentController = async (req, res, next) => {
+    try {
+        const status = await completeEnrollment({ user: req.user, ...req.body });
+        res.json({ success: true, data: status });
+    } catch (error) { next(error); }
+};
+
+export const verifyTwoFactorChallengeController = async (req, res, next) => {
+    try {
+        const result = await verifyChallenge({ ...req.body, purpose: "login" });
+        res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+};
+
+export const disableTwoFactorController = async (req, res, next) => {
+    try {
+        await verifyCurrentPassword({ email: req.user.email, password: req.body.currentPassword });
+        res.json({ success: true, data: await disableTwoFactor({ user: req.user, ...req.body }) });
+    } catch (error) { next(error); }
+};
+
+export const startDisableTwoFactorController = async (req, res, next) => {
+    try { res.status(202).json({ success: true, data: { challenge: await startDisableChallenge({ user: req.user, ...req.body, ipAddress: req.ip, userAgent: req.get("user-agent") }) } }); } catch (error) { next(error); }
+};
+
+export const setTwoFactorEnabledController = async (req, res, next) => {
+    try {
+        res.json({ success: true, data: await setTwoFactorEnabled(req.user, req.body.enabled) });
+    } catch (error) { next(error); }
+};
+
+export const setPreferredMethodController = async (req, res, next) => {
+    try {
+        res.json({ success: true, data: await setPreferredMethod(req.user, req.body.method) });
+    } catch (error) { next(error); }
+};
+
+export const removeSmsMethodController = async (req, res, next) => {
+    try {
+        await verifyCurrentPassword({ email: req.user.email, password: req.body.currentPassword });
+        res.json({ success: true, data: await removeSmsMethod(req.user) });
+    } catch (error) { next(error); }
 };
 
 /**

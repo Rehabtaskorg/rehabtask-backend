@@ -35,6 +35,8 @@ model User {
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
   uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
   agreementAcceptances       UnifiedAgreementAcceptance[]
+  securitySettings           UserSecuritySettings?
+  twoFactorChallenges        TwoFactorChallenge[]
 
   @@index([email])
   @@index([role, isActive])
@@ -855,6 +857,46 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model UserSecuritySettings {
+  id                    String             @id @default(uuid()) @db.Uuid
+  userId                String             @unique @map("user_id") @db.VarChar(128)
+  twoFactorEnabled      Boolean            @default(false) @map("two_factor_enabled")
+  preferredMethod       TwoFactorMethod?   @map("preferred_2fa_method")
+  emailTwoFactorEnabled Boolean            @default(false) @map("email_2fa_enabled")
+  smsTwoFactorEnabled   Boolean            @default(false) @map("sms_2fa_enabled")
+  phoneNumber           String?            @map("phone_number") @db.VarChar(20)
+  phoneVerifiedAt       DateTime?          @map("phone_verified_at") @db.Timestamptz(3)
+  emailVerifiedAt       DateTime?          @map("email_verified_at") @db.Timestamptz(3)
+  twoFactorEnabledAt    DateTime?          @map("two_factor_enabled_at") @db.Timestamptz(3)
+  lastTwoFactorVerifiedAt DateTime?        @map("last_2fa_verified_at") @db.Timestamptz(3)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_security_settings")
+}
+
+model TwoFactorChallenge {
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @map("user_id") @db.VarChar(128)
+  method               TwoFactorMethod
+  destinationReference String             @map("destination_reference") @db.VarChar(255)
+  codeHash             String             @map("code_hash") @db.VarChar(128)
+  challengeTokenHash   String             @map("challenge_token_hash") @db.VarChar(128)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt            DateTime           @map("expires_at") @db.Timestamptz(3)
+  verifiedAt           DateTime?          @map("verified_at") @db.Timestamptz(3)
+  attemptCount         Int                @default(0) @map("attempt_count")
+  status               TwoFactorChallengeStatus @default(pending)
+  ipAddress            String?            @map("ip_address") @db.VarChar(64)
+  userAgent            String?            @map("user_agent")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([challengeTokenHash])
+  @@map("two_factor_challenges")
+}
+
 model SystemConfig {
   key         String   @id @db.VarChar(100)
   value       String
@@ -875,6 +917,19 @@ enum UserRole {
   therapist
   admin
   sub_admin
+}
+
+enum TwoFactorMethod {
+  email
+  sms
+}
+
+enum TwoFactorChallengeStatus {
+  pending
+  verified
+  expired
+  failed
+  cancelled
 }
 
 enum CustomerType {

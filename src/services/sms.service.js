@@ -24,20 +24,22 @@ const smsEnabled = () => {
  * Appends STOP disclosure required by Twilio's Messaging Policy for toll-free traffic.
  * Sends via Messaging Service SID (not bare phone number) to enable Advanced Opt-Out.
  *
- * @param {{ to: string, body: string }} params
- * @returns {Promise<void>}
+ * @param {{ to: string, body: string, requireDelivery?: boolean }} params
+ * @returns {Promise<{sid: string, status: string}|null>}
  */
-export const sendSms = async ({ to, body }) => {
+export const sendSms = async ({ to, body, requireDelivery = false }) => {
     const compliantBody = `${body}${SMS_OPT_OUT_NOTICE}`;
 
     if (!smsEnabled()) {
         logger.info("[SmsService] Skipping — credentials not configured or NODE_ENV=test");
-        return;
+        if (requireDelivery) throw new Error("Twilio SMS is not configured");
+        return null;
     }
 
     if (!to.startsWith("+1")) {
         logger.warn("[SmsService] SMS BLOCKED – UNSUPPORTED COUNTRY", { to });
-        return;
+        if (requireDelivery) throw new Error("SMS destination must be a valid +1 phone number");
+        return null;
     }
 
     const message = await getClient().messages.create({
@@ -47,6 +49,7 @@ export const sendSms = async ({ to, body }) => {
     });
 
     logger.info("[SmsService] SMS sent", { sid: message.sid, status: message.status });
+    return { sid: message.sid, status: message.status };
 };
 
 /**

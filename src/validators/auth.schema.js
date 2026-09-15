@@ -186,3 +186,44 @@ export const resendVerificationSchema = z.object({
 export const refreshTokenSchema = z.object({
     refreshToken: z.string().min(1, "Refresh token is required"),
 });
+
+export const twoFactorLoginSchema = z.object({
+    email: emailSchema,
+    password: z.string().min(1),
+    challengeId: z.uuid(),
+    challengeToken: z.string().min(32),
+    code: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
+export const twoFactorEnrollmentSchema = z.object({
+    method: z.enum(["email", "sms"]),
+    phoneNumber: z.string().trim().optional(),
+});
+
+export const twoFactorVerificationSchema = z.object({
+    challengeId: z.uuid(),
+    challengeToken: z.string().min(32),
+    code: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
+export const twoFactorResendSchema = z.object({
+    email: emailSchema,
+    password: z.string().min(1),
+    method: z.enum(["email", "sms"]).optional(),
+});
+
+export const twoFactorDisableSchema = twoFactorVerificationSchema.extend({
+    currentPassword: z.string().min(1),
+});
+
+export const twoFactorRemoveSmsSchema = z.object({
+    currentPassword: z.string().min(1),
+});
+
+export const twoFactorToggleSchema = z.object({
+    enabled: z.boolean(),
+});
+
+export const twoFactorPreferredMethodSchema = z.object({
+    method: z.enum(["email", "sms"]),
+});
