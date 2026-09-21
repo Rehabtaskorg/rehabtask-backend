@@ -5,6 +5,34 @@ import { CUSTOMER_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.j
 import { buildReReviewPayload, recordReReview } from "../utils/reReview.js";
 
 /**
+ * Fetch a customer's own profile with every scalar field plus their documents.
+ * @param {string} userId - Firebase UID from the authenticated request
+ * @returns {Promise<Object>} Profile scalars, `email`, and both document arrays
+ */
+export const getCustomerProfile = async (userId) => {
+    const customer = await prisma.customerProfile.findUnique({
+        where: { userId },
+        include: {
+            user: { select: { email: true } },
+            agencyLicenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
+            customerLicenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
+        },
+    });
+
+    if (!customer) throw new NotFoundError("Customer profile not found");
+
+    const { user, ...profile } = customer;
+
+    return { ...profile, email: user?.email ?? null };
+};
+
+/**
  * Update mutable fields on a customer's own profile.
  * @param {string} userId - Firebase UID from the authenticated request
  * @param {Record<string, unknown>} data - Validated request body

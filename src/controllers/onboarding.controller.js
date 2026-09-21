@@ -2,7 +2,6 @@ import {
     advanceToFinalReview,
     completeOnboarding,
     deleteDocument,
-    getDocumentSignedUrl,
     getOnboardingData,
     getOnboardingStatus,
     getTherapistDocuments,
@@ -31,6 +30,7 @@ import {
 } from "../services/onboarding.service.js";
 import { uploadAgencyDocument, uploadIndividualDocument } from "../services/upload.service.js";
 import { replaceDocument } from "../services/document.replace.service.js";
+import { getDocumentSignedUrl } from "../services/document.access.service.js";
 import { BadRequestError } from "../utils/errors.js";
 
 /**
@@ -373,7 +373,7 @@ export const completeOnboardingController = async (req, res, next) => {
 }
 
 /**
- * GET /api/therapist/onboarding/document/:documentId
+ * GET /api/{therapist|agency|individual}/onboarding/document/:documentId
  * Get signed URL for document
  */
 export const getDocumentSignedUrlController = async (req, res, next) => {
