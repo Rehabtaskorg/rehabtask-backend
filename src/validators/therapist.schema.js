@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { US_STATE_CODES } from "../utils/constants.js";
 
 export const updateProfileSchema = z.object({
     fullName: z
@@ -57,6 +58,44 @@ export const updateProfileSchema = z.object({
         .min(0, "Must be 0 or greater")
         .max(50, "Must be 50 or less")
         .optional(),
+    addressLine1: z
+        .string()
+        .min(1, "Address is required")
+        .max(255, "Address must be 255 characters or less")
+        .optional(),
+    addressLine2: z
+        .string()
+        .max(255, "Address line 2 must be 255 characters or less")
+        .optional()
+        .nullable(),
+    city: z
+        .string()
+        .min(1, "City is required")
+        .max(100, "City must be 100 characters or less")
+        .optional(),
+    state: z
+        .string()
+        .length(2, "State must be a 2-letter code")
+        .refine((val) => US_STATE_CODES.includes(val.toUpperCase()), {
+            message: "Please provide a valid US state",
+        })
+        .transform((val) => val.toUpperCase())
+        .optional(),
+    zipCode: z
+        .string()
+        .regex(/^\d{5}$/, "ZIP code must be exactly 5 digits")
+        .optional(),
+    emergencyContactName: z
+        .string()
+        .max(255, "Emergency contact name must be 255 characters or less")
+        .optional()
+        .nullable(),
+    emergencyContactPhone: z
+        .string()
+        .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX")
+        .optional()
+        .nullable(),
+    doesHomeVisits: z.boolean().optional(),
 }).passthrough();
 
 export const updateWorkAreasSchema = z.object({
