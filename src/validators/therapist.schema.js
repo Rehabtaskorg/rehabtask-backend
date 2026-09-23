@@ -96,6 +96,18 @@ export const updateProfileSchema = z.object({
         .optional()
         .nullable(),
     doesHomeVisits: z.boolean().optional(),
+    availableFrom: z
+        .string()
+        .datetime({ offset: true }, "Available-from must be an ISO 8601 date")
+        .optional()
+        .nullable(),
+    caseloadCapacity: z
+        .number()
+        .int("Max patients per week must be a whole number")
+        .min(1, "Max patients per week must be at least 1")
+        .max(999, "Max patients per week must be 999 or less")
+        .optional()
+        .nullable(),
 }).passthrough();
 
 export const updateWorkAreasSchema = z.object({

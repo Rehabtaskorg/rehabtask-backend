@@ -45,7 +45,7 @@ export const THERAPIST_FIELD_POLICY = {
     travelFee: OPEN,
     yearsInHomeHealth: VERIFIED_SOFT,
     availableFrom: OPEN,
-    caseloadCapacity: GUARDED,
+    caseloadCapacity: OPEN,
 
     // System-owned — never client-writable.
     id: LOCKED,
