@@ -163,6 +163,58 @@ export const updateTherapistProfile = async (userId, data) => {
     return updated;
 }
 
+export const updateTherapistAttributes = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        select: { id: true, onboardingComplete: true },
+    });
+
+    if (!therapist) throw new NotFoundError("Therapist profile not found");
+
+    if (!therapist.onboardingComplete) {
+        throw new BadRequestError(
+            "Please complete onboarding before updating your clinical profile"
+        );
+    }
+
+    const categoryMap = {
+        [THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY]: data.specialties,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE]: data.languages,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION]: data.certifications,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING]: data.pastSettings,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION]: data.populationExperience,
+    };
+
+    await prisma.$transaction(async (tx) => {
+        for (const [category, values] of Object.entries(categoryMap)) {
+            if (values === undefined) continue;
+
+            await tx.therapistAttribute.deleteMany({
+                where: { therapistId: therapist.id, category },
+            });
+
+            if (values.length > 0) {
+                await tx.therapistAttribute.createMany({
+                    data: values.map((value) => ({
+                        therapistId: therapist.id,
+                        category,
+                        value,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }, { timeout: 15000 });
+
+    return {
+        specialties: data.specialties ?? [],
+        languages: data.languages ?? [],
+        certifications: data.certifications ?? [],
+        pastSettings: data.pastSettings ?? [],
+        populationExperience: data.populationExperience ?? [],
+    };
+};
+
 export const updateWorkAreas = async (therapistId, workAreas) => {
     const geocoded = await Promise.all(
         workAreas.map(async (area) => {
