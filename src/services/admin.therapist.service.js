@@ -69,16 +69,14 @@ export const listTherapists = async ({
     };
 };
 
+
 export const getTherapistDetail = async (therapistUserId) => {
     const user = await prisma.user.findUnique({
         where: { id: therapistUserId },
         include: {
             therapistProfile: {
                 include: {
-                    licenseDocuments: {
-                        where: { isDeleted: false },
-                        orderBy: { uploadedAt: "desc" },
-                    },
+                    licenseDocuments: { orderBy: { uploadedAt: "desc" } },
                     workAreas: true,
                     availability: true,
                 },
@@ -86,6 +84,21 @@ export const getTherapistDetail = async (therapistUserId) => {
         },
     });
     if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
+
+    const allDocuments = user.therapistProfile.licenseDocuments;
+    const supersededById = new Map(
+        allDocuments.filter((doc) => doc.isDeleted).map((doc) => [doc.id, doc])
+    );
+
+    user.therapistProfile.licenseDocuments = allDocuments
+        .filter((doc) => !doc.isDeleted)
+        .map((doc) => ({
+            ...doc,
+            supersededDocument: doc.supersedesId
+                ? supersededById.get(doc.supersedesId) ?? null
+                : null,
+        }));
+
     return user;
 }
 
@@ -252,7 +265,16 @@ export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
     });
 
     if (!document) throw new NotFoundError("Document not found");
-    if (document.isDeleted) throw new NotFoundError("Document has been deleted");
+
+    // A superseded document stays viewable for admins — reviewing a replacement
+    // means comparing it against what it replaced. Anything else deleted stays gone.
+    if (document.isDeleted) {
+        const replacement = await prisma.licenseDocument.findFirst({
+            where: { supersedesId: document.id },
+            select: { id: true },
+        });
+        if (!replacement) throw new NotFoundError("Document has been deleted");
+    }
 
     // Verify document belongs to the specified therapist
     if (document.therapist.userId !== therapistUserId) {
