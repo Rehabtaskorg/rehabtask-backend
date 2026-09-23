@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IDENTITY_DOCUMENT_TYPES, US_STATE_CODES } from "../utils/constants.js";
+import { THERAPIST_ATTRIBUTE_FIELDS } from "./therapistAttributes.schema.js";
 
 const usPhoneSchema = z
     .string()
@@ -51,11 +52,7 @@ export const professionalProfileSchema = z.object({
         .min(1, "Primary license type is required")
         .max(100, "License type too long"),
 
-    specialties: z.array(z.string().max(128)).min(1, "At least one specialty is required").max(20),
-    languages: z.array(z.string().max(128)).max(20).optional().default([]),
-    certifications: z.array(z.string().max(128)).max(20).optional().default([]),
-    pastSettings: z.array(z.string().max(128)).max(20).optional().default([]),
-    populationExperience: z.array(z.string().max(128)).max(20).optional().default([]),
+    ...THERAPIST_ATTRIBUTE_FIELDS,
 
     yearsInHomeHealth: z
         .number()

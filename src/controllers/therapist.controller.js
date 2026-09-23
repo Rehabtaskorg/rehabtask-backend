@@ -5,6 +5,7 @@ import {
     updateTherapistProfile as updateTherapistProfileService,
     updateWorkAreas as updateWorkAreasService,
     updateAvailability as updateAvailabilityService,
+    updateTherapistAttributes as updateTherapistAttributesService,
     searchTherapists as searchTherapistsService,
     getTherapistPublicProfile as getTherapistPublicProfileService,
     getTherapistReviews as getTherapistReviewsService,
@@ -53,6 +54,18 @@ const updateAvailabilityController = async (req, res, next) => {
             req.body.schedule
         );
         res.status(200).json({ success: true, data: availability });
+    } catch (error) {
+        next(error);
+    }
+}
+
+const updateAttributesController = async (req, res, next) => {
+    try {
+        const attributes = await updateTherapistAttributesService(
+            req.user.id,
+            req.body
+        );
+        res.status(200).json({ success: true, data: attributes });
     } catch (error) {
         next(error);
     }
@@ -132,6 +145,7 @@ export {
     updateTherapistProfileController,
     updateWorkAreasController,
     updateAvailabilityController,
+    updateAttributesController,
     searchTherapistsController,
     getTherapistPublicProfileController,
     getTherapistReviewsController,
