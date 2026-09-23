@@ -96,6 +96,13 @@ export const updateProfileSchema = z.object({
         .optional()
         .nullable(),
     doesHomeVisits: z.boolean().optional(),
+    yearsInHomeHealth: z
+        .number()
+        .int("Years in home health must be a whole number")
+        .min(0, "Years in home health must be 0 or greater")
+        .max(50, "Years in home health must be 50 or less")
+        .optional()
+        .nullable(),
     availableFrom: z
         .string()
         .datetime({ offset: true }, "Available-from must be an ISO 8601 date")
