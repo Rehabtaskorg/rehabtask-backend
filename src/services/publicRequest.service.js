@@ -3,7 +3,8 @@ import { haversineDistance } from "../utils/distance.js";
 
 /**
  * Browse open therapy requests publicly.
- * Only returns safe fields — no customer identity, patient info, or exact coordinates.
+ * Only returns safe fields — no patient info, exact coordinates, or medical description.
+ * Does return a customer identity label (agency name or full name) — see `customerName` below.
  */
 export const browsePublicRequests = async ({
     serviceType,
@@ -26,7 +27,6 @@ export const browsePublicRequests = async ({
 
     if (search && search.trim().length >= 2) {
         where.OR = [
-            { description: { contains: search.trim(), mode: "insensitive" } },
             { serviceType: { contains: search.trim(), mode: "insensitive" } },
         ];
     }
@@ -41,7 +41,6 @@ export const browsePublicRequests = async ({
             select: {
                 id: true,
                 serviceType: true,
-                description: true,
                 location: true,
                 latitude: true,
                 longitude: true,
@@ -76,7 +75,6 @@ export const browsePublicRequests = async ({
                 select: {
                     id: true,
                     serviceType: true,
-                    description: true,
                     location: true,
                     preferredDate: true,
                     visitsPerWeek: true,
@@ -102,7 +100,6 @@ export const browsePublicRequests = async ({
         return {
             id: r.id,
             serviceType: r.serviceType,
-            description: r.description,
             locationCity: cityState,
             preferredDate: r.preferredDate,
             visitsPerWeek: r.visitsPerWeek,

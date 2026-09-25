@@ -22,7 +22,7 @@ export const sendMessageSchema = z.object({
 });
 
 export const sendDirectMessageSchema = z.object({
-    recipientId: z.uuid("Invalid recipient ID format"),
+    recipientId: z.string().min(1, "Invalid recipient ID format"),
     content: z
         .string()
         .trim()

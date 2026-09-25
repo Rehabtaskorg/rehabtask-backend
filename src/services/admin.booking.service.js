@@ -1,8 +1,9 @@
-import { BOOKING_STATUS, USER_ROLES } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendBookingCancelledByAdmin } from "./email.service.js";
+import { resolveCreditsToRestore } from "../utils/visitCredits.js";
 
 const BOOKING_INCLUDE = {
     customer: {
@@ -101,10 +102,11 @@ export const adminListBookings = async ({
 };
 
 export const adminGetBookingStats = async () => {
-    const [total, pending, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
+    const [total, pending, pendingPayment, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
         await Promise.all([
             prisma.booking.count(),
             prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING_PAYMENT } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.ACCEPTED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.CONFIRMED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.IN_PROGRESS } }),
@@ -116,6 +118,7 @@ export const adminGetBookingStats = async () => {
     return {
         total,
         pending,
+        pendingPayment,
         accepted,
         confirmed,
         inProgress,
@@ -141,18 +144,39 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
 
-    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
+    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.PENDING_PAYMENT, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
     if (!cancellable.includes(booking.status)) {
         throw new ConflictError(
             `Booking cannot be cancelled in status '${booking.status}'`
         );
     }
 
-    const updated = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { status: BOOKING_STATUS.CANCELLED },
-        include: BOOKING_INCLUDE,
-    });
+    const nonCancelledCount = resolveCreditsToRestore(booking);
+
+    const updated = await prisma.$transaction(async (tx) => {
+        const txBooking = await tx.booking.update({
+            where: { id: bookingId },
+            data: { status: BOOKING_STATUS.CANCELLED },
+            include: BOOKING_INCLUDE,
+        });
+        if (booking.sessions?.length > 0) {
+            await tx.session.updateMany({
+                where: { bookingId },
+                data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason ?? "Cancelled by admin" },
+            });
+        }
+        if (nonCancelledCount > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: nonCancelledCount },
+                },
+                data: { sessionsUsed: { decrement: nonCancelledCount } },
+            });
+        }
+        return txBooking;
+    }, { timeout: 15000 });
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.customer.user.email,
@@ -160,7 +184,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.CUSTOMER,
-    }).catch(() => {});
+    }).catch(() => { });
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.therapist.user.email,
@@ -168,7 +192,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.THERAPIST,
-    }).catch(() => {});
+    }).catch(() => { });
 
     logger.info("[AdminBookingService] Booking cancelled", {
         bookingId,

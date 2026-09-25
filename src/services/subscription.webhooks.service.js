@@ -1,5 +1,5 @@
 // TODO: [BUG] This file is 425 lines — exceeds the 300-line service limit. Split in follow-up PR.
-import { SUBSCRIPTION_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { sendSubscriptionActivated, sendSubscriptionPaymentFailed, sendSubscriptionUpgraded, sendSubscriptionPaymentActionRequired } from "./email.service.js";
@@ -20,7 +20,7 @@ import { parseStripeDate } from "./subscription.helpers.js";
 export const handleCheckoutCompleted = async (session, stripeEventId) => {
     if (session.mode !== "subscription") return;
 
-    const { customerId, planType, billingInterval } = session.metadata;
+    const { customerId, planType } = session.metadata;
     if (!customerId || !planType) {
         logger.warn("[Subscription] checkout.session.completed missing metadata", { sessionId: session.id, metadata: session.metadata });
         return;
@@ -30,7 +30,7 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
 
     const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const subscriptionItem = stripeSubscription.items?.data?.[0];
-    const { requestLimit, therapistLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG.free;
+    const { visitLimit, jobPostingLimit } = PLAN_CONFIG[planType] || PLAN_CONFIG[PLAN_TYPES.FREE];
 
     const existing = await prisma.subscription.findFirst({
         where: { customerId },
@@ -42,7 +42,6 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         stripeCustomerId: session.customer,
         stripePriceId: subscriptionItem?.price?.id || null,
         planType,
-        billingInterval: billingInterval || null,
         status: SUBSCRIPTION_STATUS.ACTIVE,
         currentPeriodStart: parseStripeDate(subscriptionItem?.current_period_start),
         currentPeriodEnd: parseStripeDate(subscriptionItem?.current_period_end),
@@ -50,8 +49,8 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         gracePeriodEndsAt: null,
         cancelledAt: null,
         cancelReason: null,
-        therapistLimit: therapistLimit ?? 999999,
-        requestLimit: requestLimit ?? 999999,
+        visitLimit: visitLimit ?? 999999,
+        jobPostingLimit: jobPostingLimit ?? 999999,
     };
 
     try {
@@ -85,7 +84,6 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
             if (customer.user?.id) {
                 trackServerEvent(customer.user.id, "subscription_activated", {
                     plan_type: planType,
-                    billing_interval: billingInterval || null,
                 });
             }
         }
@@ -97,7 +95,7 @@ export const handleCheckoutCompleted = async (session, stripeEventId) => {
         action: "subscription.created",
         entityType: "subscription",
         entityId: subscription?.id,
-        changes: { customerId, planType, billingInterval, stripeSubscriptionId },
+        changes: { customerId, planType, stripeSubscriptionId },
     });
 
     logger.info("[Subscription] Checkout completed", { customerId, planType, stripeSubscriptionId });
@@ -126,12 +124,10 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
     const stripePlanType = stripeSub.metadata?.planType;
     const hasPlanChange = stripePlanType && stripePlanType !== subscription.planType;
     const isRecoveringFromPastDue = subscription.status === SUBSCRIPTION_STATUS.PAST_DUE;
+    const isPeriodAdvancing = !periodEnd || !subscription.currentPeriodEnd || periodEnd > subscription.currentPeriodEnd;
 
-    if (!hasPlanChange && !isRecoveringFromPastDue &&
-        subscription.status === "active" &&
-        subscription.currentPeriodEnd && periodEnd &&
-        periodEnd <= subscription.currentPeriodEnd) {
-        logger.info("[Subscription] handleInvoicePaid — skipped (already up to date)", { subscriptionId: subscription.id });
+    if (!hasPlanChange && !isRecoveringFromPastDue && !isPeriodAdvancing) {
+        logger.info("[Subscription] handleInvoicePaid — skipped (period not advancing)", { subscriptionId: subscription.id });
         return;
     }
 
@@ -140,6 +136,7 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         currentPeriodStart: parseStripeDate(invoice.lines?.data[0]?.period?.start),
         currentPeriodEnd: periodEnd,
         gracePeriodEndsAt: null,
+        sessionsUsed: 0,
     };
 
     if (hasPlanChange) {
@@ -147,9 +144,8 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         if (planConfig) {
             updateData.planType = stripePlanType;
             updateData.stripePriceId = stripeSub.items.data[0]?.price?.id;
-            updateData.billingInterval = stripeSub.metadata?.billingInterval || subscription.billingInterval;
-            updateData.therapistLimit = planConfig.therapistLimit ?? 999999;
-            updateData.requestLimit = planConfig.requestLimit ?? 999999;
+            updateData.visitLimit = planConfig.visitLimit ?? 999999;
+            updateData.jobPostingLimit = planConfig.jobPostingLimit ?? 999999;
             updateData.cancelledAt = null;
             updateData.cancelReason = null;
 
@@ -197,7 +193,7 @@ export const handleInvoicePaid = async (invoice, stripeEventId) => {
         if (customer?.user?.id) {
             trackServerEvent(customer.user.id, hasPlanChange ? "subscription_upgraded" : "subscription_renewed", {
                 plan_type: updateData.planType ?? subscription.planType,
-                billing_interval: updateData.billingInterval ?? subscription.billingInterval,
+                billing_interval: "monthly",
             });
         }
     }).catch(() => { });
@@ -399,6 +395,10 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
     const subItem = stripeSubscription.items?.data?.[0];
     const currentPriceId = subItem?.price?.id;
 
+    const incomingPeriodEnd = parseStripeDate(subItem?.current_period_end);
+    const periodIsAdvancing = incomingPeriodEnd && subscription.currentPeriodEnd &&
+        incomingPeriodEnd > subscription.currentPeriodEnd;
+
     const isScheduledToCancel = stripeSubscription.cancel_at_period_end === true || !!stripeSubscription.cancel_at;
     const isNotScheduledToCancel = stripeSubscription.cancel_at_period_end === false && !stripeSubscription.cancel_at;
 
@@ -413,9 +413,8 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
             const planConfig = PLAN_CONFIG[detected.planType];
             planUpdate = {
                 planType: detected.planType,
-                billingInterval: detected.billingInterval,
-                therapistLimit: planConfig.therapistLimit ?? 999999,
-                requestLimit: planConfig.requestLimit ?? 999999,
+                visitLimit: planConfig.visitLimit ?? 999999,
+                jobPostingLimit: planConfig.jobPostingLimit ?? 999999,
                 cancelReason: null,
                 stripeScheduleId: null,
             };
@@ -435,8 +434,9 @@ export const handleSubscriptionUpdated = async (stripeSubscription, stripeEventI
                 data: {
                     status: mappedStatus,
                     currentPeriodStart: parseStripeDate(subItem?.current_period_start),
-                    currentPeriodEnd: parseStripeDate(subItem?.current_period_end),
+                    currentPeriodEnd: incomingPeriodEnd,
                     stripePriceId: currentPriceId || subscription.stripePriceId,
+                    ...(periodIsAdvancing && { sessionsUsed: 0 }),
                     ...(resumed && { cancelledAt: null, cancelReason: null }),
                     ...(cancelledViaPortal && { cancelledAt: new Date() }),
                     ...planUpdate,

@@ -48,14 +48,27 @@ const envSchema = z.object({
     // Google Maps
     GOOGLE_MAPS_API_KEY: z.string(),
 
-    // Sentry
-    SENTRY_DSN: z.string().optional(),
+    // Identity Platform
+    IDENTITY_PLATFORM_TENANT_ID: z.string().min(1),
+    FIREBASE_WEB_API_KEY: z.string().min(1),
 
-    // Better Stack
-    BETTERSTACK_LOG_TOKEN: z.string().optional(),
+    // GCS Buckets
+    PROFILE_IMAGES_BUCKET: z.string().min(1),
+    THERAPIST_DOCUMENTS_BUCKET: z.string().min(1),
+    AGENCY_DOCUMENTS_BUCKET: z.string().min(1),
+    INDIVIDUAL_DOCUMENTS_BUCKET: z.string().min(1),
+    MESSAGE_ATTACHMENTS_BUCKET: z.string().min(1),
 
     // PostHog (server-side analytics)
     POSTHOG_API_KEY: z.string().optional(),
+
+    // Twilio (SMS)
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
+
+    // Cloud Scheduler — shared secret for /internal/jobs/* endpoints
+    CLOUD_SCHEDULER_SECRET: z.string().min(32, "CLOUD_SCHEDULER_SECRET must be at least 32 characters"),
 });
 
 /**
@@ -117,7 +130,16 @@ export const {
     EMAIL_FROM,
     ADMIN_EMAIL,
     GOOGLE_MAPS_API_KEY,
-    SENTRY_DSN,
-    BETTERSTACK_LOG_TOKEN,
+    IDENTITY_PLATFORM_TENANT_ID,
+    FIREBASE_WEB_API_KEY,
+    PROFILE_IMAGES_BUCKET,
+    THERAPIST_DOCUMENTS_BUCKET,
+    AGENCY_DOCUMENTS_BUCKET,
+    INDIVIDUAL_DOCUMENTS_BUCKET,
+    MESSAGE_ATTACHMENTS_BUCKET,
     POSTHOG_API_KEY,
+    CLOUD_SCHEDULER_SECRET,
+    TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN,
+    TWILIO_MESSAGING_SERVICE_SID,
 } = env;

@@ -1,6 +1,6 @@
 import { Server } from "socket.io";
 import cookie from "cookie";
-import { supabase } from "../config/supabase.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { prisma } from "../config/prisma.js";
 import { addUser, removeUser } from "./presence.js";
 import { logger } from "../config/logger.js";
@@ -9,8 +9,10 @@ import { socketTickets } from "../routes/auth.routes.js";
 let io = null;
 
 /**
- * Initialize Socket.io server and attach to the HTTP server.
- * Auth middleware replicates the same pattern as middleware/auth.js.
+ * Initialise Socket.io server and attach to the HTTP server.
+ *
+ * @param {import("http").Server} httpServer
+ * @returns {import("socket.io").Server}
  */
 export function initSocketIO(httpServer) {
     io = new Server(httpServer, {
@@ -18,16 +20,10 @@ export function initSocketIO(httpServer) {
             origin: process.env.FRONTEND_URL,
             credentials: true,
         },
-        // Ping every 25s, timeout after 20s — keeps connections alive through load balancers
         pingInterval: 25000,
         pingTimeout: 20000,
     });
 
-    // ─── Auth Middleware ─────────────────────────────────────────────────
-    // Supports three auth methods in priority order:
-    // 1. One-time ticket (safe for cross-origin, no token exposure)
-    // 2. httpOnly cookie (same-origin or when cross-origin cookies work)
-    // 3. Handshake auth token (fallback for OAuth users with Supabase session)
     io.use(async (socket, next) => {
         try {
             const ticket = socket.handshake.auth?.ticket;
@@ -36,22 +32,21 @@ export function initSocketIO(httpServer) {
 
             let userId = null;
 
-            // Method 1: One-time ticket (preferred for cross-origin)
             if (ticket && socketTickets.has(ticket)) {
                 const ticketData = socketTickets.get(ticket);
-                socketTickets.delete(ticket); // Single use — delete immediately
+                socketTickets.delete(ticket);
                 if (Date.now() - ticketData.createdAt > 30000) {
                     return next(new Error("Ticket expired"));
                 }
                 userId = ticketData.userId;
-            }
-            // Method 2 & 3: Cookie or handshake token
-            else if (token) {
-                const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
-                if (error || !supabaseUser) {
+            } else if (token) {
+                try {
+                    const auth = getIdentityPlatformAuth();
+                    const decoded = await auth.verifyIdToken(token);
+                    userId = decoded.uid;
+                } catch {
                     return next(new Error("Invalid or expired token"));
                 }
-                userId = supabaseUser.id;
             }
 
             if (!userId) {
@@ -76,21 +71,17 @@ export function initSocketIO(httpServer) {
         }
     });
 
-    // ─── Connection Handler ──────────────────────────────────────────────
     io.on("connection", (socket) => {
         addUser(socket.userId, socket.id);
 
-        // Auto-join personal room for direct notifications (unread counts, etc.)
         socket.join(`user:${socket.userId}`);
 
-        // Client joins a specific conversation room (Phase 3: conversationId only)
         socket.on("join:conversation", (data) => {
             if (data.conversationId) {
                 socket.join(`conversation:${data.conversationId}`);
             }
         });
 
-        // Client leaves a conversation room (Phase 3: conversationId only)
         socket.on("leave:conversation", (data) => {
             if (data.conversationId) {
                 socket.leave(`conversation:${data.conversationId}`);
@@ -107,8 +98,10 @@ export function initSocketIO(httpServer) {
 }
 
 /**
- * Get the initialized Socket.io server instance.
- * Returns null if not yet initialized (safe for optional usage).
+ * Get the initialised Socket.io server instance.
+ * Returns null if not yet initialised.
+ *
+ * @returns {import("socket.io").Server|null}
  */
 export function getIO() {
     return io;

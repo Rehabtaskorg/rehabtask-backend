@@ -1,388 +1,169 @@
-import { supabase, supabaseAdmin } from "../config/supabase.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
-import { AuthenticationError, ConflictError, ValidationError, BadRequestError, NotFoundError } from "../utils/errors.js";
-import { sendTherapistWelcome, sendSubAdminWelcome, sendExistingAccountNotification } from "./email.service.js";
+import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
+import { env } from "../config/env.js";
+import { AuthenticationError, BadRequestError, NotFoundError } from "../utils/errors.js";
+import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
 import { logger } from "../config/logger.js";
-import { createTrialSubscription } from "./subscription.service.js";
-import { USER_ROLES, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
+import { USER_ROLES } from "../utils/constants.js";
+import { createChallenge, getMethods, resolvePreferredMethod, verifyChallenge } from "./twoFactor.service.js";
+export {
+    registerCustomer,
+    registerTherapist,
+    requestPasswordReset,
+    resendVerificationEmail,
+    completeOAuthOnboarding,
+} from "./auth.registration.service.js";
 
-/**
- * Register a new customer
- * Creates Supabase auth user (with email confirmation)
- */
-export const registerCustomer = async ({ email, password, fullName, phone, customerType, agencyName }) => {
-    const normalizedEmail = email.toLowerCase().trim();
-    let authUser;
-
-    // Pre-check: does this email already exist in our DB?
-    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (existingUser) {
-        // Send custom notification instead of Supabase's generic reset email
-        try {
-            const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
-                type: "recovery",
-                email: normalizedEmail,
-                options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
-            });
-            const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
-
-            sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
-                logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
-            });
-        } catch (linkErr) {
-            logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
-        }
-
-        return {
-            message: "Registration successful. Please check your email for verification.",
-            user: null,
-        };
-    }
-
-    try {
-        const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
-        const { data, error } = await supabase.auth.signUp({
-            email: normalizedEmail,
+const signInWithPassword = async (email, password) => {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_WEB_API_KEY}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            email,
             password,
-            phone: phone,
-            options: {
-                data: {
-                    full_name: fullName,
-                    role: USER_ROLES.CUSTOMER,
-                    customer_type: customerType,
-                },
-                emailRedirectTo: `${frontendUrl}/verify-callback`
-            }
-        })
-
-        if (error) {
-            if (error.status === 422 || error.message?.toLowerCase().includes("already registered")) {
-                // Generate a password reset link without sending Supabase's generic email
-                try {
-                    const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
-                        type: "recovery",
-                        email: normalizedEmail,
-                        options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
-                    });
-                    const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
-
-                    sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
-                        logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
-                    });
-                } catch (linkErr) {
-                    logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
-                }
-
-                // Return identical response to prevent email enumeration
-                return {
-                    message: "Registration successful. Please check your email for verification.",
-                    user: null,
-                };
-            }
-
-            throw error;
-        }
-
-        authUser = data?.user;
-
-        if (!authUser?.id) {
-            throw new Error("Supabase user creation failed");
-        }
-
-        // CHECK: is this email already registered as a patient under an agency?
-        const existingPatient = await prisma.patient.findFirst({
-            where: {
-                email: normalizedEmail,
-                userId: null // only link if not already linked
-            },
-            include: {
-                agency: {
-                    select: {
-                        id: true,
-                        fullName: true,
-                        agencyName: true
-                    }
-                }
-            }
-        });
-
-        // Create user record in our DB using admin access
-        const user = await withAdminAccess(async (db) => {
-            const createdUser = await db.user.create({
-                data: {
-                    id: authUser.id,
-                    email: normalizedEmail,
-                    passwordHash: "", // Supabase manages passwords
-                    role: USER_ROLES.CUSTOMER,
-                    emailVerified: false,
-                    isActive: true,
-                    customerProfile: {
-                        create: {
-                            fullName,
-                            phone,
-                            customerType,
-                            agencyName: customerType === CUSTOMER_TYPES.AGENCY ? agencyName : null,
-                        },
-                    },
-                    ...(existingPatient && {
-                        patientProfile: {
-                            connect: { id: existingPatient.id }
-                        }
-                    })
-                },
-                include: { customerProfile: true },
-            });
-
-            // Create 30-day trial subscription with Standard limits
-            await createTrialSubscription(createdUser.customerProfile.id, db);
-
-            return createdUser;
-        });
-
-        let message = "Registration successful. Please check your email to verify your account."
-
-        if (existingPatient) {
-            message += ` Your account has been linked to ${existingPatient.agency.agencyName || "an agency"
-                }.`;
-        }
-
-        return {
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                emailVerified: user.emailVerified,
-                needsEmailVerification: true,
-                hasLinkedRecords: Boolean(existingPatient)
-            },
-            message
-        };
-    } catch (error) {
-        /**
-         * Handle Prisma uniqueness safely
-         * Treat duplicate DB records as idempotent success
-         */
-        if (error?.code === "P2002" && error?.meta?.modelName === "User") {
-            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-            });
-            return {
-                message: "Registration successful. Please check your email for verification.",
-                user: null
-            }
-        }
-
-        /**
-         * Rollback supabase user ONLY if we created it
-         */
-        if (authUser?.id) {
-            try {
-                await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-            } catch (error) {
-                // Intentionally ignored - avoid cascading failures
-            }
-        }
-
-
-        throw new BadRequestError("Failed to process registration. Please try again.");
-    }
-
-};
-
-/**
- * Register a new therapist
- * Creates both Supabase auth user and application user record
- */
-export const registerTherapist = async ({ email, password, fullName, phone }) => {
-    const normalizedEmail = email.toLowerCase().trim();
-    let authUser;
-
-    // Pre-check: does this email already exist in our DB?
-    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (existingUser) {
-        try {
-            const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
-                type: "recovery",
-                email: normalizedEmail,
-                options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
-            });
-            const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
-
-            sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
-                logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
-            });
-        } catch (linkErr) {
-            logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
-        }
-
-        return {
-            message: "Registration successful. Please check your email and wait for admin approval.",
-            user: null,
-        };
-    }
-
-    try {
-        const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
-        const { data, error } = await supabase.auth.signUp({
-            email: normalizedEmail,
-            password,
-            phone: phone,
-            options: {
-                data: {
-                    full_name: fullName,
-                    role: USER_ROLES.THERAPIST,
-                },
-                emailRedirectTo: `${frontendUrl}/verify-callback`
-            }
-        });
-
-        if (error) {
-            if (error.status === 422 || error.message.includes("already registered")) {
-                try {
-                    const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
-                        type: "recovery",
-                        email: normalizedEmail,
-                        options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
-                    });
-                    const resetLink = linkData?.properties?.action_link || `${process.env.FRONTEND_URL}/forgot-password`;
-
-                    sendExistingAccountNotification({ email: normalizedEmail, resetLink }).catch((err) => {
-                        logger.error("[Auth] Failed to send existing account notification", { email: normalizedEmail, error: err.message });
-                    });
-                } catch (linkErr) {
-                    logger.error("[Auth] Failed to generate recovery link", { email: normalizedEmail, error: linkErr.message });
-                }
-
-                return {
-                    message: "Registration successful. Please check your email and wait for admin approval.",
-                    user: null,
-                };
-            }
-            throw error;
-        }
-
-        authUser = data.user;
-
-        // Create user record in DB
-        const user = await withAdminAccess(async (db) => {
-            return db.user.create({
-                data: {
-                    id: authUser.id,
-                    email: normalizedEmail,
-                    passwordHash: "",
-                    role: USER_ROLES.THERAPIST,
-                    emailVerified: false,
-                    isActive: true,
-                    therapistProfile: {
-                        create: {
-                            fullName,
-                            phone,
-                            approvalStatus: APPROVAL_STATUS.PENDING, // requires admin approval
-                        },
-                    },
-                },
-                include: {
-                    therapistProfile: true,
-                },
-            });
-        });
-
-        return {
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                emailVerified: user.emailVerified,
-                needsEmailVerification: true
-            },
-            message: 'Registration successfuly. Please verify your email and wait for admin approval.',
-            isNew: true,
-        };
-
-    } catch (error) {
-        /**
-         * Handle Prisma uniqueness safely
-         * Treat duplicate DB records as idempotent success
-         */
-        if (error?.code === "P2002" && error?.meta?.modelName === "User") {
-            await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-                redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-            });
-            return {
-                message: "Registration successful. Please check your email and wait for admin approval.",
-                user: null
-            }
-        }
-
-        if (authUser?.id) {
-            await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-        }
-
-        console.error("Registration failed:", error);
-        throw new BadRequestError("Failed to process registration. Please try again.");
-    }
-
-};
-
-/**
- * Login with email and password
- */
-export const login = async ({ email, password }) => {
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // Attempt to sign in with Supabase
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
-        password
+            tenantId: env.IDENTITY_PLATFORM_TENANT_ID,
+            returnSecureToken: true,
+        }),
     });
 
-    if (error) {
-        console.error("Login error:", error);
+    const body = await res.json();
 
-        // Check if it's specifically an email not confirmed error using the error code
-        if (error.code === "email_not_confirmed") {
+    if (!res.ok) {
+        throw { _ipCode: body?.error?.message };
+    }
+
+    const payload = JSON.parse(Buffer.from(body.idToken.split(".")[1], "base64url").toString());
+
+    return {
+        uid: body.localId,
+        idToken: body.idToken,
+        refreshToken: body.refreshToken,
+        emailVerified: payload.email_verified === true,
+    };
+};
+
+export const verifyCurrentPassword = async ({ email, password }) => {
+    try {
+        await signInWithPassword(email, password);
+    } catch {
+        throw new AuthenticationError("Current password is incorrect", "CURRENT_PASSWORD_INVALID");
+    }
+};
+
+/**
+ * Call the Identity Platform secure token refresh endpoint.
+ *
+ * @param {string} refreshToken
+ * @returns {Promise<{idToken: string, refreshToken: string, uid: string}>}
+ */
+const exchangeRefreshToken = async (refreshToken) => {
+    const url = `https://securetoken.googleapis.com/v1/token?key=${env.FIREBASE_WEB_API_KEY}`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
+    });
+
+    const body = await res.json();
+
+    if (!res.ok) {
+        throw new AuthenticationError("Failed to refresh token", "TOKEN_REFRESH_FAILED");
+    }
+
+    return {
+        idToken: body.id_token,
+        refreshToken: body.refresh_token,
+        uid: body.user_id,
+    };
+};
+
+/**
+ * Login with email and password.
+ *
+ * @param {{email: string, password: string}} params
+ */
+export const login = async ({ email, password, twoFactorMethod = null }) => {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    let ipUser;
+    try {
+        ipUser = await signInWithPassword(normalizedEmail, password);
+    } catch (err) {
+        if (err._ipCode === "EMAIL_NOT_VERIFIED") {
             throw new AuthenticationError(
                 "Please verify your email address before logging in. Check your inbox for the verification link.",
                 "EMAIL_NOT_VERIFIED"
             );
         }
-
-        // Generic error for invalid credentials (prevents email enumeration)
         throw new AuthenticationError("Invalid email or password", "INVALID_CREDENTIALS");
     }
 
-    const user = await prisma.user.findUnique({
-        where: { id: data.user.id },
-        include: {
-            customerProfile: true,
-            therapistProfile: true,
-            subAdminProfile: true,
-        }
-    });
-
-    if (!user || !user.isActive) {
-        await supabase.auth.signOut();
-        throw new NotFoundError("User account not found", "USER_NOT_FOUND");
-    }
-
-    // Double check email verification from Supabase
-    if (!data.user.email_confirmed_at) {
-        await supabase.auth.signOut();
+    if (!ipUser.emailVerified) {
         throw new AuthenticationError(
             "Please verify your email address before logging in. Check your inbox for the verification link.",
             "EMAIL_NOT_VERIFIED"
         );
     }
 
-    // Update emailVerified status if it changed in Supabase
-    if (data.user.email_confirmed_at && !user.emailVerified) {
+    const user = await prisma.user.findUnique({
+        where: { id: ipUser.uid },
+        include: {
+            customerProfile: true,
+            therapistProfile: true,
+            subAdminProfile: true,
+        },
+    });
+
+    if (!user || !user.isActive) {
+        throw new NotFoundError("User account not found", "USER_NOT_FOUND");
+    }
+
+    if (!user.emailVerified) {
         await withAdminAccess(async (db) => {
-            await db.user.update({
-                where: { id: user.id },
-                data: { emailVerified: true }
-            });
+            await db.user.update({ where: { id: user.id }, data: { emailVerified: true } });
         });
         user.emailVerified = true;
+    }
+
+    let securitySettings = await prisma.userSecuritySettings.findUnique({ where: { userId: user.id } });
+    if (user.role === USER_ROLES.ADMIN && !securitySettings) {
+        // Bootstrap admin can sign in with ADMIN_EMAIL / ADMIN_PASSWORD first,
+        // then enroll 2FA from Security (mandatory in UI once methods are available).
+        securitySettings = await prisma.userSecuritySettings.create({
+            data: {
+                userId: user.id,
+                twoFactorEnabled: false,
+                preferredMethod: null,
+                emailTwoFactorEnabled: false,
+            },
+        });
+    }
+
+    if (securitySettings?.twoFactorEnabled) {
+        const methods = getMethods(user, securitySettings);
+        // If 2FA is flagged on but no usable method exists (bootstrap / broken state),
+        // allow password login instead of trapping the user behind an undeliverable OTP.
+        if (!methods.email && !methods.sms) {
+            logger.warn("[Auth] Skipping 2FA challenge — enabled but no usable methods", {
+                userId: user.id,
+                role: user.role,
+            });
+        } else {
+            const method = resolvePreferredMethod(methods, securitySettings, twoFactorMethod);
+            let challenge;
+            try {
+                challenge = await createChallenge({ user, method, purpose: "login" });
+            } catch (error) {
+                const fallbackMethod = method === "sms" && methods.email ? "email" : method === "email" && methods.sms ? "sms" : null;
+                if (error.code === "2FA_DELIVERY_FAILED" && fallbackMethod && fallbackMethod !== twoFactorMethod) {
+                    challenge = await createChallenge({ user, method: fallbackMethod, purpose: "login" });
+                } else {
+                    throw error;
+                }
+            }
+            return { requiresTwoFactor: true, challenge, user: { id: user.id, email: user.email, role: user.role } };
+        }
     }
 
     return {
@@ -394,74 +175,99 @@ export const login = async ({ email, password }) => {
             isActive: user.isActive,
         },
         session: {
-            accessToken: data.session.access_token,
-            refreshToken: data.session.refresh_token,
-            expiresAt: data.session.expires_at
+            accessToken: ipUser.idToken,
+            refreshToken: ipUser.refreshToken,
         },
     };
 };
 
+export const completeTwoFactorLogin = async ({ email, password, challengeId, challengeToken, code }) => {
+    const normalizedEmail = email.toLowerCase().trim();
+    let ipUser;
+    try {
+        ipUser = await signInWithPassword(normalizedEmail, password);
+    } catch {
+        throw new AuthenticationError("Invalid email or password", "INVALID_CREDENTIALS");
+    }
+
+    const verification = await verifyChallenge({ challengeId, challengeToken, code, purpose: "login" });
+    if (verification.userId !== ipUser.uid) throw new AuthenticationError("This verification challenge is no longer valid", "2FA_CHALLENGE_INVALID");
+
+    const user = await prisma.user.findUnique({ where: { id: ipUser.uid } });
+    if (!user || !user.isActive) throw new NotFoundError("User account not found", "USER_NOT_FOUND");
+    return {
+        user: { id: user.id, email: user.email, role: user.role, emailVerified: user.emailVerified, isActive: user.isActive },
+        session: { accessToken: ipUser.idToken, refreshToken: ipUser.refreshToken },
+    };
+};
+
 /**
- * Logout user — only clears cookies on the requesting client.
- * We intentionally do NOT call supabase.auth.signOut() because:
- * 1. The backend Supabase client is shared (not per-user), so signOut() revokes ALL sessions
- * 2. This causes other devices/browsers for the same user to get logged out
- * 3. The access token will expire naturally (1 hour) via Supabase's JWT expiry
- * 4. Cookie clearing on the controller side is sufficient for the requesting client
- * TODO: For production, create separate accounts per user for proper audit trail.
+ * Logout — cookies are cleared by the controller.
+ * Identity Platform tokens are stateless JWTs — no server-side session to revoke.
+ *
+ * @returns {{success: boolean}}
  */
-export const logout = async (accessToken) => {
-    // No Supabase signOut — just return success. Cookies are cleared by the controller.
+export const logout = async () => {
     return { success: true };
 };
 
 /**
- * Get current user by ID
+ * Get the current authenticated user by ID.
+ *
+ * @param {string} userId
  */
 export const getCurrentUser = async (userId) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-            id: true,
-            email: true,
-            role: true,
-            emailVerified: true,
-            isActive: true,
-            customerProfile: {
-                select: {
-                    fullName: true,
-                    customerType: true,
-                    agencyName: true,
-                    onboardingComplete: true,
-                    onboardingStep: true,
-                    approvalStatus: true,
+    const [user, agreementAcceptance] = await Promise.all([
+        prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                emailVerified: true,
+                isActive: true,
+                customerProfile: {
+                    select: {
+                        fullName: true,
+                        customerType: true,
+                        agencyName: true,
+                        phone: true,
+                        smsOptIn: true,
+                        onboardingComplete: true,
+                        onboardingStep: true,
+                        approvalStatus: true,
+                        rejectionReason: true,
+                    },
+                },
+                therapistProfile: {
+                    select: {
+                        fullName: true,
+                        approvalStatus: true,
+                        rejectionReason: true,
+                        profilePhotoUrl: true,
+                        onboardingStep: true,
+                        onboardingComplete: true,
+                        ratePerVisit: true,
+                        attemptedVisitRate: true,
+                        primaryLicenseType: true,
+                    },
+                },
+                subAdminProfile: {
+                    select: {
+                        permissions: true,
+                        isActive: true,
+                    },
                 },
             },
-            therapistProfile: {
-                select: {
-                    fullName: true,
-                    approvalStatus: true,
-                    rejectionReason: true,
-                    profilePhotoUrl: true,
-                    onboardingStep: true,
-                    onboardingComplete: true,
-                    ratePerVisit: true,
-                    attemptedVisitRate: true,
-                    primaryLicenseType: true,
-                }
-            },
-            subAdminProfile: {
-                select: {
-                    permissions: true,
-                    isActive: true,
-                }
-            }
-        }
-    });
+        }),
+        prisma.unifiedAgreementAcceptance.findFirst({
+            where: { userId },
+            select: { agreementVersion: true },
+            orderBy: { acceptedAt: "desc" },
+        }),
+    ]);
 
-    if (!user) {
-        throw new NotFoundError("User not found");
-    }
+    if (!user) throw new NotFoundError("User not found");
 
     return {
         id: user.id,
@@ -469,38 +275,41 @@ export const getCurrentUser = async (userId) => {
         role: user.role,
         emailVerified: user.emailVerified,
         isActive: user.isActive,
+        hasAcceptedAgreement: agreementAcceptance !== null,
         profile:
             user.role === USER_ROLES.CUSTOMER
                 ? user.customerProfile
                 : user.role === USER_ROLES.THERAPIST
-                    ? user.therapistProfile
-                    : user.role === USER_ROLES.SUB_ADMIN
-                        ? user.subAdminProfile
-                        : null
+                ? user.therapistProfile
+                : user.role === USER_ROLES.SUB_ADMIN
+                ? user.subAdminProfile
+                : null,
     };
 };
 
 /**
- * Mark a user as email verified in your database
- * Called by the frontend after Supabase session exists
- * Sends welcome email to therapists on first verification
+ * Mark a user as email-verified in the database.
+ * Called by the frontend after the Firebase email verification link is actioned.
+ * Sends welcome email to therapists and sub-admins on first verification.
+ *
+ * @param {{userId?: string, email?: string, fullName?: string}} params
  */
-export const markEmailVerified = async ({ userId, fullName }) => {
-    if (!userId) throw new BadRequestError("User ID is required");
+export const markEmailVerified = async ({ userId, email, fullName }) => {
+    if (!userId && !email) throw new BadRequestError("User ID or email is required");
 
     try {
-        // Fetch user before update to check previous verification state
+        const whereClause = userId ? { id: userId } : { email: email.toLowerCase().trim() };
+
         const user = await prisma.user.findUnique({
-            where: { id: userId },
+            where: whereClause,
             select: {
                 id: true,
                 email: true,
                 role: true,
                 emailVerified: true,
-                therapistProfile: {
-                    select: { id: true, fullName: true }
-                }
-            }
+                therapistProfile: { select: { id: true, fullName: true } },
+                customerProfile: { select: { id: true, fullName: true } },
+            },
         });
 
         if (!user) throw new NotFoundError("User not found");
@@ -508,290 +317,93 @@ export const markEmailVerified = async ({ userId, fullName }) => {
         const wasAlreadyVerified = user.emailVerified;
 
         await withAdminAccess(async (db) => {
-            await db.user.update({
-                where: { id: userId },
-                data: { emailVerified: true }
-            });
+            await db.user.update({ where: { id: user.id }, data: { emailVerified: true } });
 
-            // Persist the sub-admin's chosen display name on invite acceptance
             if (user.role === USER_ROLES.SUB_ADMIN && fullName?.trim()) {
                 await db.subAdminProfile.update({
-                    where: { userId },
+                    where: { userId: user.id },
                     data: { fullName: fullName.trim() },
                 });
             }
         });
 
-        // Send welcome email to therapists on first verification only
         if (!wasAlreadyVerified && user.role === USER_ROLES.THERAPIST && user.therapistProfile) {
             sendTherapistWelcome({
                 therapist: { ...user.therapistProfile, user: { email: user.email } },
-            }).catch(() => { });
+            }).catch(() => {});
         }
 
-        // Send welcome email to sub-admins on first verification only
         if (!wasAlreadyVerified && user.role === USER_ROLES.SUB_ADMIN) {
-            sendSubAdminWelcome({ user }).catch(() => { });
+            sendSubAdminWelcome({ user }).catch(() => {});
         }
 
-        return { message: "Email verified in database" };
+        const profile = user.therapistProfile || user.customerProfile || null;
+
+        return {
+            message: "Email verified in database",
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                fullName: profile?.fullName || null,
+            },
+        };
     } catch (error) {
-        console.error("Error updating emailVerified in DB:", error);
+        logger.error("[Auth] Error updating emailVerified", { userId, email, error: error.message });
         throw new BadRequestError("Failed to update user email verification");
     }
-}
-
-/**
- * Request password reset
- */
-export const requestPasswordReset = async ({ email }) => {
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // Use supabase's password reset flow
-    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-    });
-
-    if (error) {
-        console.error("Password reset request error:", error);
-        // Don't receive if email exists
-    }
-
-    return {
-        message: "If an account exists with this email, you will receive password reset instructions.",
-    };
 };
 
 /**
- * Change password for authenticated user
+ * Change password for an authenticated user.
+ * Verifies the current password via Identity Platform before updating.
+ *
+ * @param {{userId: string, currentPassword: string, newPassword: string}} params
  */
 export const changePassword = async ({ userId, currentPassword, newPassword }) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundError("User not found");
 
-    if (!user) {
-        throw new NotFoundError("User not found");
-    }
-
-    // Verify current password by attempting to sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: currentPassword
-    });
-
-    if (signInError) {
+    try {
+        await signInWithPassword(user.email, currentPassword);
+    } catch {
         throw new AuthenticationError("Current password is incorrect", "INVALID_PASSWORD");
     }
 
-    // Update new password
-    const { error: updatedError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        password: newPassword,
-    });
+    const auth = getIdentityPlatformAuth();
+    await auth.updateUser(userId, { password: newPassword });
 
-    if (updatedError) {
-        console.error("Change password error:", updatedError);
-        throw new BadRequestError("Failed to change password");
-    }
-
-    return {
-        message: "Password changed successfully",
-    };
+    return { message: "Password changed successfully" };
 };
 
 /**
- * Resend verification email.
+ * Refresh the access token using a refresh token.
  *
- * Guards against calling Supabase when the account is already verified —
- * Supabase silently no-ops in that case (returns 200, sends no email,
- * emits no auth_event), which causes the user to wait for mail that
- * never arrives.
- */
-export const resendVerificationEmail = async ({ email }) => {
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const user = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-        select: { emailVerified: true },
-    });
-
-    if (user?.emailVerified) {
-        throw new BadRequestError(
-            "This email is already verified. Please log in.",
-            "EMAIL_ALREADY_VERIFIED"
-        );
-    }
-
-    const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
-    const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: normalizedEmail,
-        options: {
-            emailRedirectTo: `${frontendUrl}/verify-callback`,
-        },
-    });
-
-    if (error) {
-        if (error.status === 429 || error.code === "over_email_send_rate_limit") {
-            const waitMatch = error.message?.match(/after (\d+) seconds/);
-            const waitSeconds = waitMatch ? parseInt(waitMatch[1]) : 60;
-            throw new BadRequestError(
-                `Please wait ${waitSeconds} seconds before requesting another verification email.`,
-                "EMAIL_RATE_LIMITED"
-            );
-        }
-        // Non-enumeration: log internally, don't reveal whether the email exists
-        logger.warn("[Auth] Resend verification error", { email: normalizedEmail, error: error.message });
-    }
-
-    return {
-        message: "If an unverified account exists with this email, a verification link has been sent.",
-    };
-};
-
-/**
- * Complete OAuth onboarding
- */
-export const completeOAuthOnboarding = async ({ userId, role, profileData }) => {
-    const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-            customerProfile: true,
-            therapistProfile: true
-        }
-    });
-
-    if (!user) {
-        throw new NotFoundError("User not found");
-    }
-
-    // Prevent re-onboarding if profile already exists
-    if (role === USER_ROLES.CUSTOMER && user.customerProfile) {
-        throw new ConflictError("Customer profile already exists");
-    }
-
-    if (role === USER_ROLES.THERAPIST && user.therapistProfile) {
-        throw new ConflictError("Therapist profile already exists");
-    }
-
-    // Check if email was registered as a patient
-    const existingPatient = await prisma.patient.findFirst({
-        where: {
-            email: user.email,
-            userId: null
-        },
-        include: {
-            agency: {
-                select: {
-                    id: true,
-                    fullName: true,
-                    agencyName: true
-                }
-            }
-        }
-    });
-
-    // Update user role if needed
-    const updatedUser = await withAdminAccess(async (db) => {
-        if (role === USER_ROLES.CUSTOMER) {
-            const updated = await db.user.update({
-                where: { id: userId },
-                data: {
-                    role: USER_ROLES.CUSTOMER,
-                    customerProfile: {
-                        create: {
-                            fullName: profileData.fullName,
-                            phone: profileData.phone || null,
-                            customerType: profileData.customerType || "individual",
-                            agencyName: profileData.customerType === CUSTOMER_TYPES.AGENCY ? profileData.agencyName : null,
-                        },
-                    },
-                    ...(existingPatient && {
-                        patientProfile: {
-                            connect: { id: existingPatient.id }
-                        }
-                    })
-                },
-                include: {
-                    customerProfile: true,
-                },
-            });
-
-            // Create 30-day trial subscription with Standard limits
-            await createTrialSubscription(updated.customerProfile.id, db);
-
-            return updated;
-        } else if (role === USER_ROLES.THERAPIST) {
-            return db.user.update({
-                where: { id: userId },
-                data: {
-                    role: USER_ROLES.THERAPIST,
-                    therapistProfile: {
-                        create: {
-                            fullName: profileData.fullName,
-                            phone: profileData.phone || null,
-                            approvalStatus: APPROVAL_STATUS.PENDING,
-                        },
-                    },
-                },
-                include: {
-                    therapistProfile: true,
-                },
-            });
-        }
-    });
-
-    let message = "Profile completed successfully";
-
-    if (role === USER_ROLES.CUSTOMER && existingPatient) {
-        message += `. Your account has been linked to ${existingPatient.agency.agencyName || "an agency"}.`;
-    }
-
-    if (role === USER_ROLES.THERAPIST) {
-        message += ". Your account is pending admin approval.";
-        sendTherapistWelcome({
-            therapist: { ...updatedUser.therapistProfile, user: { email: updatedUser.email } },
-        }).catch(() => { });
-    }
-
-    return {
-        user: {
-            id: updatedUser.id,
-            email: updatedUser.email,
-            role: updatedUser.role,
-            emailVerified: updatedUser.emailVerified,
-            onboardingComplete: true,
-            hasLinkedRecords: Boolean(existingPatient)
-        },
-        message,
-    };
-};
-
-/**
- * Refresh access token
+ * @param {{refreshToken: string}} params
  */
 export const refreshAccessToken = async ({ refreshToken }) => {
-    const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken,
-    });
-
-    if (error) {
-        logger.error("Token refresh error", { message: error.message });
+    let tokens;
+    try {
+        tokens = await exchangeRefreshToken(refreshToken);
+    } catch (err) {
+        logger.error("[Auth] Token refresh error", { error: err.message });
         throw new AuthenticationError("Failed to refresh token", "TOKEN_REFRESH_FAILED");
     }
 
-    // Check if user is still active and get role for cookie refresh
     const user = await prisma.user.findUnique({
-        where: { id: data.user.id },
+        where: { id: tokens.uid },
         select: { isActive: true, role: true },
     });
+
     if (!user || !user.isActive) {
         throw new AuthenticationError("Your account has been deactivated", "ACCOUNT_DEACTIVATED");
     }
 
     return {
-        session: data.session,
-        user: data.user,
+        session: {
+            access_token: tokens.idToken,
+            refresh_token: tokens.refreshToken,
+        },
         role: user.role,
     };
 };

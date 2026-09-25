@@ -1,11 +1,14 @@
-import { APPROVAL_STATUS } from "../utils/constants.js";
+import { APPROVAL_STATUS, THERAPIST_VERIFICATION_FIELDS } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
-import { supabaseAdmin } from "../config/supabase.js";
 import { NotFoundError, ConflictError, BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendTherapistApproved, sendTherapistRejected } from "./email.service.js";
+import { getSignedUrl } from "./storage.service.js";
+import { logAction } from "./audit.service.js";
+
 export const listTherapists = async ({
     approvalStatus,
+    pendingReview,
     search,
     page = 1,
     limit = 20,
@@ -13,6 +16,7 @@ export const listTherapists = async ({
     const where = { therapistProfile: { isNot: null } };
     const profileFilter = {};
     if (approvalStatus) profileFilter.approvalStatus = approvalStatus;
+    if (pendingReview === "true") profileFilter.pendingReviewAt = { not: null };
     if (Object.keys(profileFilter).length) where.therapistProfile = profileFilter;
     if (search) {
         where.OR = [
@@ -35,12 +39,14 @@ export const listTherapists = async ({
                         id: true,
                         fullName: true,
                         phone: true,
+                        profilePhotoUrl: true,
                         approvalStatus: true,
                         approvedAt: true,
                         rejectionReason: true,
                         primaryLicenseType: true,
                         yearsOfExperience: true,
                         onboardingComplete: true,
+                        pendingReviewAt: true,
                         backgroundCheckStatus: true,
                         planTier: true,
                         licenseDocuments: {
@@ -100,8 +106,17 @@ export const approveTherapist = async (therapistUserId, adminId) => {
             approvedAt: new Date(),
             approvedBy: adminId,
             rejectionReason: null,
+            pendingReviewAt: null,
+            reviewStartedAt: null,
         },
-        include: { user: { select: { email: true } } },
+        select: {
+            id: true,
+            fullName: true,
+            stripeOnboardingComplete: true,
+            pendingReviewAt: true,
+            reviewStartedAt: true,
+            user: { select: { email: true } },
+        },
     });
 
     sendTherapistApproved({ therapist }).catch(() => { });
@@ -135,6 +150,8 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
             approvedAt: null,
             approvedBy: null,
             rejectionReason: reason.trim(),
+            pendingReviewAt: null,
+            reviewStartedAt: null,
         },
         include: { user: { select: { email: true } } },
     });
@@ -147,6 +164,86 @@ export const rejectTherapist = async (therapistUserId, reason, adminId) => {
     });
     return therapist;
 }
+
+/**
+ * Clear a SOFT-tier re-review flag on an approved therapist.
+ * HARD-tier re-reviews (status flipped to `review`) go through approve/reject instead.
+ */
+export const clearTherapistReReview = async (therapistUserId, adminId) => {
+    const user = await prisma.user.findUnique({
+        where: { id: therapistUserId },
+        include: { therapistProfile: true },
+    });
+    if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
+
+    const profile = user.therapistProfile;
+    if (profile.pendingReviewAt === null) {
+        throw new ConflictError("This account has no pending re-review to clear");
+    }
+    if (profile.approvalStatus !== APPROVAL_STATUS.APPROVED) {
+        throw new ConflictError(
+            "This account is awaiting a full approval decision — use Approve or Reject instead"
+        );
+    }
+
+    const therapist = await prisma.therapistProfile.update({
+        where: { userId: therapistUserId },
+        data: { pendingReviewAt: null, reviewStartedAt: null },
+        select: {
+            id: true,
+            fullName: true,
+            approvalStatus: true,
+            pendingReviewAt: true,
+            reviewStartedAt: true,
+            licenseVerified: true,
+            insuranceVerified: true,
+        },
+    });
+
+    logAction({
+        actorId: adminId,
+        action: "therapist.re_review_cleared",
+        entityType: "therapist_profile",
+        entityId: therapist.id,
+        changes: null,
+    });
+
+    logger.info("[AdminTherapistService] Re-review cleared", { therapistUserId, byAdmin: adminId });
+
+    return therapist;
+};
+
+export const updateTherapistVerification = async (therapistUserId, field, value, adminId) => {
+    if (!Object.values(THERAPIST_VERIFICATION_FIELDS).includes(field)) {
+        throw new BadRequestError("Invalid verification field");
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: therapistUserId },
+        include: { therapistProfile: true },
+    });
+    if (!user || !user.therapistProfile) throw new NotFoundError("Therapist not found");
+
+    const therapist = await prisma.therapistProfile.update({
+        where: { userId: therapistUserId },
+        data: { [field]: value },
+        select: {
+            id: true,
+            fullName: true,
+            licenseVerified: true,
+            insuranceVerified: true,
+        },
+    });
+
+    logger.info("[AdminTherapistService] Verification updated", {
+        therapistUserId,
+        field,
+        value,
+        byAdmin: adminId,
+    });
+
+    return therapist;
+};
 
 export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
     const document = await prisma.licenseDocument.findUnique({
@@ -162,17 +259,10 @@ export const getDocumentSignedUrl = async (therapistUserId, documentId) => {
         throw new BadRequestError("Document does not belong to this therapist");
     }
 
-    const { data, error } = await supabaseAdmin.storage
-        .from(document.bucket)
-        .createSignedUrl(document.documentUrl, 60);
-
-    if (error) {
-        logger.error("[AdminTherapistService] Signed URL error", { documentId, error: error.message });
-        throw new BadRequestError("Failed to generate document URL");
-    }
+    const { signedUrl } = await getSignedUrl(document.bucket, document.documentUrl, 60);
 
     return {
-        signedUrl: data.signedUrl,
+        signedUrl,
         expiresIn: 60,
         fileName: document.fileName,
         fileSize: document.fileSize,

@@ -103,6 +103,7 @@ export const getDisputeById = async (disputeId, userId, userRole) => {
         include: {
             booking: {
                 select: {
+                    id: true,
                     scheduledDate: true,
                     sessionType: true,
                     status: true,

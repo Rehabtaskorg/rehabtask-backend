@@ -1,16 +1,6 @@
 import { z } from "zod";
-
-const VALID_PERMISSIONS = [
-    "users",
-    "therapists",
-    "disputes",
-    "bookings",
-    "payments",
-    "subscriptions",
-    "faqs",
-    "notifications",
-    "commission",
-];
+import { THERAPIST_VERIFICATION_FIELDS, APPROVAL_STATUS, CUSTOMER_TYPES } from "../utils/constants.js";
+import { VALID_PERMISSIONS } from "../services/admin.subadmin.service.js";
 
 // ── User Management ──────────────────────────────────────────────────────────
 
@@ -33,7 +23,13 @@ export const listUsersQuerySchema = z.object({
 });
 
 export const userIdParamSchema = z.object({
-    userId: z.uuid("Invalid user ID"),
+    userId: z.string().min(1, "Invalid user ID"),
+});
+
+export const sendEmailSchema = z.object({
+    to: z.email("Invalid email address"),
+    subject: z.string().min(1, "Subject is required").max(200),
+    message: z.string().min(1, "Message is required").max(5000),
 });
 
 export const updateUserSchema = z.object({
@@ -46,10 +42,15 @@ export const updateUserSchema = z.object({
     bio: z.string().max(1000).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, { message: "At least one field must be provided" });
 
+export const resetUserTwoFactorSchema = z.object({
+    reason: z.string().trim().min(10, "Recovery reason must be at least 10 characters").max(500),
+});
+
 // ── Therapist Management ─────────────────────────────────────────────────────
 
 export const listTherapistsQuerySchema = z.object({
-    approvalStatus: z.enum(["review", "pending", "approved", "rejected"]).optional(),
+    approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()
@@ -66,11 +67,11 @@ export const listTherapistsQuerySchema = z.object({
 });
 
 export const therapistUserIdParamSchema = z.object({
-    therapistUserId: z.uuid("Invalid therapist user ID"),
+    therapistUserId: z.string().min(1, "Invalid therapist user ID"),
 });
 
 export const therapistDocumentParamSchema = z.object({
-    therapistUserId: z.uuid("Invalid therapist user ID"),
+    therapistUserId: z.string().min(1, "Invalid therapist user ID"),
     documentId: z.uuid("Invalid document ID"),
 });
 
@@ -81,11 +82,54 @@ export const rejectTherapistSchema = z.object({
         .max(2000, "Rejection reason must be 2000 characters or less"),
 });
 
+export const updateTherapistVerificationSchema = z.object({
+    field: z.enum(Object.values(THERAPIST_VERIFICATION_FIELDS)),
+    value: z.boolean(),
+});
+
+// ── Customer Management ──────────────────────────────────────────────────────
+
+export const listCustomersQuerySchema = z.object({
+    approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
+    customerType: z.enum(Object.values(CUSTOMER_TYPES)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
+    search: z.string().max(200).optional(),
+    sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+    page: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1))
+        .optional()
+        .default("1"),
+    limit: z
+        .string()
+        .transform(Number)
+        .pipe(z.number().int().min(1).max(100))
+        .optional()
+        .default("20"),
+});
+
+export const customerUserIdParamSchema = z.object({
+    customerUserId: z.string().min(1, "Invalid customer user ID"),
+});
+
+export const customerDocumentParamSchema = z.object({
+    customerUserId: z.string().min(1, "Invalid customer user ID"),
+    documentId: z.string().uuid("Invalid document ID"),
+});
+
+export const rejectCustomerSchema = z.object({
+    reason: z
+        .string()
+        .min(10, "Rejection reason must be at least 10 characters")
+        .max(2000, "Rejection reason must be 2000 characters or less"),
+});
+
 // ── Dispute Management ───────────────────────────────────────────────────────
 
 export const adminListDisputesQuerySchema = z.object({
     status: z.enum(["open", "under_review", "resolved", "closed"]).optional(),
-    assignedAdminId: z.uuid().optional(),
+    assignedAdminId: z.string().min(1).optional(),
     unassigned: z.enum(["true", "false"]).optional(),
     page: z
         .string()
@@ -106,7 +150,7 @@ export const disputeIdParamSchema = z.object({
 });
 
 export const assignDisputeSchema = z.object({
-    assignedAdminId: z.uuid("Invalid admin user ID"),
+    assignedAdminId: z.string().min(1, "Invalid admin user ID"),
 });
 
 export const adminUpdateDisputeSchema = z.object({
@@ -164,7 +208,7 @@ export const adminDenyRescheduleSchema = z.object({
 
 export const adminListSubscriptionsQuerySchema = z.object({
     status: z.enum(["active", "inactive", "cancelled", "past_due", "trialing", "grace_period"]).optional(),
-    planType: z.enum(["free", "standard", "premium"]).optional(),
+    planType: z.enum(["free", "pro", "enterprise", "unlimited"]).optional(),
     search: z.string().max(200).optional(),
     sortBy: z.enum(["createdAt", "currentPeriodStart", "currentPeriodEnd"]).optional().default("createdAt"),
     sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),

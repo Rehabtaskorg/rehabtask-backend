@@ -1,5 +1,6 @@
 import express from "express";
 
+import jobsRoutes from "./jobs.routes.js";
 import authRoutes from "./auth.routes.js";
 import requestRoutes from "./request.routes.js";
 import offerRoutes from "./offer.routes.js";
@@ -14,7 +15,7 @@ import therapistPublicRoutes from "./therapistPublic.routes.js";
 import reviewRoutes from "./review.routes.js";
 import faqRoutes from "./faq.routes.js";
 import disputeRoutes from "./dispute.routes.js";
-import adminRoutes from "./admin.routes.js";
+import adminRoutes from "./admin/index.js";
 import agencyRoutes from "./agency.routes.js";
 import agencyOnboardingRoutes from "./agency.onboarding.routes.js";
 import individualOnboardingRoutes from "./individual.onboarding.routes.js";
@@ -23,9 +24,11 @@ import requestOptionRoutes from "./requestOption.routes.js";
 import subscriptionRoutes from "./subscription.routes.js";
 import visitTypeRoutes from "./visitType.routes.js";
 import publicRequestRoutes from "./publicRequest.routes.js";
+import customerRoutes from "./customer.routes.js";
 
 const router = express.Router();
 
+router.use("/internal/jobs", jobsRoutes);
 router.use("/auth", authRoutes);
 router.use("/requests", requestRoutes);
 router.use("/offers", offerRoutes);
@@ -49,5 +52,6 @@ router.use("/request-options", requestOptionRoutes);
 router.use("/subscriptions", subscriptionRoutes);
 router.use("/visit-types", visitTypeRoutes);
 router.use("/public", publicRequestRoutes);
+router.use("/customers", customerRoutes);
 
 export default router;

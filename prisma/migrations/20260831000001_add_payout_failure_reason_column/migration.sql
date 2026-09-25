@@ -1,0 +1,1 @@
+ALTER TABLE "customer_refunds" ADD COLUMN IF NOT EXISTS "payout_failure_reason" VARCHAR(255);

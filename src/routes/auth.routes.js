@@ -11,8 +11,22 @@ import {
     processOAuthController,
     completeOAuthOnboardingController,
     refreshTokenController,
-    verifyEmailController
+    verifyEmailController,
+    verifyTwoFactorLoginController,
+    resendTwoFactorLoginController,
+    getTwoFactorStatusController,
+    startTwoFactorEnrollmentController,
+    verifyTwoFactorEnrollmentController,
+    disableTwoFactorController,
+    startDisableTwoFactorController,
+    removeSmsMethodController,
+    setTwoFactorEnabledController,
+    setPreferredMethodController,
 } from "../controllers/auth.controller.js";
+import {
+    acceptAgreementController,
+    getAgreementContentController,
+} from "../controllers/agreement.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { recaptchaMiddleware } from "../middleware/recaptcha.js";
 import { validate } from "../middleware/validate.js";
@@ -24,6 +38,14 @@ import {
     changePasswordSchema,
     resendVerificationSchema,
     completeOAuthOnboardingSchema
+    ,twoFactorLoginSchema,
+    twoFactorEnrollmentSchema,
+    twoFactorVerificationSchema,
+    twoFactorResendSchema
+    ,twoFactorDisableSchema,
+    twoFactorRemoveSmsSchema,
+    twoFactorToggleSchema,
+    twoFactorPreferredMethodSchema
 } from "../validators/auth.schema.js";
 import {
     registrationRateLimiter,
@@ -64,6 +86,9 @@ router.post(
     validate(loginSchema),
     loginController
 );
+
+router.post("/2fa/login/verify", sensitiveOperationRateLimiter, validate(twoFactorLoginSchema), verifyTwoFactorLoginController);
+router.post("/2fa/login/resend", sensitiveOperationRateLimiter, validate(twoFactorResendSchema), resendTwoFactorLoginController);
 
 // Verify email in DB (called by frontend after magic link)
 router.post("/verify-email", verifyEmailController);
@@ -113,6 +138,15 @@ router.post("/logout", logoutController);
 // Get current user
 router.get("/me", authenticate, getCurrentUserController);
 
+router.get("/2fa/status", authenticate, getTwoFactorStatusController);
+router.post("/2fa/enrollment/start", authenticate, validate(twoFactorEnrollmentSchema), startTwoFactorEnrollmentController);
+router.post("/2fa/enrollment/verify", authenticate, validate(twoFactorVerificationSchema), verifyTwoFactorEnrollmentController);
+router.post("/2fa/disable/start", authenticate, startDisableTwoFactorController);
+router.post("/2fa/disable", authenticate, validate(twoFactorDisableSchema), disableTwoFactorController);
+router.patch("/2fa/toggle", authenticate, validate(twoFactorToggleSchema), setTwoFactorEnabledController);
+router.patch("/2fa/preferred-method", authenticate, validate(twoFactorPreferredMethodSchema), setPreferredMethodController);
+router.post("/2fa/methods/sms/remove", authenticate, validate(twoFactorRemoveSmsSchema), removeSmsMethodController);
+
 // Generate a one-time ticket for Socket.io authentication
 // The ticket is short-lived (30s) and can only be used once.
 // This avoids exposing the access token to JavaScript while still
@@ -130,11 +164,14 @@ router.get("/socket-ticket", authenticate, (req, res) => {
 // Export for socket auth middleware
 export { socketTickets };
 
-// Change password
 router.post(
     "/password/change",
     authenticate,
     validate(changePasswordSchema),
-    changePasswordController);
+    changePasswordController
+);
+
+router.get("/agreement/content", authenticate, getAgreementContentController);
+router.post("/agreement/accept", authenticate, acceptAgreementController);
 
 export default router;

@@ -4,7 +4,9 @@ import {
     deactivateUser as deactivateUserService,
     reactivateUser as reactivateUserService,
     updateUser as updateUserService,
+    resetUserTwoFactor as resetUserTwoFactorService,
 } from "../services/admin.user.service.js";
+import { sendAdminDirectMessage } from "../services/email.service.js";
 
 const listUsersController = async (req, res, next) => {
     try {
@@ -65,10 +67,34 @@ const updateUserController = async (req, res, next) => {
     }
 };
 
+const resetUserTwoFactorController = async (req, res, next) => {
+    try {
+        const summary = await resetUserTwoFactorService(req.params.userId, req.user, req.body.reason);
+        res.status(200).json({ success: true, data: summary });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const sendEmailController = async (req, res, next) => {
+    try {
+        const { to, subject, message } = req.body;
+        const result = await sendAdminDirectMessage({ to, subject, message });
+        if (!result.success) {
+            return res.status(502).json({ success: false, message: "Failed to send email. Please try again." });
+        }
+        res.status(200).json({ success: true });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listUsersController,
     getUserDetailController,
     deactivateUserController,
     reactivateUserController,
     updateUserController,
+    resetUserTwoFactorController,
+    sendEmailController,
 };

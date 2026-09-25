@@ -1,11 +1,5 @@
 import { z } from "zod";
-
-const US_STATE_CODES = [
-    "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA",
-    "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
-    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
-    "VA","WA","WV","WI","WY",
-];
+import { IDENTITY_DOCUMENT_TYPES, US_STATE_CODES } from "../utils/constants.js";
 
 const usPhoneSchema = z
     .string()
@@ -57,17 +51,27 @@ export const professionalProfileSchema = z.object({
         .min(1, "Primary license type is required")
         .max(100, "License type too long"),
 
-    specialization: z
-        .string()
-        .max(500, "Specialization too long")
+    specialties: z.array(z.string().max(128)).min(1, "At least one specialty is required").max(20),
+    languages: z.array(z.string().max(128)).max(20).optional().default([]),
+    certifications: z.array(z.string().max(128)).max(20).optional().default([]),
+    pastSettings: z.array(z.string().max(128)).max(20).optional().default([]),
+    populationExperience: z.array(z.string().max(128)).max(20).optional().default([]),
+
+    yearsInHomeHealth: z
+        .number()
+        .int()
+        .min(0)
+        .max(50)
         .optional()
         .nullable(),
 
     professionalSummary: z
         .string()
         .trim()
-        .min(100, "Professional summary must be at least 100 characters")
-        .max(2000, "Professional summary must not exceed 2000 characters"),
+        .max(2000, "Professional summary must not exceed 2000 characters")
+        .refine((val) => val === "" || val.length >= 100, "Must be at least 100 characters if provided")
+        .optional()
+        .or(z.literal("")),
 
     profilePhotoUrl: z
         .url("Invalid profile photo URL")
@@ -117,25 +121,26 @@ export const credentialsSchema = z.object({
         .max(5, "Maximum 5 license documents allowed"),
 
     ratePerVisit: z.coerce
-        .number()
-        .min(0, "Rate must be 0 or greater")
-        .max(10000, "Rate must be $10,000 or less")
-        .nullable()
-        .optional()
-        .transform(val => val === 0 ? null : val),
+        .number({ required_error: "Rate per visit is required", invalid_type_error: "Rate per visit is required" })
+        .min(1, "Rate per visit is required")
+        .max(10000, "Rate must be $10,000 or less"),
     attemptedVisitRate: z.coerce
-        .number()
+        .number({ required_error: "Attempted visit rate is required", invalid_type_error: "Attempted visit rate is required" })
         .min(0, "Attempted visit rate must be 0 or greater")
-        .max(10000, "Attempted visit rate must be $10,000 or less")
+        .max(10000, "Attempted visit rate must be $10,000 or less"),
+    evaluationRate: z.coerce
+        .number({ required_error: "Evaluation rate is required", invalid_type_error: "Evaluation rate is required" })
+        .min(1, "Evaluation rate is required")
+        .max(10000, "Evaluation rate must be $10,000 or less"),
+    travelFee: z.coerce
+        .number()
+        .min(0, "Travel fee must be 0 or greater")
+        .max(500, "Travel fee must be $500 or less")
         .nullable()
         .optional()
         .transform(val => (val === 0 ? null : val)),
 }).refine(
-    (data) => {
-        // Cap: attempted rate cannot exceed session rate when both are set.
-        if (data.attemptedVisitRate == null || data.ratePerVisit == null) return true;
-        return data.attemptedVisitRate <= data.ratePerVisit;
-    },
+    (data) => data.attemptedVisitRate <= data.ratePerVisit,
     {
         message: "Attempted visit rate cannot be greater than your session rate",
         path: ["attemptedVisitRate"],
@@ -187,9 +192,21 @@ export const availabilitySchema = z.object({
         error: "At least one day must be enabled",
     }),
 
-    acceptingNewPatients: z.boolean().optional().default(true),
+    availableFrom: z.string().datetime({ offset: true }).optional().nullable(),
+    caseloadCapacity: z.number().int().min(1).max(999).optional().nullable(),
 
     workAreas: z.array(workAreaSchema).min(1, "At least one work area is required"),
+})
+
+export const hipaaSchema = z.object({
+    attested: z.literal(true, { errorMap: () => ({ message: "HIPAA attestation is required" }) }),
+    document: z.object({
+        path: z.string().min(1),
+        fileName: z.string().min(1),
+        fileSize: z.number().positive(),
+        documentType: z.literal("hipaa_certificate"),
+        mimeType: z.string().optional(),
+    }).optional().nullable(),
 })
 
 const insuranceDocumentSchema = z.object({
@@ -215,28 +232,27 @@ export const insuranceSchema = z.object({
 );
 
 const identityDocumentSchema = z.object({
-    path: z.string(),
-    fileName: z.string(),
-    fileSize: z.number(),
-    documentType: z.enum(["government_id_front", "government_id_back"]),
+    path: z.string().min(1, "Document path is required"),
+    fileName: z.string().min(1, "File name is required"),
+    fileSize: z.number().positive("File size must be greater than zero"),
+    documentType: z.enum([
+        IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT,
+        IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_BACK,
+        IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE,
+    ]),
     mimeType: z.string().optional(),
 });
 
 export const identitySchema = z.object({
     documents: z.array(identityDocumentSchema),
 }).refine(
-    (data) => data.documents.some((d) => d.documentType === "government_id_front"),
+    (data) => data.documents.some((d) => d.documentType === IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT),
     { message: "Government ID (front) is required", path: ["documents"] }
+).refine(
+    (data) => data.documents.some((d) => d.documentType === IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE),
+    { message: "Driver's license is required", path: ["documents"] }
 );
 
-export const signComplianceSchema = z.object({
-    documentType: z.enum([
-        "independent_contractor_agreement",
-        "hipaa_acknowledgment",
-        "background_check_authorization",
-    ]),
-    signature: z.string().min(2, "Signature is required").max(255, "Signature too long"),
-});
 
 export const backgroundCheckSchema = z.object({
     consent: z
@@ -255,7 +271,7 @@ const agencyDocumentSchema = z.object({
     path: z.string().min(1, "Document path is required"),
     fileName: z.string().min(1),
     fileSize: z.number().positive(),
-    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"]),
+    documentType: z.enum(["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability", "w9"]),
     mimeType: z.string().optional(),
 });
 
@@ -308,8 +324,8 @@ export const individualPersonalInfoSchema = z.object({
             const date = new Date(val);
             const now = new Date();
             const age = now.getFullYear() - date.getFullYear();
-            return !isNaN(date.getTime()) && age >= 0 && age <= 120;
-        }, "Please provide a valid date of birth"),
+            return !isNaN(date.getTime()) && age >= 18 && age <= 100;
+        }, "Individual must be between 18 and 100 years old"),
     addressLine1: z.string().min(1, "Address is required").max(255),
     addressLine2: z.string().max(255).optional().nullable(),
     city: z.string().min(1, "City is required").max(100),
@@ -345,3 +361,7 @@ export const individualSignConsentSchema = z.object({
         path: ["representativeName"],
     }
 );
+
+export const resubmitApplicationSchema = z.object({
+    note: z.string().trim().max(500).nullish(),
+});

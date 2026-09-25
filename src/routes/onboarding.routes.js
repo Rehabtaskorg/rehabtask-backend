@@ -3,19 +3,19 @@ import {
     advanceToFinalReviewController,
     completeOnboardingController,
     deleteDocumentController,
-    getComplianceContentController,
     getDocumentSignedUrlController,
     getOnboardingDataController,
     getOnboardingStatusController,
     getTherapistDocumentsController,
     saveAvailabilityController,
     saveCredentialsController,
+    saveHipaaAttestationController,
     saveIdentityVerificationController,
     saveInsuranceController,
     savePersonalInfoController,
     saveProfessionalProfileController,
-    signComplianceController,
     submitBackgroundCheckController,
+    replaceDocumentController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -24,9 +24,9 @@ import {
     professionalProfileSchema,
     credentialsSchema,
     availabilitySchema,
+    hipaaSchema,
     insuranceSchema,
     identitySchema,
-    signComplianceSchema,
     backgroundCheckSchema,
 } from "../validators/onboarding.schema.js";
 import { handleMulterError, uploadDocument as uploadDocumentMiddleware, uploadImage } from "../middleware/upload.middleware.js";
@@ -103,17 +103,12 @@ router.post(
 );
 
 /**
- * GET /api/therapist/onboarding/compliance/content
- */
-router.get("/compliance/content", getComplianceContentController);
-
-/**
- * POST /api/therapist/onboarding/compliance/sign
+ * POST /api/therapist/onboarding/hipaa
  */
 router.post(
-    "/compliance/sign",
-    validate(signComplianceSchema),
-    signComplianceController
+    "/hipaa",
+    validate(hipaaSchema),
+    saveHipaaAttestationController
 );
 
 /**
@@ -171,5 +166,18 @@ router.get("/document/:documentId", getDocumentSignedUrlController);
  * Soft delete a document
  */
 router.delete("/document/:documentId", deleteDocumentController);
+
+/**
+ * POST /api/therapist/onboarding/document/:documentId/replace
+ * Replace an existing document once the application is under review or
+ * approved. Separate from /upload-document, which stays locked in those
+ * statuses (Phase 0's assertOnboardingMutable).
+ */
+router.post(
+    "/document/:documentId/replace",
+    uploadDocumentMiddleware,
+    handleMulterError,
+    replaceDocumentController
+);
 
 export default router;

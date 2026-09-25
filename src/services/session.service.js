@@ -1,4 +1,5 @@
 import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
+import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT, therapistSelectFor, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
 import { BadRequestError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -6,8 +7,11 @@ import {
     sendSessionCompletionRequest,
     sendSessionConfirmed,
     sendSessionRevisionRequested,
+    sendSessionRevisionResponded,
     sendSessionRevisionSubmitted,
+    sendSessionRevisionExtended,
 } from "./email.service.js";
+import { smsCustWorkSubmittedForReview, smsTherPaymentReleased, smsTherRevisionRequested, smsCustRevisionResponded, smsCustRevisionExtended } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
 import {
     releaseSessionPayout,
@@ -18,6 +22,7 @@ import {
     sendAttemptedVisitTherapistPayout,
 } from "./email.service.js";
 import { findOrCreateDirectConversation, createSystemMessage } from "./message.service.js";
+import { markLinkedRequestCompleted } from "./request.service.js";
 
 /**
  * Mark session as completed by therapist
@@ -96,7 +101,7 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
     // System message: session_completed
     const completeTherapistUserId = session.booking.therapist.userId;
     const completeCustomerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId)
+    findOrCreateDirectConversation(completeTherapistUserId, completeCustomerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -119,7 +124,8 @@ export const completeSessionByTherapist = async (sessionId, therapistId) => {
         booking: session.booking
     }).catch((err) => {
         logger.error('[SessionService] Completion request notification failed', { error: err.message });
-    })
+    });
+    smsCustWorkSubmittedForReview(session.booking.customer, session.booking.id);
 
     return updatedSession;
 }
@@ -133,10 +139,9 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: {
-                        include: { user: { select: { id: true, email: true } } }
-                    },
-                    customer: true,
+                    therapist: { select: { ...THERAPIST_SAFE_SELECT, user: { select: { id: true, email: true } } } },
+                    customer: { select: CUSTOMER_SAFE_SELECT },
+                    patient: { select: { id: true, fullName: true } },
                 },
             },
         },
@@ -182,7 +187,11 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
         });
         const totalSessions = allSessions.length;
         const confirmedCount = allSessions.filter(s =>
-            s.id === sessionId || s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER
+            s.id === sessionId ||
+            s.status === SESSION_STATUS.CONFIRMED_BY_CUSTOMER ||
+            s.status === SESSION_STATUS.ATTEMPTED ||
+            s.status === SESSION_STATUS.MISSED ||
+            s.status === SESSION_STATUS.CANCELLED
         ).length;
 
         if (confirmedCount === totalSessions) {
@@ -194,6 +203,12 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
 
         return { ...updated, _allConfirmed: confirmedCount === totalSessions, _confirmedCount: confirmedCount, _totalSessions: totalSessions };
     }, { timeout: 10000 });
+
+    if (updatedSession._allConfirmed) {
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after COMPLETED", { bookingId: session.bookingId, error: err.message })
+        );
+    }
 
     // Event: session.confirmed_by_customer
     logAction({
@@ -212,7 +227,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
     const confirmTherapistUserId = session.booking.therapist.user.id;
     const confirmCustomerUserId = session.booking.customer.userId;
     const allDone = updatedSession._allConfirmed;
-    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId)
+    findOrCreateDirectConversation(confirmCustomerUserId, confirmTherapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -257,6 +272,7 @@ export const confirmSessionByCustomer = async (sessionId, customerId) => {
                 booking: bookingWithTherapist,
                 isLast: updatedSession._allConfirmed,
             });
+            smsTherPaymentReleased(bookingWithTherapist.therapist);
             logger.info("[Session] Per-session payout released", {
                 bookingId: session.bookingId,
                 sessionId,
@@ -354,7 +370,7 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
     // they've already shared with the customer.
     const customerUserId = session.booking.customer.user.id;
     const therapistUserId = session.booking.therapist.user.id;
-    findOrCreateDirectConversation(customerUserId, therapistUserId)
+    findOrCreateDirectConversation(customerUserId, therapistUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -375,10 +391,11 @@ export const requestSessionRevision = async (sessionId, customerId, reason) => {
         customer: session.booking.customer,
         session: updatedSession,
         booking: session.booking,
-        reason: trimmedReason,
     }).catch((err) => {
         logger.error("[SessionService] Revision requested email failed", { error: err.message });
     });
+
+    smsTherRevisionRequested(session.booking.therapist, session.bookingId);
 
     return updatedSession;
 };
@@ -432,7 +449,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
         throw new Error("Unauthorized");
     }
 
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be responded to.",
             "INVALID_SESSION_STATUS"
@@ -462,7 +479,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -478,7 +495,7 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
         });
 
     // Notify customer that therapist acknowledged
-    sendSessionRevisionSubmitted({
+    sendSessionRevisionResponded({
         customer: session.booking.customer,
         therapist: session.booking.therapist,
         session: updatedSession,
@@ -486,6 +503,8 @@ export const respondToRevision = async (sessionId, therapistId, { dueBy }) => {
     }).catch((err) => {
         logger.error("[SessionService] Revision responded email failed", { error: err.message });
     });
+
+    smsCustRevisionResponded(session.booking.customer, session.bookingId, dueByDate);
 
     return updatedSession;
 };
@@ -520,7 +539,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
         throw new Error("Unauthorized");
     }
 
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be resubmitted.",
             "INVALID_SESSION_STATUS"
@@ -539,9 +558,10 @@ export const resubmitSession = async (sessionId, therapistId) => {
     const updatedSession = await prisma.session.update({
         where: { id: sessionId },
         data: {
-            status: "completed_by_therapist",
+            status: SESSION_STATUS.COMPLETED_BY_THERAPIST,
             completedAt: now,
             revisionLastSubmittedAt: now,
+            revisionExpirySmsSentAt: null,
         },
     });
 
@@ -559,7 +579,7 @@ export const resubmitSession = async (sessionId, therapistId) => {
     // System message
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -585,15 +605,6 @@ export const resubmitSession = async (sessionId, therapistId) => {
     });
 
     return updatedSession;
-};
-
-/**
- * @deprecated Use respondToRevision + resubmitSession instead.
- * Kept for backward compat during the transition window.
- */
-export const submitSessionRevision = async (sessionId, therapistId, { dueBy }) => {
-    await respondToRevision(sessionId, therapistId, { dueBy });
-    return resubmitSession(sessionId, therapistId);
 };
 
 /**
@@ -623,7 +634,7 @@ export const extendRevision = async (sessionId, therapistId) => {
 
     if (!session) throw new Error("Session not found");
     if (session.booking.therapistId !== therapistId) throw new Error("Unauthorized");
-    if (session.status !== "in_revision") {
+    if (session.status !== SESSION_STATUS.IN_REVISION) {
         throw new BadRequestError(
             "Only sessions in revision can be extended.",
             "INVALID_SESSION_STATUS"
@@ -655,7 +666,7 @@ export const extendRevision = async (sessionId, therapistId) => {
 
     const therapistUserId = session.booking.therapist.user.id;
     const customerUserId = session.booking.customer.user.id;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, session.booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -669,6 +680,17 @@ export const extendRevision = async (sessionId, therapistId) => {
         .catch((err) => {
             logger.error("[SessionService] System message (session_revision_extended) failed", { error: err.message });
         });
+
+    sendSessionRevisionExtended({
+        customer: session.booking.customer,
+        therapist: session.booking.therapist,
+        session: updatedSession,
+        booking: session.booking,
+    }).catch((err) => {
+        logger.error("[SessionService] Revision extended email failed", { error: err.message });
+    });
+
+    smsCustRevisionExtended(session.booking.customer, session.bookingId, newDueBy);
 
     return updatedSession;
 };
@@ -805,6 +827,9 @@ export const markSessionMissed = async (sessionId, userId, actorRole, reason) =>
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(session.bookingId).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after missed FINALIZED", { bookingId: session.bookingId, error: err.message })
+        );
     }
 
     logAction({
@@ -1047,6 +1072,9 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
             data: { status: BOOKING_STATUS.FINALIZED },
         });
         bookingFinalized = true;
+        markLinkedRequestCompleted(booking.id).catch((err) =>
+            logger.error("[SessionService] markLinkedRequestCompleted failed after attempted FINALIZED", { bookingId: booking.id, error: err.message })
+        );
     }
 
     logAction({
@@ -1076,7 +1104,7 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
     // System message — fire-and-forget
     const therapistUserId = booking.therapist.userId;
     const customerUserId = booking.customer.userId;
-    findOrCreateDirectConversation(therapistUserId, customerUserId)
+    findOrCreateDirectConversation(therapistUserId, customerUserId, booking.patientId || null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
@@ -1118,13 +1146,25 @@ export const markSessionAttempted = async (sessionId, userId, reason) => {
  * Get session by ID
  */
 export const getSessionById = async (sessionId, userId) => {
+    const bookingIds = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { booking: { select: { customerId: true, therapistId: true } } },
+    });
+
+    if (!bookingIds) {
+        throw new Error("Session not found");
+    }
+
+    const { customerId: customerProfileId, therapistId: therapistProfileId } = bookingIds.booking;
+    const canViewContact = await hasContactAccessByProfileId(customerProfileId, therapistProfileId);
+
     const session = await prisma.session.findUnique({
         where: { id: sessionId },
         include: {
             booking: {
                 include: {
-                    customer: { include: { user: true } },
-                    therapist: { include: { user: true } },
+                    customer: { select: CUSTOMER_SAFE_SELECT },
+                    therapist: { select: { ...therapistSelectFor(canViewContact), user: { select: { id: true, email: true } } } },
                     offer: {
                         include: {
                             request: true,
@@ -1136,10 +1176,6 @@ export const getSessionById = async (sessionId, userId) => {
         },
     });
 
-    if (!session) {
-        throw new Error("Session not found");
-    }
-
     const isCustomer = session.booking.customer.userId === userId;
     const isTherapist = session.booking.therapist.userId === userId;
 
@@ -1148,7 +1184,6 @@ export const getSessionById = async (sessionId, userId) => {
     }
 
     return session;
-
 }
 
 /**
@@ -1160,7 +1195,7 @@ export const getCustomerSessions = async (customerId) => {
         include: {
             booking: {
                 include: {
-                    therapist: true,
+                    therapist: { select: therapistSelectFor(true) },
                     offer: {
                         include: {
                             request: true,

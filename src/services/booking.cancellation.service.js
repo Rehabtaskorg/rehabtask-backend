@@ -1,9 +1,10 @@
-import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES } from "../utils/constants.js";
+import { BOOKING_STATUS, SESSION_STATUS, USER_ROLES, OFFER_STATUS, REQUEST_STATUS, REOPENABLE_REQUEST_STATUSES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { NotFoundError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
+import { resolveCreditsToRestore } from "../utils/visitCredits.js";
 import {
     sendCancellationRequestedToTherapist,
     sendCancellationRequestedToCustomer,
@@ -16,18 +17,30 @@ import {
 
 const CANCELLABLE_PAYMENT_STATUSES = ["escrowed", "intent_created"];
 
-/** @returns {Promise<import("@prisma/client").Booking>} */
+const TERMINAL_BOOKING_STATUSES = [
+    BOOKING_STATUS.CANCELLED,
+    BOOKING_STATUS.COMPLETED,
+    BOOKING_STATUS.FINALIZED,
+];
+
+/**
+ * @param {string} bookingId
+ * @returns {Promise<any>} Booking row with payment, sessions, customer, therapist and patient relations loaded
+ */
 const getBookingForCancellation = async (bookingId) =>
     prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
             payment: true,
             sessions: { orderBy: { sessionNumber: "asc" } },
+            offer: { select: { id: true, requestId: true, expiresAt: true } },
             customer: {
                 select: {
                     id: true,
                     userId: true,
                     fullName: true,
+                    customerType: true,
+                    agencyName: true,
                     stripeAccountId: true,
                     stripeOnboardingComplete: true,
                     user: { select: { email: true } },
@@ -41,11 +54,74 @@ const getBookingForCancellation = async (bookingId) =>
                     user: { select: { email: true } },
                 },
             },
+            patient: { select: { id: true, fullName: true } },
         },
     });
 
 /**
+ * Cancel a booking that has no Payment row at all (customer never funded it).
+ *
+ * No money ever moved, so there is nothing to refund and no Stripe call to make,
+ * and no approval gate is needed — neither party can lose funds.
+ *
+ * @param {any} booking - Booking row from getBookingForCancellation, with a null `payment`
+ * @param {string} userId - the requesting user's id
+ * @param {string} reason
+ */
+const cancelUnpaidBooking = async (booking, userId, reason) => {
+    if (TERMINAL_BOOKING_STATUSES.includes(booking.status)) {
+        throw new ConflictError("This booking cannot be cancelled in its current state");
+    }
+
+    const creditsToRestore = resolveCreditsToRestore(booking);
+    const bookingId = booking.id;
+
+    await prisma.$transaction(async (tx) => {
+        await tx.booking.update({
+            where: { id: bookingId },
+            data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: reason },
+        });
+        if (booking.sessions?.length > 0) {
+            await tx.session.updateMany({
+                where: { bookingId },
+                data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason },
+            });
+        }
+        if (creditsToRestore > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: creditsToRestore },
+                },
+                data: { sessionsUsed: { decrement: creditsToRestore } },
+            });
+        }
+
+        if (booking.status === BOOKING_STATUS.PENDING_PAYMENT && booking.offer) {
+            await tx.therapyRequest.updateMany({
+                where: { id: booking.offer.requestId, status: { in: REOPENABLE_REQUEST_STATUSES } },
+                data: { status: REQUEST_STATUS.OFFERS_RECEIVED },
+            });
+
+            const offerStillValid = new Date(booking.offer.expiresAt) > new Date();
+            await tx.offer.updateMany({
+                where: { id: booking.offer.id, status: OFFER_STATUS.ACCEPTED },
+                data: { status: offerStillValid ? OFFER_STATUS.PENDING : "expired" },
+            });
+        }
+    }, { timeout: 15000 });
+
+    logAction({ actorId: userId, action: "booking.cancelled", entityType: "booking", entityId: bookingId, changes: { reason, method: "no_payment" } });
+
+    logger.info("[CancellationService] Unpaid booking cancelled", { bookingId, creditsRestored: creditsToRestore });
+
+    return { status: "cancelled", method: "no_payment" };
+};
+
+/**
  * Either party requests cancellation of a booking.
+ * If there is no payment at all, cancels immediately — no money moved.
  * If payment is intent_created (not yet captured), cancels immediately — no approval gate needed.
  * If payment is escrowed, sets booking to CANCELLATION_REQUESTED and notifies the other party,
  * who has 24 hours to approve or reject.
@@ -57,21 +133,24 @@ const getBookingForCancellation = async (bookingId) =>
 export const requestCancellation = async (bookingId, userId, reason) => {
     const booking = await getBookingForCancellation(bookingId);
 
-    if (!booking?.payment) throw new NotFoundError("Booking or payment not found");
+    if (!booking) throw new NotFoundError("Booking not found");
 
     const { payment, customer, therapist } = booking;
     const isCustomer = customer.userId === userId;
     const isTherapist = therapist.userId === userId;
     if (!isCustomer && !isTherapist) throw new AuthorizationError("You can only cancel your own bookings");
 
+    if (booking.status === BOOKING_STATUS.CANCELLATION_REQUESTED) {
+        throw new ConflictError("A cancellation request is already pending for this booking");
+    }
+
+    if (!payment) return cancelUnpaidBooking(booking, userId, reason);
+
     if (!CANCELLABLE_PAYMENT_STATUSES.includes(payment.status)) {
         throw new ConflictError("This booking cannot be cancelled in its current state");
     }
     if (payment.stripeTransferId) {
         throw new ConflictError("Sessions have already been paid out. Please contact support to cancel.");
-    }
-    if (booking.status === BOOKING_STATUS.CANCELLATION_REQUESTED) {
-        throw new ConflictError("A cancellation request is already pending for this booking");
     }
 
     // intent_created: no money captured — cancel immediately, skip approval gate
@@ -84,11 +163,23 @@ export const requestCancellation = async (bookingId, userId, reason) => {
             logger.warn("[CancellationService] PaymentIntent cancel failed", { bookingId, error: err.message });
         }
 
+        const nonCancelledSessionCount = resolveCreditsToRestore(booking);
+
         await prisma.$transaction(async (tx) => {
             await tx.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
             await tx.booking.update({ where: { id: bookingId }, data: { status: BOOKING_STATUS.CANCELLED, cancellationReason: reason } });
             if (booking.sessions?.length > 0) {
                 await tx.session.updateMany({ where: { bookingId }, data: { status: SESSION_STATUS.CANCELLED, cancellationReason: reason } });
+            }
+            if (nonCancelledSessionCount > 0) {
+                await tx.subscription.updateMany({
+                    where: {
+                        customerId: booking.customer.id,
+                        status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                        sessionsUsed: { gte: nonCancelledSessionCount },
+                    },
+                    data: { sessionsUsed: { decrement: nonCancelledSessionCount } },
+                });
             }
         }, { timeout: 15000 });
 
@@ -174,6 +265,8 @@ export const executeCancellationApproval = async (bookingId, { isAuto = false, a
         refundResult = { customerRefund, transfer: stripeTransfer };
     }
 
+    const nonCancelledCount = resolveCreditsToRestore(booking);
+
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({ where: { id: payment.id }, data: { status: "refunded", refundedAt: new Date(), refundedAmount: refundAmount } });
         await tx.booking.update({
@@ -189,6 +282,16 @@ export const executeCancellationApproval = async (bookingId, { isAuto = false, a
             await tx.session.updateMany({
                 where: { bookingId },
                 data: { status: SESSION_STATUS.CANCELLED, cancellationReason: booking.cancellationReason },
+            });
+        }
+        if (nonCancelledCount > 0) {
+            await tx.subscription.updateMany({
+                where: {
+                    customerId: booking.customer.id,
+                    status: { in: ["active", "trialing", "grace_period", "past_due"] },
+                    sessionsUsed: { gte: nonCancelledCount },
+                },
+                data: { sessionsUsed: { decrement: nonCancelledCount } },
             });
         }
     }, { timeout: 15000 });

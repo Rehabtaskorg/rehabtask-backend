@@ -3,15 +3,18 @@ import {
     getTherapistDetail as getTherapistDetailService,
     approveTherapist as approveTherapistService,
     rejectTherapist as rejectTherapistService,
+    updateTherapistVerification as updateTherapistVerificationService,
     getDocumentSignedUrl as getDocumentSignedUrlService,
+    clearTherapistReReview as clearTherapistReReviewService,
 } from "../services/admin.therapist.service.js";
 import { logAction } from "../services/audit.service.js";
 
 const listTherapistsController = async (req, res, next) => {
     try {
-        const { approvalStatus, search, page, limit } = req.query;
+        const { approvalStatus, pendingReview, search, page, limit } = req.query;
         const result = await listTherapistsService({
             approvalStatus,
+            pendingReview,
             search,
             page: parseInt(page) || 1,
             limit: Math.min(parseInt(limit) || 20, 100),
@@ -69,6 +72,25 @@ const rejectTherapistController = async (req, res, next) => {
     }
 };
 
+const updateTherapistVerificationController = async (req, res, next) => {
+    try {
+        const adminId = req.user.id;
+        const { therapistUserId } = req.params;
+        const { field, value } = req.body;
+        const therapist = await updateTherapistVerificationService(therapistUserId, field, value, adminId);
+        await logAction({
+            actorId: adminId,
+            action: "therapist.verification_updated",
+            entityType: "therapist",
+            entityId: therapistUserId,
+            changes: { [field]: { to: value } },
+        });
+        res.status(200).json({ success: true, data: therapist });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const getDocumentSignedUrlController = async (req, res, next) => {
     try {
         const { therapistUserId, documentId } = req.params;
@@ -79,10 +101,22 @@ const getDocumentSignedUrlController = async (req, res, next) => {
     }
 };
 
+const clearTherapistReReviewController = async (req, res, next) => {
+    try {
+        const { therapistUserId } = req.params;
+        const therapist = await clearTherapistReReviewService(therapistUserId, req.user.id);
+        res.status(200).json({ success: true, data: therapist });
+    } catch (error) {
+        next(error);
+    }
+};
+
 export {
     listTherapistsController,
     getTherapistDetailController,
     approveTherapistController,
     rejectTherapistController,
+    updateTherapistVerificationController,
     getDocumentSignedUrlController,
+    clearTherapistReReviewController,
 };

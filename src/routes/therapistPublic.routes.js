@@ -8,6 +8,7 @@ import {
 import { optionalAuthenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { searchTherapistsSchema } from "../validators/therapist.schema.js";
+import { apiRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.get("/stats", getPlatformStatsController);
 // GET /api/therapists/search — Search with filters (location, specialization, pagination)
 router.get(
     "/search",
+    apiRateLimiter,
     optionalAuthenticate,
     validate(searchTherapistsSchema, "query"),
     searchTherapistsController
@@ -25,6 +27,7 @@ router.get(
 // GET /api/therapists/:therapistId — Public profile with rating stats
 router.get(
     "/:therapistId",
+    apiRateLimiter,
     optionalAuthenticate,
     getTherapistPublicProfileController
 );
@@ -32,6 +35,7 @@ router.get(
 // GET /api/therapists/:therapistId/reviews — Paginated reviews
 router.get(
     "/:therapistId/reviews",
+    optionalAuthenticate,
     getTherapistReviewsController
 );
 

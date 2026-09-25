@@ -60,6 +60,7 @@ export const registerCustomerSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    smsOptIn: z.boolean().optional().default(false),
     location: z.string().trim().optional(),
     customerType: customerTypeSchema,
     agencyName: z.string().min(2).max(255).trim().optional(),
@@ -85,6 +86,7 @@ export const registerTherapistSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    smsOptIn: z.boolean().optional().default(false),
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
 });
@@ -136,7 +138,9 @@ export const completeOAuthOnboardingSchema = z.object({
         .min(2, "Full name must be at least 2 characters")
         .max(255, "Full name must not exceed 255 characters"),
 
-    phone: phoneSchema.optional(),
+    phone: phoneSchema,
+
+    smsOptIn: z.boolean().optional().default(false),
 
     // Customer fields
     customerType: z.enum(["individual", "agency"]).optional(),
@@ -173,6 +177,7 @@ export const resendVerificationSchema = z.object({
     email: emailSchema,
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
+    redirect: z.string().max(500).optional().nullable(),
 });
 
 /**
@@ -180,4 +185,45 @@ export const resendVerificationSchema = z.object({
  */
 export const refreshTokenSchema = z.object({
     refreshToken: z.string().min(1, "Refresh token is required"),
+});
+
+export const twoFactorLoginSchema = z.object({
+    email: emailSchema,
+    password: z.string().min(1),
+    challengeId: z.uuid(),
+    challengeToken: z.string().min(32),
+    code: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
+export const twoFactorEnrollmentSchema = z.object({
+    method: z.enum(["email", "sms"]),
+    phoneNumber: z.string().trim().optional(),
+});
+
+export const twoFactorVerificationSchema = z.object({
+    challengeId: z.uuid(),
+    challengeToken: z.string().min(32),
+    code: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
+export const twoFactorResendSchema = z.object({
+    email: emailSchema,
+    password: z.string().min(1),
+    method: z.enum(["email", "sms"]).optional(),
+});
+
+export const twoFactorDisableSchema = twoFactorVerificationSchema.extend({
+    currentPassword: z.string().min(1),
+});
+
+export const twoFactorRemoveSmsSchema = z.object({
+    currentPassword: z.string().min(1),
+});
+
+export const twoFactorToggleSchema = z.object({
+    enabled: z.boolean(),
+});
+
+export const twoFactorPreferredMethodSchema = z.object({
+    method: z.enum(["email", "sms"]),
 });

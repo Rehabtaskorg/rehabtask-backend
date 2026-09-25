@@ -1,0 +1,38 @@
+displayName: "RehabTask — Cloud SQL CPU > 80% sustained (prod)"
+documentation:
+  content: |
+    Cloud SQL instance rehabtask-prod CPU utilization has exceeded 80% for
+    5 consecutive minutes.
+
+    Immediate steps:
+    1. Go to Cloud SQL metrics — https://console.cloud.google.com/sql/instances/rehabtask-prod/metrics?project=rehabtask-db9bb
+    2. Check for slow queries in Cloud Logging — filter: resource.type="cloudsql_database" severity=ERROR
+    3. Check active connections — if near limit, investigate connection pool exhaustion
+    4. If a bad query is causing it — identify via pg_stat_activity and kill if needed
+    5. Consider upgrading machine type if load is legitimate and sustained
+  mimeType: text/markdown
+conditions:
+  - displayName: "Cloud SQL CPU > 80% for 5 minutes"
+    conditionThreshold:
+      filter: >
+        resource.type="cloudsql_database"
+        AND resource.labels.database_id="rehabtask-db9bb:rehabtask-prod"
+        AND metric.type="cloudsql.googleapis.com/database/cpu/utilization"
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MEAN
+      comparison: COMPARISON_GT
+      thresholdValue: 0.8
+      duration: 300s
+      trigger:
+        count: 1
+alertStrategy:
+  autoClose: 1800s
+  notificationPrompts:
+    - OPENED
+combiner: OR
+enabled: true
+severity: WARNING
+notificationChannels:
+  - projects/rehabtask-db9bb/notificationChannels/2392196440619374297
+  - projects/rehabtask-db9bb/notificationChannels/9923110524739957432

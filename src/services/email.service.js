@@ -18,7 +18,9 @@ import {
     sessionCompletionRequest,
     sessionConfirmed,
     sessionRevisionRequested,
+    sessionRevisionResponded,
     sessionRevisionSubmitted,
+    sessionRevisionExtended,
     payoutConfirmation,
     newMessageNotification,
     offerDeclined,
@@ -51,6 +53,9 @@ import {
     subscriptionPaymentActionRequired,
     offersWithdrawnRequestUpdated,
     existingAccountNotification,
+    emailVerification,
+    passwordReset,
+    subAdminInvite,
     customerRefundAvailable,
     customerRefundReminder,
     customerRefundTransferred,
@@ -65,11 +70,19 @@ import {
     cancellationApprovedToTherapist,
     cancellationRejectedToCustomer,
     cancellationRejectedToTherapist,
+    adminDirectMessage,
     cancellationAutoApprovedToCustomer,
     cancellationAutoDeclinedToTherapist,
     sessionCancellationRequestedToOtherParty,
     sessionCancellationApprovedToRequester,
     sessionCancellationRejectedToRequester,
+    customerApproved,
+    customerRejected,
+    customerApplicationSubmitted,
+    customerApplicationSubmittedAdmin,
+    customerApplicationResubmitted,
+    profileReReviewSubmitted,
+    profileReReviewAdmin,
 } from '../../emails/templates.js';
 
 // Internal helper - renders template and dispatches. Never throws
@@ -99,10 +112,13 @@ export const sendTherapistApplicationSubmitted = async ({ therapist }) => {
 };
 
 /**
- * Admin Approved therapist
+ * Admin Approved therapist.
+ * Passes stripeComplete so the template can omit the Stripe CTA for therapists
+ * who already finished Connect onboarding before their profile was approved.
  */
 export const sendTherapistApproved = async ({ therapist }) => {
-    return dispatch(therapist.user.email, therapistApproved, { therapist });
+    const stripeComplete = therapist.stripeOnboardingComplete === true;
+    return dispatch(therapist.user.email, therapistApproved, { therapist, stripeComplete });
 };
 
 /**
@@ -182,8 +198,15 @@ export const sendSessionConfirmed = async ({ therapist, customer, session, booki
 /**
  * Customer requested a revision on a session — notify therapist
  */
-export const sendSessionRevisionRequested = async ({ therapist, customer, session, booking, reason }) => {
-    return dispatch(therapist.user.email, sessionRevisionRequested, { therapist, customer, session, booking, reason });
+export const sendSessionRevisionRequested = async ({ therapist, customer, session, booking }) => {
+    return dispatch(therapist.user.email, sessionRevisionRequested, { therapist, customer, session, booking });
+};
+
+/**
+ * Therapist acknowledged a revision request and committed to a due date — notify customer
+ */
+export const sendSessionRevisionResponded = async ({ customer, therapist, session, booking }) => {
+    return dispatch(customer.user.email, sessionRevisionResponded, { customer, therapist, session, booking });
 };
 
 /**
@@ -191,6 +214,13 @@ export const sendSessionRevisionRequested = async ({ therapist, customer, sessio
  */
 export const sendSessionRevisionSubmitted = async ({ customer, therapist, session, booking }) => {
     return dispatch(customer.user.email, sessionRevisionSubmitted, { customer, therapist, session, booking });
+};
+
+/**
+ * Therapist extended the revision deadline — notify customer
+ */
+export const sendSessionRevisionExtended = async ({ customer, therapist, session, booking }) => {
+    return dispatch(customer.user.email, sessionRevisionExtended, { customer, therapist, session, booking });
 };
 
 /**
@@ -376,6 +406,27 @@ export const sendExistingAccountNotification = async ({ email, resetLink }) => {
     return dispatch(email, existingAccountNotification, { email, resetLink });
 };
 
+/**
+ * @param {{email: string, verificationLink: string}} params
+ */
+export const sendEmailVerificationEmail = async ({ email, verificationLink }) => {
+    return dispatch(email, emailVerification, { verificationLink });
+};
+
+/**
+ * @param {{email: string, resetLink: string}} params
+ */
+export const sendPasswordResetEmail = async ({ email, resetLink }) => {
+    return dispatch(email, passwordReset, { resetLink });
+};
+
+/**
+ * @param {{email: string, inviteLink: string}} params
+ */
+export const sendSubAdminInviteEmail = async ({ email, inviteLink }) => {
+    return dispatch(email, subAdminInvite, { inviteLink });
+};
+
 // ── Customer Refund Emails ──
 
 export const sendCustomerRefundAvailable = async ({ customer, therapist, refundAmount, bookingId }) => {
@@ -463,5 +514,61 @@ export const sendSessionCancellationRequestedToOtherParty = async ({ recipient, 
 export const sendSessionCancellationApprovedToRequester = async ({ requester, session, refundAmount, refundMethod }) =>
     dispatch(requester.user.email, sessionCancellationApprovedToRequester, { requester, session, refundAmount, refundMethod });
 
+export const sendAdminDirectMessage = async ({ to, subject, message }) => {
+    return dispatch(to, adminDirectMessage, { subject, message });
+};
+
 export const sendSessionCancellationRejectedToRequester = async ({ requester, session, rejectionReason }) =>
     dispatch(requester.user.email, sessionCancellationRejectedToRequester, { requester, session, rejectionReason });
+
+/**
+ * Customer completed onboarding — notify customer and admin.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, customerType: string, user: {email: string}}}} opts
+ */
+export const sendCustomerApplicationSubmitted = async ({ customer }) => {
+    dispatch(customer.user.email, customerApplicationSubmitted, { customer }).catch(() => { });
+    // TODO: wire admin notification email once a dedicated admin inbox is configured
+    // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
+};
+
+/**
+ * Customer resubmitted a rejected application — confirm receipt to the customer.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, customerType: string, user: {email: string}}}} opts
+ */
+export const sendCustomerApplicationResubmitted = async ({ customer }) => {
+    dispatch(customer.user.email, customerApplicationResubmitted, { customer }).catch(() => { });
+    // TODO: wire admin notification email once a dedicated admin inbox is configured
+    // dispatch(env.ADMIN_EMAIL, customerApplicationSubmittedAdmin, { customer }).catch(() => { });
+};
+
+/**
+ * Profile change triggered a re-review — notify the account holder.
+ * @param {{recipientEmail: string, displayName: string, tier: "soft"|"hard", isTherapist: boolean}} opts
+ */
+export const sendProfileReReviewSubmitted = async ({ recipientEmail, displayName, tier, isTherapist }) => {
+    const dashboardPath = isTherapist ? '/therapist/profile' : '/customer/profile';
+    return dispatch(recipientEmail, profileReReviewSubmitted, { displayName, tier, dashboardPath });
+};
+
+/**
+ * Profile change triggered a re-review — notify admin.
+ * @param {{displayName: string, accountType: string, tier: "soft"|"hard", changedFields: string[], isTherapist: boolean}} opts
+ */
+export const sendProfileReReviewAdmin = async ({ displayName, accountType, tier, changedFields, isTherapist }) => {
+    const reviewPath = isTherapist ? '/admin/therapists' : '/admin/customers';
+    return dispatch(env.ADMIN_EMAIL, profileReReviewAdmin, { displayName, accountType, tier, changedFields, reviewPath });
+};
+
+/**
+ * Admin approved a customer account.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, user: {email: string}}}} opts
+ */
+export const sendCustomerApproved = async ({ customer }) =>
+    dispatch(customer.user.email, customerApproved, { customer });
+
+/**
+ * Admin rejected a customer account.
+ * @param {{customer: {fullName: string|null, agencyName: string|null, user: {email: string}}, reason: string}} opts
+ */
+export const sendCustomerRejected = async ({ customer, reason }) =>
+    dispatch(customer.user.email, customerRejected, { customer, reason });

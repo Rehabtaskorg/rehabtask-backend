@@ -92,12 +92,13 @@ const getBookingConversationController = async (req, res, next) => {
 
         const therapistUserId = booking.therapist?.userId || booking.therapist?.user?.id;
         const customerUserId = booking.customer?.userId || booking.customer?.user?.id;
+        const bookingPatientId = booking.patientId || null;
 
         if (!therapistUserId || !customerUserId) {
             return res.status(400).json({ success: false, message: "Cannot resolve conversation participants" });
         }
 
-        const conversation = await findOrCreateDirectConversation(therapistUserId, customerUserId);
+        const conversation = await findOrCreateDirectConversation(therapistUserId, customerUserId, bookingPatientId);
         res.status(200).json({ success: true, data: { conversationId: conversation.id } });
     } catch (error) {
         next(error);

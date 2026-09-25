@@ -7,7 +7,7 @@ datasource db {
 }
 
 model User {
-  id                         String               @id @db.Uuid
+  id                         String               @id @db.VarChar(128)
   email                      String               @unique @db.VarChar(255)
   passwordHash               String               @default("") @map("password_hash")
   role                       UserRole
@@ -34,6 +34,9 @@ model User {
   directConversationsAsUser1 DirectConversation[] @relation("DirectConvUser1")
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
   uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
+  agreementAcceptances       UnifiedAgreementAcceptance[]
+  securitySettings           UserSecuritySettings?
+  twoFactorChallenges        TwoFactorChallenge[]
 
   @@index([email])
   @@index([role, isActive])
@@ -42,14 +45,16 @@ model User {
 
 model CustomerProfile {
   id                       String           @id @default(uuid()) @db.Uuid
-  userId                   String           @unique @map("user_id") @db.Uuid
+  userId                   String           @unique @map("user_id") @db.VarChar(128)
   customerType             CustomerType     @map("customer_type")
   fullName                 String           @map("full_name") @db.VarChar(255)
   agencyName               String?          @map("agency_name") @db.VarChar(255)
   phone                    String?          @db.VarChar(20)
+  smsOptIn                 Boolean          @default(false) @map("sms_opt_in")
   location                 String?
   stripeCustomerId         String?          @unique @map("stripe_customer_id") @db.VarChar(255)
   stripeAccountId          String?          @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean          @default(false) @map("stripe_onboarding_complete")
   // Agency-specific fields
   dbaName                  String?          @map("dba_name") @db.VarChar(255)
@@ -69,6 +74,11 @@ model CustomerProfile {
   onboardingStep           Int              @default(1) @map("onboarding_step")
   onboardingComplete       Boolean          @default(false) @map("onboarding_complete")
   approvalStatus           ApprovalStatus   @default(pending) @map("approval_status")
+  approvedBy               String?          @map("approved_by") @db.VarChar(128)
+  approvedAt               DateTime?        @map("approved_at") @db.Timestamptz(3)
+  rejectionReason          String?          @map("rejection_reason")
+  pendingReviewAt          DateTime?        @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?        @map("review_started_at") @db.Timestamptz(3)
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -89,7 +99,10 @@ model CustomerProfile {
   @@index([stripeCustomerId])
   @@index([stripeAccountId])
   @@index([approvalStatus])
+  @@index([approvalStatus, createdAt])
+  @@index([customerType, approvalStatus])
   @@index([onboardingComplete])
+  @@index([pendingReviewAt], map: "idx_customer_profiles_pending_review")
   @@map("customer_profiles")
 }
 
@@ -98,7 +111,7 @@ model Patient {
   agencyId           String           @map("agency_id") @db.Uuid
   email              String?          @db.VarChar(255)
   fullName           String           @map("full_name") @db.VarChar(255)
-  phone              String?          @db.VarChar(20)
+  phone              String           @db.VarChar(20)
   addressLine1       String?          @map("address_line_1") @db.VarChar(255)
   addressLine2       String?          @map("address_line_2") @db.VarChar(255)
   city               String?          @db.VarChar(100)
@@ -109,15 +122,17 @@ model Patient {
   dateOfBirth        DateTime?        @map("date_of_birth") @db.Date
   certificationStart DateTime?        @map("certification_start") @db.Date
   certificationEnd   DateTime?        @map("certification_end") @db.Date
-  userId             String?          @unique @map("user_id") @db.Uuid
+  gender             String?          @db.VarChar(10)
+  userId             String?          @unique @map("user_id") @db.VarChar(128)
   isActive           Boolean          @default(true) @map("is_active")
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  bookingsForPatient Booking[]        @relation("PatientBookings")
-  messagesAbout      Message[]        @relation("PatientMessages")
-  agency             CustomerProfile  @relation("AgencyPatients", fields: [agencyId], references: [id], onDelete: Cascade)
-  user               User?            @relation(fields: [userId], references: [id])
-  requestsForPatient TherapyRequest[] @relation("PatientRequests")
+  bookingsForPatient Booking[]             @relation("PatientBookings")
+  messagesAbout      Message[]             @relation("PatientMessages")
+  conversations      DirectConversation[]  @relation("PatientConversations")
+  agency             CustomerProfile       @relation("AgencyPatients", fields: [agencyId], references: [id], onDelete: Cascade)
+  user               User?                 @relation(fields: [userId], references: [id])
+  requestsForPatient TherapyRequest[]      @relation("PatientRequests")
 
   @@index([agencyId])
   @@index([userId])
@@ -128,9 +143,10 @@ model Patient {
 
 model TherapistProfile {
   id                       String                 @id @default(uuid()) @db.Uuid
-  userId                   String                 @unique @map("user_id") @db.Uuid
+  userId                   String                 @unique @map("user_id") @db.VarChar(128)
   fullName                 String                 @map("full_name") @db.VarChar(255)
   phone                    String?                @db.VarChar(20)
+  smsOptIn                 Boolean                @default(false) @map("sms_opt_in")
   dateOfBirth              DateTime?              @map("date_of_birth") @db.Date
   addressLine1             String?                @map("address_line_1") @db.VarChar(255)
   addressLine2             String?                @map("address_line_2") @db.VarChar(255)
@@ -153,22 +169,35 @@ model TherapistProfile {
   workArea                 String?                @map("work_area")
   doesHomeVisits           Boolean                @default(false) @map("does_home_visits")
   stripeAccountId          String?                @unique @map("stripe_account_id") @db.VarChar(255)
+  stripeBusinessStructure  StripeBusinessStructure? @map("stripe_business_structure")
   stripeOnboardingComplete Boolean                @default(false) @map("stripe_onboarding_complete")
   backgroundCheckConsent   Boolean?               @default(false) @map("background_check_consent")
   backgroundCheckSignature String?                @map("background_check_signature") @db.VarChar(255)
   backgroundCheckDate      DateTime?              @map("background_check_date") @db.Timestamptz(3)
   backgroundCheckStatus    BackgroundCheckStatus? @default(pending) @map("background_check_status")
   approvalStatus           ApprovalStatus         @default(review) @map("approval_status")
-  approvedBy               String?                @map("approved_by") @db.Uuid
+  approvedBy               String?                @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?                @map("rejection_reason")
+  pendingReviewAt          DateTime?              @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?              @map("review_started_at") @db.Timestamptz(3)
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
   attemptedVisitRate       Decimal?               @map("attempted_visit_rate") @db.Decimal(10, 2)
+  yearsInHomeHealth        Int?                   @map("years_in_home_health")
+  evaluationRate           Decimal?               @map("evaluation_rate") @db.Decimal(10, 2)
+  travelFee                Decimal?               @map("travel_fee") @db.Decimal(10, 2)
+  availableFrom            DateTime?              @map("available_from") @db.Timestamptz(3)
+  caseloadCapacity         Int?                   @map("caseload_capacity")
+  hipaaAttested            Boolean                @default(false) @map("hipaa_attested")
+  hipaaAttestedAt          DateTime?              @map("hipaa_attested_at") @db.Timestamptz(3)
+  licenseVerified          Boolean                @default(false) @map("license_verified")
+  insuranceVerified        Boolean                @default(false) @map("insurance_verified")
   planTier                 TherapistPlan          @default(basic) @map("plan_tier")
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  attributes               TherapistAttribute[]
   availability             Availability[]
   bookings                 Booking[]
   licenseDocuments         LicenseDocument[]
@@ -186,7 +215,22 @@ model TherapistProfile {
   @@index([stripeAccountId])
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
+  @@index([pendingReviewAt], map: "idx_therapist_profiles_pending_review")
   @@map("therapist_profiles")
+}
+
+model TherapistAttribute {
+  id           String          @id @default(uuid()) @db.Uuid
+  therapistId  String          @map("therapist_id") @db.Uuid
+  category     String          @db.VarChar(64)
+  value        String          @db.VarChar(128)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  therapist    TherapistProfile @relation(fields: [therapistId], references: [id], onDelete: Cascade)
+
+  @@unique([therapistId, category, value])
+  @@index([therapistId, category])
+  @@index([category, value])
+  @@map("therapist_attributes")
 }
 
 model VisitType {
@@ -225,16 +269,20 @@ model LicenseDocument {
   isDeleted     Boolean           @default(false) @map("is_deleted")
   mimeType      String?           @map("mime_type") @db.VarChar(100)
   reject_reason String?
+  // TODO: [NEXT] status/verifiedAt/verifiedBy are provisioned but never written — superseded by TherapistProfile.licenseVerified/insuranceVerified (profile-level flags). Drop in a follow-up migration once a per-document review queue is scoped.
   status        String?           @default("pending") @db.VarChar(20)
   uploadIp      String?           @map("upload_ip") @db.VarChar(45)
-  userId        String?           @map("user_id") @db.Uuid
+  userId        String?           @map("user_id") @db.VarChar(128)
   verifiedAt    DateTime?         @map("verified_at") @db.Timestamptz(3)
-  verifiedBy    String?           @map("verified_by") @db.Uuid
+  verifiedBy    String?           @map("verified_by") @db.VarChar(128)
+  supersedesId  String?           @map("supersedes_id") @db.Uuid
   therapist     TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   agency        CustomerProfile?  @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Cascade)
   customer      CustomerProfile?  @relation("CustomerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
   user          User?             @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
   verifier      User?             @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
+  supersedes    LicenseDocument?  @relation("DocumentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy  LicenseDocument[] @relation("DocumentSupersession")
 
   @@index([therapistId])
   @@index([agencyId])
@@ -242,6 +290,7 @@ model LicenseDocument {
   @@index([userId], map: "idx_license_documents_user_active")
   @@index([status, uploadedAt])
   @@index([therapistId, status])
+  @@index([supersedesId])
   @@map("license_documents")
 }
 
@@ -273,8 +322,8 @@ model CustomerConsentSignature {
   signedAt                   DateTime        @default(now()) @map("signed_at") @db.Timestamptz(3)
   customer                   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  @@unique([customerId, documentType])
   @@index([customerId])
+  @@index([customerId, documentType, signedAt])
   @@map("customer_consent_signatures")
 }
 
@@ -301,7 +350,6 @@ model Subscription {
   stripeCustomerId     String?            @map("stripe_customer_id") @db.VarChar(255)
   stripePriceId        String?            @map("stripe_price_id") @db.VarChar(255)
   planType             SubscriptionPlan   @map("plan_type")
-  billingInterval      BillingInterval?   @map("billing_interval")
   status               SubscriptionStatus
   currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
   currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
@@ -310,8 +358,9 @@ model Subscription {
   cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
   cancelReason         String?            @map("cancel_reason")
   stripeScheduleId     String?            @map("stripe_schedule_id") @db.VarChar(255)
-  therapistLimit       Int                @map("therapist_limit")
-  requestLimit         Int                @map("request_limit")
+  visitLimit           Int                @map("visit_limit")
+  jobPostingLimit      Int                @map("job_posting_limit")
+  sessionsUsed         Int                @default(0) @map("sessions_used")
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   customer             CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -334,6 +383,7 @@ model TherapyRequest {
   visitType         String?           @map("visit_type") @db.VarChar(100)
   visitTypeId       String?           @map("visit_type_id") @db.Uuid
   emr               String?           @db.VarChar(100)
+  specialInstructions String?         @map("special_instructions")
   preferredDate     DateTime          @map("preferred_date") @db.Timestamptz(3)
   location          String
   latitude          Decimal           @db.Decimal(10, 8)
@@ -452,8 +502,9 @@ model Session {
   scheduledDate           DateTime?     @map("scheduled_date") @db.Timestamptz(3)
   status                  SessionStatus
   startedAt               DateTime?     @map("started_at") @db.Timestamptz(3)
-  completedAt             DateTime?     @map("completed_at") @db.Timestamptz(3)
-  confirmedByCustomerAt   DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  completedAt                DateTime?     @map("completed_at") @db.Timestamptz(3)
+  confirmedByCustomerAt      DateTime?     @map("confirmed_by_customer_at") @db.Timestamptz(3)
+  reviewExpirySmsSentAt      DateTime?     @map("review_expiry_sms_sent_at") @db.Timestamptz(3)
   cancellationReason      String?       @map("cancellation_reason")
   cancellationRequestedAt DateTime?     @map("cancellation_requested_at") @db.Timestamptz(3)
   cancellationRequestedBy String?       @map("cancellation_requested_by") @db.VarChar(20)
@@ -464,6 +515,7 @@ model Session {
   revisionDueBy           DateTime? @map("revision_due_by") @db.Timestamptz(3)
   revisionCount           Int       @default(0) @map("revision_count")
   revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
+  revisionExpirySmsSentAt DateTime? @map("revision_expiry_sms_sent_at") @db.Timestamptz(3)
 
   missedReason String?       @map("missed_reason") @db.VarChar(500)
   missedBy     MissedByRole? @map("missed_by")
@@ -551,7 +603,9 @@ model CustomerRefund {
   status                CustomerRefundStatus
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
   stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
+  stripePayoutId        String?              @map("stripe_payout_id") @db.VarChar(255)
   reason                String?              @db.VarChar(255)
+  payoutFailureReason   String?              @map("payout_failure_reason") @db.VarChar(255)
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
   fallbackRefundAt      DateTime?            @map("fallback_refund_at") @db.Timestamptz(3)
   transferredAt         DateTime?            @map("transferred_at") @db.Timestamptz(3)
@@ -569,6 +623,7 @@ model CustomerRefund {
   @@index([paymentId])
   @@index([bookingId])
   @@index([sessionId])
+  @@index([stripePayoutId])
   @@map("customer_refunds")
 }
 
@@ -583,26 +638,27 @@ model ProcessedWebhookEvent {
 
 model DirectConversation {
   id        String   @id @default(uuid()) @db.Uuid
-  user1Id   String   @map("user1_id") @db.Uuid
-  user2Id   String   @map("user2_id") @db.Uuid
+  user1Id   String   @map("user1_id") @db.VarChar(128)
+  user2Id   String   @map("user2_id") @db.VarChar(128)
+  patientId String?  @map("patient_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user1       User                @relation("DirectConvUser1", fields: [user1Id], references: [id])
   user2       User                @relation("DirectConvUser2", fields: [user2Id], references: [id])
+  patient     Patient?            @relation("PatientConversations", fields: [patientId], references: [id], onDelete: SetNull)
   messages    Message[]
   attachments MessageAttachment[]
 
-  @@unique([user1Id, user2Id])
-  @@index([user1Id])
-  @@index([user2Id])
+  @@index([user1Id, user2Id])
+  @@index([patientId])
   @@map("direct_conversations")
 }
 
 model Message {
   id          String @id @default(uuid()) @db.Uuid
-  senderId    String @map("sender_id") @db.Uuid
-  recipientId String @map("recipient_id") @db.Uuid
+  senderId    String @map("sender_id") @db.VarChar(128)
+  recipientId String @map("recipient_id") @db.VarChar(128)
 
   requestId      String? @map("request_id") @db.Uuid
   offerId        String? @map("offer_id") @db.Uuid
@@ -707,16 +763,16 @@ model RequestOption {
 model Dispute {
   id              String        @id @default(uuid()) @db.Uuid
   ticketId        String        @unique @map("ticket_id") @db.VarChar(20)
-  userId          String        @map("user_id") @db.Uuid
+  userId          String        @map("user_id") @db.VarChar(128)
   bookingId       String?       @map("booking_id") @db.Uuid
-  assignedAdminId String?       @map("assigned_admin_id") @db.Uuid
+  assignedAdminId String?       @map("assigned_admin_id") @db.VarChar(128)
   title           String?       @db.VarChar(255)
   type            DisputeType
   description     String        @db.Text
   status          DisputeStatus @default(open)
   resolution      String?       @db.Text
   resolvedAt      DateTime?     @map("resolved_at") @db.Timestamptz(3)
-  resolvedBy      String?       @map("resolved_by") @db.Uuid
+  resolvedBy      String?       @map("resolved_by") @db.VarChar(128)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -733,7 +789,7 @@ model Dispute {
 
 model Notification {
   id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
+  userId     String    @map("user_id") @db.VarChar(128)
   type       String    @db.VarChar(100)
   title      String    @db.VarChar(255)
   message    String    @db.Text
@@ -755,11 +811,11 @@ model Notification {
 
 model SubAdminProfile {
   id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @unique @map("user_id") @db.Uuid
+  userId           String   @unique @map("user_id") @db.VarChar(128)
   fullName         String?  @map("full_name") @db.VarChar(255)
   permissions      String[]
   isActive         Boolean  @default(true) @map("is_active")
-  createdByAdminId String   @map("created_by_admin_id") @db.Uuid
+  createdByAdminId String   @map("created_by_admin_id") @db.VarChar(128)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   user             User     @relation("SubAdminUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -775,7 +831,7 @@ model CommissionConfig {
   tier             TherapistPlan? // null = legacy global record; non-null = tier-specific rate
   rate             Decimal        @db.Decimal(5, 4)
   effectiveFrom    DateTime       @default(now()) @map("effective_from") @db.Timestamptz(3)
-  createdByAdminId String         @map("created_by_admin_id") @db.Uuid
+  createdByAdminId String         @map("created_by_admin_id") @db.VarChar(128)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   createdByAdmin   User           @relation(fields: [createdByAdminId], references: [id])
 
@@ -787,7 +843,7 @@ model CommissionConfig {
 
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
-  actorId    String?  @map("actor_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.VarChar(128)
   action     String   @db.VarChar(100)
   entityType String   @map("entity_type") @db.VarChar(50)
   entityId   String   @map("entity_id") @db.Uuid
@@ -801,12 +857,52 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model UserSecuritySettings {
+  id                    String             @id @default(uuid()) @db.Uuid
+  userId                String             @unique @map("user_id") @db.VarChar(128)
+  twoFactorEnabled      Boolean            @default(false) @map("two_factor_enabled")
+  preferredMethod       TwoFactorMethod?   @map("preferred_2fa_method")
+  emailTwoFactorEnabled Boolean            @default(false) @map("email_2fa_enabled")
+  smsTwoFactorEnabled   Boolean            @default(false) @map("sms_2fa_enabled")
+  phoneNumber           String?            @map("phone_number") @db.VarChar(20)
+  phoneVerifiedAt       DateTime?          @map("phone_verified_at") @db.Timestamptz(3)
+  emailVerifiedAt       DateTime?          @map("email_verified_at") @db.Timestamptz(3)
+  twoFactorEnabledAt    DateTime?          @map("two_factor_enabled_at") @db.Timestamptz(3)
+  lastTwoFactorVerifiedAt DateTime?        @map("last_2fa_verified_at") @db.Timestamptz(3)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_security_settings")
+}
+
+model TwoFactorChallenge {
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @map("user_id") @db.VarChar(128)
+  method               TwoFactorMethod
+  destinationReference String             @map("destination_reference") @db.VarChar(255)
+  codeHash             String             @map("code_hash") @db.VarChar(128)
+  challengeTokenHash   String             @map("challenge_token_hash") @db.VarChar(128)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt            DateTime           @map("expires_at") @db.Timestamptz(3)
+  verifiedAt           DateTime?          @map("verified_at") @db.Timestamptz(3)
+  attemptCount         Int                @default(0) @map("attempt_count")
+  status               TwoFactorChallengeStatus @default(pending)
+  ipAddress            String?            @map("ip_address") @db.VarChar(64)
+  userAgent            String?            @map("user_agent")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([challengeTokenHash])
+  @@map("two_factor_challenges")
+}
+
 model SystemConfig {
   key         String   @id @db.VarChar(100)
   value       String
   description String?
   dataType    String   @map("data_type") @db.VarChar(20)
-  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.VarChar(128)
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
   updater     User?    @relation(fields: [updatedBy], references: [id])
 
@@ -823,9 +919,30 @@ enum UserRole {
   sub_admin
 }
 
+enum TwoFactorMethod {
+  email
+  sms
+}
+
+enum TwoFactorChallengeStatus {
+  pending
+  verified
+  expired
+  failed
+  cancelled
+}
+
 enum CustomerType {
   individual
   agency
+}
+
+enum StripeBusinessStructure {
+  individual
+  sole_proprietorship
+  single_member_llc
+  multi_member_llc
+  private_corporation
 }
 
 enum ApprovalStatus {
@@ -837,8 +954,9 @@ enum ApprovalStatus {
 
 enum SubscriptionPlan {
   free
-  standard
-  premium
+  pro
+  enterprise
+  unlimited
 }
 
 enum TherapistPlan {
@@ -858,7 +976,6 @@ enum SubscriptionStatus {
 
 enum BillingInterval {
   monthly
-  annual
 }
 
 enum RequestStatus {
@@ -885,6 +1002,7 @@ enum OfferStatus {
 
 enum BookingStatus {
   pending
+  pending_payment
   accepted
   confirmed
   in_progress
@@ -925,6 +1043,7 @@ enum CustomerRefundStatus {
   pending_connect
   transferred
   refunded_to_card
+  payout_failed
 }
 
 enum DayOfWeek {
@@ -963,7 +1082,7 @@ model MessageAttachment {
   id             String @id @default(uuid()) @db.Uuid
   messageId      String @map("message_id") @db.Uuid
   conversationId String @map("conversation_id") @db.Uuid
-  uploadedById   String @map("uploaded_by_id") @db.Uuid
+  uploadedById   String @map("uploaded_by_id") @db.VarChar(128)
 
   fileName    String @map("file_name") @db.VarChar(255)
   fileSize    Int    @map("file_size")
@@ -1009,4 +1128,19 @@ enum PendingRefundRetryStatus {
   pending
   resolved
   failed
+}
+
+model UnifiedAgreementAcceptance {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.VarChar(128)
+  userRole         String   @map("user_role") @db.VarChar(20)
+  agreementVersion String   @map("agreement_version") @db.VarChar(20)
+  acceptedAt       DateTime @default(now()) @map("accepted_at") @db.Timestamptz(3)
+  ipAddress        String?  @map("ip_address") @db.VarChar(45)
+  userAgent        String?  @map("user_agent") @db.Text
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, agreementVersion])
+  @@index([userId])
+  @@map("unified_agreement_acceptances")
 }

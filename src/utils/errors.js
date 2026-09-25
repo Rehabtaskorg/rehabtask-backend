@@ -71,6 +71,17 @@ export class BadRequestError extends APIError {
 }
 
 /**
+ * A webhook failure that redelivery can never resolve — the referenced record does
+ * not exist in this environment's database. Signals the caller to acknowledge the
+ * event with a 200 instead of asking Stripe to retry for three days.
+ */
+export class NonRetryableWebhookError extends APIError {
+    constructor(message = "Webhook event cannot be processed", code = "WEBHOOK_NON_RETRYABLE") {
+        super(message, 422, code);
+    }
+}
+
+/**
  * Service unavailable errors (503)
  */
 export class ServiceUnavailableError extends APIError {

@@ -73,4 +73,34 @@ export const formatCurrency = (amount) => {
     return `$${Number(amount).toFixed(2)}`;
 };
 
+const SESSION_TYPE_LABELS = {
+    in_person: 'In Person',
+    virtual: 'Virtual',
+};
+
+export const formatSessionType = (sessionType) =>
+    SESSION_TYPE_LABELS[sessionType] ?? sessionType ?? 'N/A';
+
+const LICENSE_TYPE_TO_DISCIPLINE = {
+    'Physical Therapist': 'PT',
+    'Physical Therapist Assistant': 'PTA',
+    'Occupational Therapist': 'OT',
+    'Occupational Therapist Assistant': 'COTA',
+    'Speech-Language Pathologist': 'SLP',
+};
+
+export const formatTherapistName = (therapist) => {
+    if (!therapist?.fullName) return 'N/A';
+    const abbr = LICENSE_TYPE_TO_DISCIPLINE[therapist.primaryLicenseType];
+    return abbr ? `${therapist.fullName}, ${abbr}` : therapist.fullName;
+};
+
+export const customerFields = (customer, patient) => {
+    if (!customer) return field('Name', 'N/A');
+    if (customer.customerType === 'agency') {
+        return `${field('Agency', customer.agencyName || 'N/A')}${field('Patient', patient?.fullName || 'N/A')}`;
+    }
+    return field('Name', customer.fullName || 'N/A');
+};
+
 export { FRONTEND_URL };

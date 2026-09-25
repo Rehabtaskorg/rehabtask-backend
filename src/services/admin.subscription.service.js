@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_STATUS, BOOKING_STATUS } from "../utils/constants.js";
+import { SUBSCRIPTION_STATUS, BOOKING_STATUS, PLAN_TYPES } from "../utils/constants.js";
 import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -117,9 +117,9 @@ export const adminCancelSubscription = async (subscriptionId, adminId) => {
             where: { id: subscriptionId },
             data: {
                 status: SUBSCRIPTION_STATUS.ACTIVE,
-                planType: "free",
-                therapistLimit: PLAN_CONFIG.free.therapistLimit,
-                requestLimit: PLAN_CONFIG.free.requestLimit,
+                planType: PLAN_TYPES.FREE,
+                visitLimit: PLAN_CONFIG[PLAN_TYPES.FREE].visitLimit ?? 999999,
+                jobPostingLimit: PLAN_CONFIG[PLAN_TYPES.FREE].jobPostingLimit ?? 999999,
                 trialEndsAt: null,
                 gracePeriodEndsAt: null,
             },
