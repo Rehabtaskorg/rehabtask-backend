@@ -1,7 +1,7 @@
 import {
     completeSessionByTherapist, confirmSessionByCustomer, cancelSession,
     getSessionById, getCustomerSessions, getTherapistSessions, scheduleSession,
-    requestSessionRevision, submitSessionRevision,
+    requestSessionRevision,
     respondToRevision, resubmitSession, extendRevision,
     markSessionMissed,
     markSessionAttempted,
@@ -122,21 +122,6 @@ const requestRevisionController = async (req, res, next) => {
         const { reason } = req.body;
         const customerId = req.user.customerProfile.id;
         const session = await requestSessionRevision(sessionId, customerId, reason);
-        res.status(200).json({ success: true, data: session });
-    } catch (error) {
-        next(error);
-    }
-}
-
-/**
- * Therapist resubmits a session after addressing revision
- */
-const submitRevisionController = async (req, res, next) => {
-    try {
-        const { sessionId } = req.params;
-        const { dueBy } = req.body;
-        const therapistId = req.user.therapistProfile.id;
-        const session = await submitSessionRevision(sessionId, therapistId, { dueBy });
         res.status(200).json({ success: true, data: session });
     } catch (error) {
         next(error);
@@ -270,7 +255,6 @@ export {
     scheduleSessionController,
     updateSessionTitleController,
     requestRevisionController,
-    submitRevisionController,
     respondToRevisionController,
     resubmitSessionController,
     extendRevisionController,

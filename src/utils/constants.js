@@ -25,6 +25,7 @@ export const APPROVAL_STATUS = {
 
 export const BOOKING_STATUS = {
     PENDING: "pending",
+    PENDING_PAYMENT: "pending_payment",
     ACCEPTED: "accepted",
     CONFIRMED: "confirmed",
     IN_PROGRESS: "in_progress",
@@ -45,11 +46,11 @@ export const SESSION_STATUS = {
     ATTEMPTED:                  "attempted",
     CANCELLED:                  "cancelled",
     COMPLETED:                  "completed",
+    IN_REVISION:                "in_revision",
     CANCELLATION_REQUESTED:     "cancellation_requested",
 };
 
 export const CONTACT_UNLOCK_BOOKING_STATUSES = [
-    BOOKING_STATUS.ACCEPTED,
     BOOKING_STATUS.CONFIRMED,
     BOOKING_STATUS.IN_PROGRESS,
     BOOKING_STATUS.RESCHEDULE_REQUESTED,
@@ -65,6 +66,16 @@ export const OFFER_STATUS = {
     CHANGE_REQUESTED: "change_requested",
     CANCELLED: "cancelled",
 };
+
+export const REQUEST_STATUS = {
+    CREATED: "created",
+    OFFERS_RECEIVED: "offers_received",
+    OFFERS_ACCEPTED: "offers_accepted",
+    COMPLETED: "completed",
+    CANCELLED: "cancelled",
+};
+
+export const REOPENABLE_REQUEST_STATUSES = [REQUEST_STATUS.OFFERS_ACCEPTED];
 
 export const PLAN_TYPES = {
     FREE: "free",
@@ -157,12 +168,31 @@ export const INDIVIDUAL_DOCUMENTS_BUCKET = process.env.INDIVIDUAL_DOCUMENTS_BUCK
 export const PROFILE_IMAGES_BUCKET = process.env.PROFILE_IMAGES_BUCKET;
 export const MESSAGE_ATTACHMENTS_BUCKET = process.env.MESSAGE_ATTACHMENTS_BUCKET;
 
+export const IDENTITY_DOCUMENT_TYPES = Object.freeze({
+    GOVERNMENT_ID_FRONT: "government_id_front",
+    GOVERNMENT_ID_BACK: "government_id_back",
+    DRIVERS_LICENSE: "drivers_license",
+});
+
+export const COMPLIANCE_DOCUMENT_TYPES = Object.freeze({
+    W9: "w9",
+    HIPAA_CERTIFICATE: "hipaa_certificate",
+});
+
+export const PHOTO_ONLY_DOCUMENT_TYPES = Object.freeze([
+    IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT,
+    IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_BACK,
+    IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE,
+]);
+
+export const PHOTO_MIME_TYPES = Object.freeze(["image/jpeg", "image/jpg", "image/png"]);
+
 /** documentType values accepted per onboarding upload category. */
 export const DOCUMENT_CATEGORIES = Object.freeze({
     license: ["license"],
     insurance: ["general_liability", "professional_liability", "auto_insurance"],
-    identity: ["government_id_front", "government_id_back"],
-    compliance: ["w9", "hipaa_certificate"],
+    identity: Object.values(IDENTITY_DOCUMENT_TYPES),
+    compliance: Object.values(COMPLIANCE_DOCUMENT_TYPES),
     agency: ["home_health_license", "medicare_medicaid_cert", "general_liability", "professional_liability"],
     individual: ["therapy_order"],
 });
@@ -226,3 +256,10 @@ export const STRIPE_COMPANY_STRUCTURES = new Set([
 export const MAX_VISIT_TITLE_LENGTH = 100;
 export const PRODUCT_DESCRIPTION_MIN_LENGTH = 10;
 export const PRODUCT_DESCRIPTION_MAX_LENGTH = 500;
+
+export const US_STATE_CODES = [
+    "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA",
+    "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+    "VA","WA","WV","WI","WY",
+];

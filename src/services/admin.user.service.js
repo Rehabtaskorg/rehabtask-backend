@@ -4,6 +4,7 @@ import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendAccountDeactivated } from "./email.service.js";
+import { adminResetTwoFactor } from "./twoFactor.service.js";
 
 /**
  * @param {{role?: string, isActive?: boolean, search?: string, page?: number, limit?: number}} params
@@ -54,7 +55,22 @@ export const listUsers = async ({ role, isActive, search, page = 1, limit = 20 }
 export const getUserDetail = async (userId) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { customerProfile: true, therapistProfile: true, subAdminProfile: true },
+        include: {
+            customerProfile: true,
+            therapistProfile: true,
+            subAdminProfile: true,
+            securitySettings: {
+                select: {
+                    twoFactorEnabled: true,
+                    preferredMethod: true,
+                    emailTwoFactorEnabled: true,
+                    smsTwoFactorEnabled: true,
+                    lastTwoFactorVerifiedAt: true,
+                    twoFactorEnabledAt: true,
+                    phoneVerifiedAt: true,
+                },
+            },
+        },
     });
     if (!user) throw new NotFoundError("User not found");
     return user;
@@ -163,4 +179,8 @@ export const updateUser = async (userId, updates, adminId) => {
 
     logger.info("[AdminUserService] User updated", { userId, byAdmin: adminId, fields: Object.keys(updates) });
     return updated;
+};
+
+export const resetUserTwoFactor = async (userId, admin, reason) => {
+    return adminResetTwoFactor({ admin, targetUserId: userId, reason });
 };

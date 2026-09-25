@@ -31,7 +31,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -86,7 +86,7 @@ jobs:
             echo "STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ secrets.STRIPE_PRICE_ENTERPRISE_MONTHLY_PROD }}" >> $GITHUB_ENV
             echo "STRIPE_PRICE_UNLIMITED_MONTHLY=${{ secrets.STRIPE_PRICE_UNLIMITED_MONTHLY_PROD }}" >> $GITHUB_ENV
             echo "MIN_INSTANCES=1" >> $GITHUB_ENV
-            echo "MAX_INSTANCES=10" >> $GITHUB_ENV
+            echo "MAX_INSTANCES=1" >> $GITHUB_ENV
             echo "IDENTITY_PLATFORM_TENANT_SECRET=IDENTITY_PLATFORM_TENANT_ID_PROD" >> $GITHUB_ENV
             echo "PROFILE_IMAGES_BUCKET_SECRET=PROFILE_IMAGES_BUCKET_PROD" >> $GITHUB_ENV
             echo "THERAPIST_DOCUMENTS_BUCKET_SECRET=THERAPIST_DOCUMENTS_BUCKET_PROD" >> $GITHUB_ENV

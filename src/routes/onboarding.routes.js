@@ -15,6 +15,7 @@ import {
     savePersonalInfoController,
     saveProfessionalProfileController,
     submitBackgroundCheckController,
+    replaceDocumentController,
 } from "../controllers/onboarding.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -165,5 +166,18 @@ router.get("/document/:documentId", getDocumentSignedUrlController);
  * Soft delete a document
  */
 router.delete("/document/:documentId", deleteDocumentController);
+
+/**
+ * POST /api/therapist/onboarding/document/:documentId/replace
+ * Replace an existing document once the application is under review or
+ * approved. Separate from /upload-document, which stays locked in those
+ * statuses (Phase 0's assertOnboardingMutable).
+ */
+router.post(
+    "/document/:documentId/replace",
+    uploadDocumentMiddleware,
+    handleMulterError,
+    replaceDocumentController
+);
 
 export default router;

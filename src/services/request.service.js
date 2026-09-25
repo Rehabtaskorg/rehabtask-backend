@@ -4,11 +4,48 @@ import { prisma } from "../config/prisma.js";
 import { haversineDistance } from "../utils/distance.js";
 import { ensureOption } from "./requestOption.service.js";
 import { sendNewRequestNotifications, sendOffersWithdrawnRequestUpdated, sendDirectRequestNotification } from "./email.service.js";
-import { smsTherDirectOfferReceived } from "./sms.service.js";
+import { smsTherDirectOfferReceived, smsTherNearbyRequestAvailable } from "./sms.service.js";
 import { logger } from "../config/logger.js";
 import { logAction } from "./audit.service.js";
 import { geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
 import { NotFoundError, BadRequestError } from "../utils/errors.js";
+
+/**
+ * Finds therapists whose work area covers a request's location and whose
+ * primary license type matches the request's service type.
+ * Shared by createRequest (new PUBLIC request) and updateRequest (relocated
+ * PUBLIC request) — same matching logic, different request object.
+ *
+ * @param {{ latitude: number|string, longitude: number|string, serviceType: string }} request
+ * @returns {Promise<Array<object>>} deduplicated matching therapist profiles
+ */
+const findMatchingTherapistsForRequest = async (request) => {
+    const workAreas = await prisma.workArea.findMany({
+        include: {
+            therapist: {
+                select: { fullName: true, primaryLicenseType: true, phone: true, smsOptIn: true, user: { select: { email: true } } },
+            },
+        },
+    });
+
+    const matchingTherapists = [];
+    const seen = new Set();
+    for (const area of workAreas) {
+        if (seen.has(area.therapistId)) continue;
+        const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
+        if (allowedServiceType !== request.serviceType) continue;
+        const distance = haversineDistance(
+            parseFloat(request.latitude), parseFloat(request.longitude),
+            parseFloat(area.latitude), parseFloat(area.longitude)
+        );
+        if (distance <= area.radiusMiles) {
+            seen.add(area.therapistId);
+            matchingTherapists.push(area.therapist);
+        }
+    }
+
+    return matchingTherapists;
+};
 
 export const createRequest = async (customerId, data, customerProfile) => {
     const {
@@ -103,29 +140,7 @@ export const createRequest = async (customerId, data, customerProfile) => {
     }
 
     if (requestType === "PUBLIC" && request.latitude && request.longitude) {
-        const workAreas = await prisma.workArea.findMany({
-            include: {
-                therapist: {
-                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
-                },
-            },
-        });
-
-        const matchingTherapists = [];
-        const seen = new Set();
-        for (const area of workAreas) {
-            if (seen.has(area.therapistId)) continue;
-            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
-            if (allowedServiceType !== request.serviceType) continue;
-            const distance = haversineDistance(
-                parseFloat(request.latitude), parseFloat(request.longitude),
-                parseFloat(area.latitude), parseFloat(area.longitude)
-            );
-            if (distance <= area.radiusMiles) {
-                seen.add(area.therapistId);
-                matchingTherapists.push(area.therapist);
-            }
-        }
+        const matchingTherapists = await findMatchingTherapistsForRequest(request);
 
         if (matchingTherapists.length > 0) {
             sendNewRequestNotifications({
@@ -133,6 +148,8 @@ export const createRequest = async (customerId, data, customerProfile) => {
                 request,
                 customer: customerProfile,
             }).catch(() => { });
+
+            matchingTherapists.forEach((therapist) => smsTherNearbyRequestAvailable(therapist, request.id));
         }
     }
 
@@ -444,29 +461,7 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
         (parseFloat(existing.latitude) !== data.latitude || parseFloat(existing.longitude) !== data.longitude);
 
     if (locationChanged && updatedRequest.latitude && updatedRequest.longitude) {
-        const workAreas = await prisma.workArea.findMany({
-            include: {
-                therapist: {
-                    select: { fullName: true, primaryLicenseType: true, user: { select: { email: true } } },
-                },
-            },
-        });
-
-        const matchingTherapists = [];
-        const seen = new Set();
-        for (const area of workAreas) {
-            if (seen.has(area.therapistId)) continue;
-            const allowedServiceType = LICENSE_TYPE_TO_SERVICE_TYPE[area.therapist.primaryLicenseType] ?? null;
-            if (allowedServiceType !== updatedRequest.serviceType) continue;
-            const distance = haversineDistance(
-                parseFloat(updatedRequest.latitude), parseFloat(updatedRequest.longitude),
-                parseFloat(area.latitude), parseFloat(area.longitude)
-            );
-            if (distance <= area.radiusMiles) {
-                seen.add(area.therapistId);
-                matchingTherapists.push(area.therapist);
-            }
-        }
+        const matchingTherapists = await findMatchingTherapistsForRequest(updatedRequest);
 
         if (matchingTherapists.length > 0) {
             sendNewRequestNotifications({
@@ -474,6 +469,8 @@ export const updateRequest = async (requestId, customerId, data, customerProfile
                 request: updatedRequest,
                 customer: customerProfile,
             }).catch(() => { });
+
+            matchingTherapists.forEach((therapist) => smsTherNearbyRequestAvailable(therapist, updatedRequest.id));
         }
     }
 

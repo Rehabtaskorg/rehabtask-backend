@@ -11,19 +11,22 @@ import {
     INDIVIDUAL_DOCUMENTS_BUCKET,
     PROFILE_IMAGES_BUCKET,
     DOCUMENT_CATEGORIES,
+    PHOTO_ONLY_DOCUMENT_TYPES,
+    PHOTO_MIME_TYPES,
 } from "../utils/constants.js";
 import { logger } from "../config/logger.js";
+import { assertOnboardingMutable } from "../utils/onboardingAccess.js";
 
-const UPLOAD_RATE_LIMIT = 10;
+const UPLOAD_RATE_LIMIT = 15;
 
-const buildDocumentPath = (userId, folder, originalName) => {
+export const buildDocumentPath = (userId, folder, originalName) => {
     const timestamp = Date.now();
     const uniqueId = randomUUID();
     const sanitized = originalName.replace(/[^a-zA-Z0-9.-]/g, "_").substring(0, 100);
     return `${userId}/${folder}/${timestamp}_${uniqueId}_${sanitized}`;
 };
 
-const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, max-age=3600") => {
+export const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, max-age=3600") => {
     await gcs.bucket(bucketName).file(filePath).save(file.buffer, {
         contentType: file.mimetype,
         resumable: false,
@@ -31,7 +34,7 @@ const saveToGcs = async (bucketName, filePath, file, cacheControl = "private, ma
     });
 };
 
-const checkUploadRateLimit = async (userId) => {
+export const checkUploadRateLimit = async (userId) => {
     const oneHourAgo = new Date(Date.now() - TIME_MS.ONE_HOUR);
     const recentUploads = await prisma.licenseDocument.count({
         where: { userId, uploadedAt: { gte: oneHourAgo }, isDeleted: false },
@@ -56,12 +59,19 @@ export const uploadDocument = async ({ userId, file, category = "license", docum
         throw new BadRequestError(`Invalid documentType "${documentType}" for category "${category}"`);
     }
 
+    if (PHOTO_ONLY_DOCUMENT_TYPES.includes(documentType) && !PHOTO_MIME_TYPES.includes(file.mimetype)) {
+        throw new BadRequestError(
+            "Photo ID documents must be a JPEG or PNG image. PDFs are not accepted for identity verification."
+        );
+    }
+
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: { therapistProfile: true },
     });
     if (!user) throw new NotFoundError("User not found");
     if (!user.therapistProfile) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(user.therapistProfile);
 
     const therapistId = user.therapistProfile.id;
 

@@ -3,7 +3,7 @@
  * Each function receives props and returns { subject, html }.
  */
 import {
-    layout, heading, text, muted, button, hr, field, label, value,
+    layout, heading, text, muted, button, hr, field,
     formatDate, formatCurrency, formatSessionType, formatTherapistName, customerFields, FRONTEND_URL
 } from './layout.js';
 
@@ -285,7 +285,9 @@ export const sessionCompletionRequest = ({ customer, therapist, session, booking
 });
 
 // Customer requested revision on a completed session (to therapist)
-export const sessionRevisionRequested = ({ therapist, customer, session, booking, reason }) => ({
+// No BAA with the email provider — link to the booking instead of quoting the
+// customer's free-text reason inline, since that field frequently contains PHI.
+export const sessionRevisionRequested = ({ therapist, customer, session, booking }) => ({
     subject: `${customer.fullName} requested a revision on your session`,
     html: layout(`
         ${heading('Revision Requested')}
@@ -295,11 +297,24 @@ export const sessionRevisionRequested = ({ therapist, customer, session, booking
         ${field('Session Type', formatSessionType(booking.sessionType))}
         ${field('Originally Completed', formatDate(session.completedAt))}
         ${hr()}
-        ${label('What the customer wants changed')}
-        ${value(`"${reason}"`)}
-        ${hr()}
-        ${text('Open the booking to upload any updated documentation in the chat, then resubmit the session with a date you can commit to.')}
+        ${text('Open the booking to see what the customer wants changed, upload any updated documentation in the chat, then resubmit the session with a date you can commit to.')}
         ${button(`${FRONTEND_URL}/therapist/bookings/${booking.id}`, 'View Booking')}
+    `),
+});
+
+// Therapist acknowledged the revision request and committed to a due date (to customer)
+export const sessionRevisionResponded = ({ customer, therapist, session, booking }) => ({
+    subject: `${formatTherapistName(therapist)} will have your revision ready by ${formatDate(session.revisionDueBy)}`,
+    html: layout(`
+        ${heading('Revision Acknowledged')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${formatTherapistName(therapist)}</strong> has acknowledged your revision request and committed to a date for the updated session.`)}
+        ${hr()}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
+        ${field('Therapist will resubmit by', formatDate(session.revisionDueBy))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
+        ${muted("No action is needed from you right now — we'll email you again once the session is resubmitted.")}
     `),
 });
 
@@ -316,6 +331,21 @@ export const sessionRevisionSubmitted = ({ customer, therapist, session, booking
         ${hr()}
         ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'Review Session')}
         ${muted('If not confirmed within 72 hours, the session will be auto-confirmed.')}
+    `),
+});
+
+// Therapist extended the revision deadline (to customer)
+export const sessionRevisionExtended = ({ customer, therapist, session, booking }) => ({
+    subject: `${formatTherapistName(therapist)} extended the revision deadline to ${formatDate(session.revisionDueBy)}`,
+    html: layout(`
+        ${heading('Revision Deadline Extended')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${formatTherapistName(therapist)}</strong> needs more time and has moved their revision deadline back.`)}
+        ${hr()}
+        ${field('Session Type', formatSessionType(booking.sessionType))}
+        ${field('New deadline', formatDate(session.revisionDueBy))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}/customer/bookings/${booking.id}`, 'View Booking')}
     `),
 });
 
@@ -1387,5 +1417,34 @@ export const customerRejected = ({ customer, reason }) => ({
         ${text('If you believe this was made in error or have questions, please reach out to our support team.')}
         ${button(`${FRONTEND_URL}/customer/application-review`, 'Update your application')}
         ${muted('Need help? Email us at support@rehabtask.com')}
+    `),
+});
+
+export const profileReReviewSubmitted = ({ displayName, tier, dashboardPath }) => ({
+    subject: 'We received your profile update',
+    html: layout(`
+        ${heading('Update Received')}
+        ${text(`Hi ${displayName},`)}
+        ${text('We\'ve received the changes to your profile. Because they affect details we verify, our team will review them within <strong>2–5 business days</strong>.')}
+        ${tier === 'hard'
+            ? text('While this review is in progress, some parts of your profile will be temporarily locked and your account status has been set back to under review.')
+            : text('Your account remains active and you can continue using RehabTask as normal while we review.')}
+        ${muted('No further action is needed from you at this time.')}
+        ${button(`${FRONTEND_URL}${dashboardPath}`, 'View Your Profile')}
+    `),
+});
+
+export const profileReReviewAdmin = ({ displayName, accountType, tier, changedFields, reviewPath }) => ({
+    subject: 'Profile Update — Re-review Required',
+    html: layout(`
+        ${heading('Profile Update Pending Review')}
+        ${text('An approved account has changed verified profile details and is awaiting re-review.')}
+        ${hr()}
+        ${field('Name', displayName)}
+        ${field('Account Type', accountType)}
+        ${field('Change Type', tier === 'hard' ? 'Hard — verification flags cleared, status set to review' : 'Soft — account remains active')}
+        ${field('Fields Changed', changedFields.join(', '))}
+        ${hr()}
+        ${button(`${FRONTEND_URL}${reviewPath}`, 'Review Changes')}
     `),
 });

@@ -5,6 +5,7 @@ import { AuthenticationError, BadRequestError, NotFoundError } from "../utils/er
 import { sendTherapistWelcome, sendSubAdminWelcome } from "./email.service.js";
 import { logger } from "../config/logger.js";
 import { USER_ROLES } from "../utils/constants.js";
+import { createChallenge, getMethods, resolvePreferredMethod, verifyChallenge } from "./twoFactor.service.js";
 export {
     registerCustomer,
     registerTherapist,
@@ -42,6 +43,14 @@ const signInWithPassword = async (email, password) => {
     };
 };
 
+export const verifyCurrentPassword = async ({ email, password }) => {
+    try {
+        await signInWithPassword(email, password);
+    } catch {
+        throw new AuthenticationError("Current password is incorrect", "CURRENT_PASSWORD_INVALID");
+    }
+};
+
 /**
  * Call the Identity Platform secure token refresh endpoint.
  *
@@ -74,7 +83,7 @@ const exchangeRefreshToken = async (refreshToken) => {
  *
  * @param {{email: string, password: string}} params
  */
-export const login = async ({ email, password }) => {
+export const login = async ({ email, password, twoFactorMethod = null }) => {
     const normalizedEmail = email.toLowerCase().trim();
 
     let ipUser;
@@ -117,6 +126,46 @@ export const login = async ({ email, password }) => {
         user.emailVerified = true;
     }
 
+    let securitySettings = await prisma.userSecuritySettings.findUnique({ where: { userId: user.id } });
+    if (user.role === USER_ROLES.ADMIN && !securitySettings) {
+        // Bootstrap admin can sign in with ADMIN_EMAIL / ADMIN_PASSWORD first,
+        // then enroll 2FA from Security (mandatory in UI once methods are available).
+        securitySettings = await prisma.userSecuritySettings.create({
+            data: {
+                userId: user.id,
+                twoFactorEnabled: false,
+                preferredMethod: null,
+                emailTwoFactorEnabled: false,
+            },
+        });
+    }
+
+    if (securitySettings?.twoFactorEnabled) {
+        const methods = getMethods(user, securitySettings);
+        // If 2FA is flagged on but no usable method exists (bootstrap / broken state),
+        // allow password login instead of trapping the user behind an undeliverable OTP.
+        if (!methods.email && !methods.sms) {
+            logger.warn("[Auth] Skipping 2FA challenge — enabled but no usable methods", {
+                userId: user.id,
+                role: user.role,
+            });
+        } else {
+            const method = resolvePreferredMethod(methods, securitySettings, twoFactorMethod);
+            let challenge;
+            try {
+                challenge = await createChallenge({ user, method, purpose: "login" });
+            } catch (error) {
+                const fallbackMethod = method === "sms" && methods.email ? "email" : method === "email" && methods.sms ? "sms" : null;
+                if (error.code === "2FA_DELIVERY_FAILED" && fallbackMethod && fallbackMethod !== twoFactorMethod) {
+                    challenge = await createChallenge({ user, method: fallbackMethod, purpose: "login" });
+                } else {
+                    throw error;
+                }
+            }
+            return { requiresTwoFactor: true, challenge, user: { id: user.id, email: user.email, role: user.role } };
+        }
+    }
+
     return {
         user: {
             id: user.id,
@@ -129,6 +178,26 @@ export const login = async ({ email, password }) => {
             accessToken: ipUser.idToken,
             refreshToken: ipUser.refreshToken,
         },
+    };
+};
+
+export const completeTwoFactorLogin = async ({ email, password, challengeId, challengeToken, code }) => {
+    const normalizedEmail = email.toLowerCase().trim();
+    let ipUser;
+    try {
+        ipUser = await signInWithPassword(normalizedEmail, password);
+    } catch {
+        throw new AuthenticationError("Invalid email or password", "INVALID_CREDENTIALS");
+    }
+
+    const verification = await verifyChallenge({ challengeId, challengeToken, code, purpose: "login" });
+    if (verification.userId !== ipUser.uid) throw new AuthenticationError("This verification challenge is no longer valid", "2FA_CHALLENGE_INVALID");
+
+    const user = await prisma.user.findUnique({ where: { id: ipUser.uid } });
+    if (!user || !user.isActive) throw new NotFoundError("User account not found", "USER_NOT_FOUND");
+    return {
+        user: { id: user.id, email: user.email, role: user.role, emailVerified: user.emailVerified, isActive: user.isActive },
+        session: { accessToken: ipUser.idToken, refreshToken: ipUser.refreshToken },
     };
 };
 

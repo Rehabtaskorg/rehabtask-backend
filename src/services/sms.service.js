@@ -24,20 +24,22 @@ const smsEnabled = () => {
  * Appends STOP disclosure required by Twilio's Messaging Policy for toll-free traffic.
  * Sends via Messaging Service SID (not bare phone number) to enable Advanced Opt-Out.
  *
- * @param {{ to: string, body: string }} params
- * @returns {Promise<void>}
+ * @param {{ to: string, body: string, requireDelivery?: boolean }} params
+ * @returns {Promise<{sid: string, status: string}|null>}
  */
-export const sendSms = async ({ to, body }) => {
+export const sendSms = async ({ to, body, requireDelivery = false }) => {
     const compliantBody = `${body}${SMS_OPT_OUT_NOTICE}`;
 
     if (!smsEnabled()) {
         logger.info("[SmsService] Skipping — credentials not configured or NODE_ENV=test");
-        return;
+        if (requireDelivery) throw new Error("Twilio SMS is not configured");
+        return null;
     }
 
     if (!to.startsWith("+1")) {
         logger.warn("[SmsService] SMS BLOCKED – UNSUPPORTED COUNTRY", { to });
-        return;
+        if (requireDelivery) throw new Error("SMS destination must be a valid +1 phone number");
+        return null;
     }
 
     const message = await getClient().messages.create({
@@ -47,6 +49,7 @@ export const sendSms = async ({ to, body }) => {
     });
 
     logger.info("[SmsService] SMS sent", { sid: message.sid, status: message.status });
+    return { sid: message.sid, status: message.status };
 };
 
 /**
@@ -107,6 +110,7 @@ export const syncTwilioOptStatus = async (phone, optIn) => {
 };
 
 // ─── Therapist triggers ────────────────────────────────────────────────────
+// SMS bodies: static copy, dates, and URLs only. Never free text, patient identifiers, or clinical detail (no Twilio BAA).
 
 /**
  * Customer sent a direct request to this therapist.
@@ -118,6 +122,32 @@ export const smsTherDirectOfferReceived = (therapistProfile, requestId) => {
         therapistProfile,
         `You have a new direct service request on RehabTask. Open the app to review and respond: ${env.FRONTEND_URL}/therapist/requests/${requestId}`,
         "therDirectOfferReceived"
+    );
+};
+
+/**
+ * A public request within the therapist's work area and discipline was posted.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} requestId
+ */
+export const smsTherNearbyRequestAvailable = (therapistProfile, requestId) => {
+    dispatch(
+        therapistProfile,
+        `A new request is available near you on RehabTask. Open the app to review and submit an offer: ${env.FRONTEND_URL}/therapist/requests/${requestId}`,
+        "therNearbyRequestAvailable"
+    );
+};
+
+/**
+ * Customer accepted the therapist's offer.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ */
+export const smsTherOfferAccepted = (therapistProfile, bookingId) => {
+    dispatch(
+        therapistProfile,
+        `Your offer was accepted on RehabTask. View the booking: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`,
+        "therOfferAccepted"
     );
 };
 
@@ -142,6 +172,33 @@ export const smsTherNewMessage = (therapistProfile) => {
         therapistProfile,
         `You have a new message on RehabTask. Open the app to reply: ${env.FRONTEND_URL}/therapist/messages`,
         "therNewMessage"
+    );
+};
+
+/**
+ * Customer requested a revision on a session the therapist submitted.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ */
+export const smsTherRevisionRequested = (therapistProfile, bookingId) => {
+    dispatch(
+        therapistProfile,
+        `A customer has requested changes to your session on RehabTask. Please review and set your revision date: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`,
+        "therRevisionRequested"
+    );
+};
+
+/**
+ * Therapist's revision deadline is within 24h. Called by revisionExpirySms cron.
+ * Uses dispatchAwaitable so the job can stamp revisionExpirySmsSentAt after send.
+ * @param {{ phone: string, smsOptIn: boolean }} therapistProfile
+ * @param {string} bookingId
+ * @returns {Promise<boolean>}
+ */
+export const smsTherRevisionExpiringSoon = (therapistProfile, bookingId) => {
+    return dispatchAwaitable(
+        therapistProfile,
+        `Reminder: your revision deadline expires in 24 hours on RehabTask. Please resubmit your session work: ${env.FRONTEND_URL}/therapist/bookings/${bookingId}`
     );
 };
 
@@ -199,5 +256,49 @@ export const smsCustNewMessage = (customerProfile) => {
         customerProfile,
         `You have a new message on RehabTask. Open the app to reply: ${env.FRONTEND_URL}/customer/messages`,
         "custNewMessage"
+    );
+};
+
+/**
+ * Therapist acknowledged the revision request and committed to a due date.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @param {Date} dueBy
+ */
+export const smsCustRevisionResponded = (customerProfile, bookingId, dueBy) => {
+    const formattedDate = new Date(dueBy).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    dispatch(
+        customerProfile,
+        `Your therapist will have your revision ready by ${formattedDate} on RehabTask: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`,
+        "custRevisionResponded"
+    );
+};
+
+/**
+ * Therapist extended their revision deadline.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @param {Date} newDueBy
+ */
+export const smsCustRevisionExtended = (customerProfile, bookingId, newDueBy) => {
+    const formattedDate = new Date(newDueBy).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    dispatch(
+        customerProfile,
+        `Your therapist has extended their revision deadline to ${formattedDate} on RehabTask: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`,
+        "custRevisionExtended"
+    );
+};
+
+/**
+ * Customer notified their therapist's revision deadline is within 24h.
+ * Same idempotency stamp as smsTherRevisionExpiringSoon — one stamp covers both sends.
+ * @param {{ phone: string, smsOptIn: boolean }} customerProfile
+ * @param {string} bookingId
+ * @returns {Promise<boolean>}
+ */
+export const smsCustRevisionExpiringSoon = (customerProfile, bookingId) => {
+    return dispatchAwaitable(
+        customerProfile,
+        `Your therapist's revision deadline expires in 24 hours on RehabTask. Check your booking for updates: ${env.FRONTEND_URL}/customer/bookings/${bookingId}`
     );
 };

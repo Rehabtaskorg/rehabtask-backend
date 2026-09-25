@@ -42,10 +42,15 @@ export const updateUserSchema = z.object({
     bio: z.string().max(1000).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, { message: "At least one field must be provided" });
 
+export const resetUserTwoFactorSchema = z.object({
+    reason: z.string().trim().min(10, "Recovery reason must be at least 10 characters").max(500),
+});
+
 // ── Therapist Management ─────────────────────────────────────────────────────
 
 export const listTherapistsQuerySchema = z.object({
     approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
     search: z.string().max(200).optional(),
     page: z
         .string()
@@ -87,6 +92,7 @@ export const updateTherapistVerificationSchema = z.object({
 export const listCustomersQuerySchema = z.object({
     approvalStatus: z.enum(Object.values(APPROVAL_STATUS)).optional(),
     customerType: z.enum(Object.values(CUSTOMER_TYPES)).optional(),
+    pendingReview: z.enum(["true", "false"]).optional(),
     search: z.string().max(200).optional(),
     sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
     page: z

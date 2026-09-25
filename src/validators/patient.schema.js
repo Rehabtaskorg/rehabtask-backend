@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const phoneSchema = z
+    .string()
+    .min(1, "Phone number is required")
+    .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX");
+
 export const createPatientSchema = z.object({
     fullName: z.string().min(2, "Full name must be at least 2 characters").max(255),
     dateOfBirth: z.string().date("Date of birth must be a valid date (YYYY-MM-DD)"),
@@ -7,7 +12,7 @@ export const createPatientSchema = z.object({
     certificationEnd: z.string().date("Certification end must be a valid date (YYYY-MM-DD)"),
     gender: z.enum(["male", "female", "other"]).optional().nullable(),
     email: z.email("Invalid email address").optional().or(z.literal("")),
-    phone: z.string().regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX").optional().or(z.literal("")),
+    phone: phoneSchema,
     addressLine1: z.string().min(1, "Address is required").max(255),
     addressLine2: z.string().max(255).optional().or(z.literal("")),
     city: z.string().min(1, "City is required").max(100),
@@ -27,7 +32,7 @@ export const updatePatientSchema = z.object({
     certificationEnd: z.string().date("Certification end must be a valid date (YYYY-MM-DD)").optional(),
     gender: z.enum(["male", "female", "other"]).optional().nullable(),
     email: z.email("Invalid email address").optional().or(z.literal("")),
-    phone: z.string().regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX").optional().or(z.literal("")),
+    phone: phoneSchema.optional(),
     addressLine1: z.string().max(255).optional().or(z.literal("")),
     addressLine2: z.string().max(255).optional().or(z.literal("")),
     city: z.string().max(100).optional().or(z.literal("")),

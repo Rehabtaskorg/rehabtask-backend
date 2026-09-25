@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, THERAPIST_ATTRIBUTE_CATEGORIES, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
+import { APPROVAL_STATUS, BACKGROUND_CHECK_STATUS, TIME_MS, DOCUMENT_CATEGORIES, IDENTITY_DOCUMENT_TYPES, COMPLIANCE_DOCUMENT_TYPES, THERAPIST_ATTRIBUTE_CATEGORIES, THERAPIST_DOCUMENTS_BUCKET, AGENCY_DOCUMENTS_BUCKET, INDIVIDUAL_DOCUMENTS_BUCKET } from "../utils/constants.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ConflictError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
@@ -7,6 +7,7 @@ import { logAction } from "./audit.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
 import { getSignedUrl } from "./storage.service.js";
+import { assertOnboardingMutable, ONBOARDING_LOCKED_STATUSES } from "../utils/onboardingAccess.js";
 
 const computeOnboardingSteps = (therapist) => {
     const hasDocumentType = (types) =>
@@ -40,7 +41,8 @@ const computeOnboardingSteps = (therapist) => {
             hasDocumentType(["professional_liability"]) &&
             (!therapist.doesHomeVisits || hasDocumentType(["auto_insurance"]))
         ),
-        identity: hasDocumentType(["government_id_front"]),
+        identity: hasDocumentType([IDENTITY_DOCUMENT_TYPES.GOVERNMENT_ID_FRONT]) &&
+            hasDocumentType([IDENTITY_DOCUMENT_TYPES.DRIVERS_LICENSE]),
         hipaa: therapist.hipaaAttested === true,
     };
 };
@@ -196,7 +198,7 @@ export const getOnboardingData = async (userId) => {
         hipaa: {
             attested: therapist.hipaaAttested,
             attestedAt: therapist.hipaaAttestedAt,
-            document: documentsByCategory(DOCUMENT_CATEGORIES.compliance.filter(t => t === "hipaa_certificate"))[0] ?? null,
+            document: documentsByCategory([COMPLIANCE_DOCUMENT_TYPES.HIPAA_CERTIFICATE])[0] ?? null,
         },
     };
 };
@@ -210,6 +212,7 @@ export const savePersonalInfo = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -244,6 +247,7 @@ export const savePersonalInfo = async (userId, data) => {
 export const saveProfessionalProfile = async (userId, data) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
     if (!therapist) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(therapist);
 
     const categoryMap = {
         [THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY]:     data.specialties ?? [],
@@ -295,6 +299,7 @@ export const saveCredentials = async (userId, data, uploadIp = null) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     // Check if license number already exists (for another therapist)
     const existingLicense = await prisma.therapistProfile.findFirst({
@@ -413,6 +418,7 @@ export const saveAvailability = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     // Delete existing availability
     await prisma.availability.deleteMany({
@@ -496,6 +502,7 @@ export const saveAvailability = async (userId, data) => {
 export const saveHipaaAttestation = async (userId, data, uploadIp = null) => {
     const therapist = await prisma.therapistProfile.findUnique({ where: { userId } });
     if (!therapist) throw new NotFoundError("Therapist profile not found");
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -513,7 +520,7 @@ export const saveHipaaAttestation = async (userId, data, uploadIp = null) => {
             where: {
                 therapistId: therapist.id,
                 isDeleted: false,
-                documentType: "hipaa_certificate",
+                documentType: COMPLIANCE_DOCUMENT_TYPES.HIPAA_CERTIFICATE,
                 documentUrl: { not: data.document.path },
             },
         });
@@ -541,6 +548,7 @@ export const saveInsurance = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -601,6 +609,7 @@ export const saveIdentityVerification = async (userId, data) => {
     if (!therapist) {
         throw new NotFoundError("Therapist profile not found");
     }
+    assertOnboardingMutable(therapist);
 
     const updated = await withAdminAccess(async (db) => {
         return db.therapistProfile.update({
@@ -614,18 +623,35 @@ export const saveIdentityVerification = async (userId, data) => {
     const submittedPaths = new Set(data.documents.map((doc) => doc.path));
 
     if (submittedPaths.size > 0) {
-        await prisma.licenseDocument.updateMany({
-            where: {
-                therapistId: therapist.id,
-                isDeleted: false,
-                documentType: { in: DOCUMENT_CATEGORIES.identity },
-                documentUrl: { notIn: [...submittedPaths] },
-            },
-            data: {
-                isDeleted: true,
-                deletedAt: new Date(),
-            },
+        const supersededWhere = {
+            therapistId: therapist.id,
+            isDeleted: false,
+            documentType: { in: DOCUMENT_CATEGORIES.identity },
+            documentUrl: { notIn: [...submittedPaths] },
+        };
+
+        const superseded = await prisma.licenseDocument.findMany({
+            where: supersededWhere,
+            select: { id: true, bucket: true, documentUrl: true },
         });
+
+        if (superseded.length > 0) {
+            await prisma.licenseDocument.updateMany({
+                where: { id: { in: superseded.map((d) => d.id) } },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
+            // Preserve the actual file when the profile is under review or approved -
+            // an admin may have relied on it. Belt-and-braces: assertOnboardingMutable()
+            // above already blocks this whole function in that state, but this stays
+            // correct if the deletion logic is ever reused elsewhere.
+            if (!ONBOARDING_LOCKED_STATUSES.includes(therapist.approvalStatus)) {
+                await Promise.allSettled(
+                    superseded.map((d) =>
+                        deleteFileFromStorage(d.bucket ?? THERAPIST_DOCUMENTS_BUCKET, d.documentUrl)
+                    )
+                );
+            }
+        }
     }
 
     const activeDocuments = await prisma.licenseDocument.findMany({
@@ -750,7 +776,7 @@ export const completeOnboarding = async (userId) => {
             where: { userId, onboardingComplete: false },
             data: {
                 ...(shouldMarkComplete && { onboardingComplete: true }),
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -856,6 +882,20 @@ export const deleteDocument = async (userId, documentId) => {
         throw new BadRequestError("Not authorized to delete this document");
     }
 
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        select: { id: true, approvalStatus: true },
+    });
+
+    const isIdentityDocument = DOCUMENT_CATEGORIES.identity.includes(document.documentType);
+    const isLockedProfile = therapist?.approvalStatus === APPROVAL_STATUS.APPROVED;
+
+    if (isLockedProfile && isIdentityDocument) {
+        throw new AuthorizationError(
+            "Approved identity documents cannot be deleted. Contact support to request a replacement."
+        );
+    }
+
     if (document.isDeleted) {
         throw new BadRequestError("Document already deleted");
     }
@@ -870,7 +910,20 @@ export const deleteDocument = async (userId, documentId) => {
         },
     });
 
-    await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
+    // Preserve the actual file while the profile is under review or approved -
+    // an admin may have relied on it. Only hard-delete from storage while
+    // pending/rejected, where nothing has been verified yet.
+    if (!ONBOARDING_LOCKED_STATUSES.includes(therapist?.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || "license-documents", document.documentUrl);
+    }
+
+    await logAction({
+        actorId: userId,
+        action: "onboarding.document_deleted",
+        entityType: "license_document",
+        entityId: document.id,
+        changes: { documentType: document.documentType },
+    });
 
     return {
         message: "Document deleted successfully",
@@ -1099,7 +1152,9 @@ export const deleteAgencyDocument = async (userId, documentId) => {
         data: { isDeleted: true, deletedAt: new Date() },
     });
 
-    await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+    if (!ONBOARDING_LOCKED_STATUSES.includes(customer.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || AGENCY_DOCUMENTS_BUCKET, document.documentUrl);
+    }
 
     return { message: "Document deleted successfully" };
 };
@@ -1159,7 +1214,7 @@ export const completeAgencyOnboarding = async (userId) => {
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -1209,7 +1264,10 @@ export const resubmitAgencyApplication = async (userId, note = null) => {
     });
 
     if (!customer) throw new NotFoundError("Customer not found");
-    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+    const canResubmit =
+        customer.approvalStatus === APPROVAL_STATUS.REJECTED ||
+        (customer.approvalStatus === APPROVAL_STATUS.APPROVED && customer.pendingReviewAt !== null);
+    if (!canResubmit) {
         throw new ConflictError("Application cannot be resubmitted in its current state");
     }
 
@@ -1236,11 +1294,18 @@ export const resubmitAgencyApplication = async (userId, note = null) => {
 
     const result = await withAdminAccess(async (db) => {
         return db.customerProfile.updateMany({
-            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            where: {
+                userId,
+                OR: [
+                    { approvalStatus: APPROVAL_STATUS.REJECTED },
+                    { approvalStatus: APPROVAL_STATUS.APPROVED, pendingReviewAt: { not: null } },
+                ],
+            },
             data: {
                 approvalStatus: APPROVAL_STATUS.REVIEW,
                 approvedBy: null,
                 approvedAt: null,
+                reviewStartedAt: new Date(),
             },
         });
     });
@@ -1421,7 +1486,9 @@ export const deleteIndividualDocument = async (userId, documentId) => {
         data: { isDeleted: true, deletedAt: new Date() },
     });
 
-    await deleteFileFromStorage(document.bucket || INDIVIDUAL_DOCUMENTS_BUCKET, document.documentUrl);
+    if (!ONBOARDING_LOCKED_STATUSES.includes(customer.approvalStatus)) {
+        await deleteFileFromStorage(document.bucket || INDIVIDUAL_DOCUMENTS_BUCKET, document.documentUrl);
+    }
 
     return { message: "Document deleted successfully" };
 };
@@ -1477,7 +1544,7 @@ export const completeIndividualOnboarding = async (userId) => {
             data: {
                 onboardingComplete: true,
                 onboardingStep: 4,
-                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW }),
+                ...(!alreadyDecided && { approvalStatus: APPROVAL_STATUS.REVIEW, reviewStartedAt: new Date() }),
             },
         });
     });
@@ -1527,7 +1594,10 @@ export const resubmitIndividualApplication = async (userId, note = null) => {
     });
 
     if (!customer) throw new NotFoundError("Customer not found");
-    if (customer.approvalStatus !== APPROVAL_STATUS.REJECTED) {
+    const canResubmit =
+        customer.approvalStatus === APPROVAL_STATUS.REJECTED ||
+        (customer.approvalStatus === APPROVAL_STATUS.APPROVED && customer.pendingReviewAt !== null);
+    if (!canResubmit) {
         throw new ConflictError("Application cannot be resubmitted in its current state");
     }
 
@@ -1553,11 +1623,18 @@ export const resubmitIndividualApplication = async (userId, note = null) => {
 
     const result = await withAdminAccess(async (db) => {
         return db.customerProfile.updateMany({
-            where: { userId, approvalStatus: APPROVAL_STATUS.REJECTED },
+            where: {
+                userId,
+                OR: [
+                    { approvalStatus: APPROVAL_STATUS.REJECTED },
+                    { approvalStatus: APPROVAL_STATUS.APPROVED, pendingReviewAt: { not: null } },
+                ],
+            },
             data: {
                 approvalStatus: APPROVAL_STATUS.REVIEW,
                 approvedBy: null,
                 approvedAt: null,
+                reviewStartedAt: new Date(),
             },
         });
     });

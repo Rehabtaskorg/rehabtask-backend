@@ -5,6 +5,7 @@ import { logger } from "../config/logger.js";
 import { stripe } from "../config/stripe.js";
 import { sendAdminPaymentReleased, sendAdminPaymentRefunded } from "./email.service.js";
 import { PAYMENT_INCLUDE } from "./admin.payment.queries.service.js";
+import { resolveCreditsToRestore } from "../utils/visitCredits.js";
 
 /**
  * Admin-forced release of an escrowed payment.
@@ -179,9 +180,7 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
             throw err;
         }
 
-        const nonCancelledCount = booking.sessions?.filter(
-            (s) => s.status !== SESSION_STATUS.CANCELLED
-        ).length ?? 0;
+        const nonCancelledCount = resolveCreditsToRestore(booking);
 
         await prisma.$transaction(async (tx) => {
             await tx.payment.update({ where: { id: paymentId }, data: { status: "refunded", refundedAt: new Date() } });
@@ -221,9 +220,7 @@ export const adminRefundPayment = async (paymentId, reason, adminId) => {
         }
     }
 
-    const nonCancelledEscrowedCount = booking.sessions?.filter(
-        (s) => s.status !== SESSION_STATUS.CANCELLED
-    ).length ?? 0;
+    const nonCancelledEscrowedCount = resolveCreditsToRestore(booking);
 
     await prisma.$transaction(async (tx) => {
         await tx.payment.update({ where: { id: paymentId }, data: { status: "refunded", refundedAt: new Date(), refundedAmount: refundAmount } });

@@ -8,7 +8,8 @@ export const updateProfileSchema = z.object({
         .optional(),
     phone: z
         .string()
-        .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX"),
+        .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX")
+        .optional(),
     smsOptIn: z.boolean().optional(),
     professionalSummary: z
         .string()
@@ -36,13 +37,27 @@ export const updateProfileSchema = z.object({
         .nullable()
         .optional()
         .transform(val => (val === 0 ? null : val)),
+    evaluationRate: z.coerce
+        .number()
+        .min(0, "Evaluation rate must be 0 or greater")
+        .max(10000, "Evaluation rate must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
+    travelFee: z.coerce
+        .number()
+        .min(0, "Travel fee must be 0 or greater")
+        .max(10000, "Travel fee must be $10,000 or less")
+        .nullable()
+        .optional()
+        .transform(val => (val === 0 ? null : val)),
     yearsOfExperience: z.coerce
         .number()
         .int()
         .min(0, "Must be 0 or greater")
         .max(50, "Must be 50 or less")
         .optional(),
-});
+}).passthrough();
 
 export const updateWorkAreasSchema = z.object({
     workAreas: z

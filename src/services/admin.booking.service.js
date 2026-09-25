@@ -3,6 +3,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { sendBookingCancelledByAdmin } from "./email.service.js";
+import { resolveCreditsToRestore } from "../utils/visitCredits.js";
 
 const BOOKING_INCLUDE = {
     customer: {
@@ -101,10 +102,11 @@ export const adminListBookings = async ({
 };
 
 export const adminGetBookingStats = async () => {
-    const [total, pending, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
+    const [total, pending, pendingPayment, accepted, confirmed, inProgress, completed, cancelled, rescheduleRequested] =
         await Promise.all([
             prisma.booking.count(),
             prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING } }),
+            prisma.booking.count({ where: { status: BOOKING_STATUS.PENDING_PAYMENT } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.ACCEPTED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.CONFIRMED } }),
             prisma.booking.count({ where: { status: BOOKING_STATUS.IN_PROGRESS } }),
@@ -116,6 +118,7 @@ export const adminGetBookingStats = async () => {
     return {
         total,
         pending,
+        pendingPayment,
         accepted,
         confirmed,
         inProgress,
@@ -141,16 +144,14 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
     });
     if (!booking) throw new NotFoundError("Booking not found");
 
-    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
+    const cancellable = [BOOKING_STATUS.PENDING, BOOKING_STATUS.PENDING_PAYMENT, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.RESCHEDULE_REQUESTED];
     if (!cancellable.includes(booking.status)) {
         throw new ConflictError(
             `Booking cannot be cancelled in status '${booking.status}'`
         );
     }
 
-    const nonCancelledCount = booking.sessions?.filter(
-        (s) => s.status !== SESSION_STATUS.CANCELLED
-    ).length ?? 0;
+    const nonCancelledCount = resolveCreditsToRestore(booking);
 
     const updated = await prisma.$transaction(async (tx) => {
         const txBooking = await tx.booking.update({
@@ -183,7 +184,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.CUSTOMER,
-    }).catch(() => {});
+    }).catch(() => { });
 
     sendBookingCancelledByAdmin({
         recipientEmail: booking.therapist.user.email,
@@ -191,7 +192,7 @@ export const adminCancelBooking = async (bookingId, adminId, reason) => {
         booking,
         reason,
         role: USER_ROLES.THERAPIST,
-    }).catch(() => {});
+    }).catch(() => { });
 
     logger.info("[AdminBookingService] Booking cancelled", {
         bookingId,

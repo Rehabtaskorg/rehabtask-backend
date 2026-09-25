@@ -1,17 +1,21 @@
 // TODO: [BUG] This file is 562 lines — exceeds the 150-line controller limit.
 // Split into webhook.payment.controller.js, webhook.subscription.controller.js,
 // webhook.connect.controller.js in a follow-up PR.
+// TODO: [NEXT] Only handlePaymentIntentSucceeded and handlePaymentIntentFailed rethrow,
+// so the retry classification in the outer catch governs those two alone. Every other
+// handler swallows its own errors, meaning a DB outage during e.g. handleTransferReversed
+// is still acknowledged with a 200 and dropped. Decide per handler whether to rethrow —
+// deferred from Phase A because it widens retry behaviour across payouts, transfers and
+// account updates at once, which needs its own soak on dev.
 import { stripe, stripeConfig } from "../config/stripe.js";
 import * as paymentService from "../services/payment.service.js";
 import * as subscriptionService from "../services/subscription.service.js";
 import { prisma } from "../config/prisma.js";
 import { sendPaymentFailed, sendPayoutFailed, sendStripeRequirementsAlert, sendCustomerStripeRequirementsAlert } from "../services/email.service.js";
-import { handleCustomerPayoutFailed } from "../services/payment.service.js";
 import { logger } from "../config/logger.js";
 import { logSystemEvent } from "../services/audit.service.js";
 import { trackServerEvent } from "../config/posthog.js";
-import { STRIPE_CAPABILITY } from "../utils/constants.js";
-import { isConnectAccountReady, isDuplicateWebhookEventError } from "../utils/stripe.helpers.js";
+import { isConnectAccountReady, isDuplicateWebhookEventError, classifyWebhookError } from "../utils/stripe.helpers.js";
 
 /**
  * Atomically marks a Stripe event as processed inside an existing transaction.
@@ -136,8 +140,21 @@ const handleStripeWebhook = async (req, res) => {
 
         res.json({ received: true, event: event.type });
     } catch (error) {
-        logger.error(`[Webhook] Error handling ${event.type}`, { error: error.message });
-        res.status(200).json({ received: true, error: error.message, event: event.type });
+        const { shouldRetry, reason } = classifyWebhookError(error);
+
+        logger.error(`[Webhook] Error handling ${event.type}`, {
+            error: error.message,
+            eventId: event.id,
+            shouldRetry,
+            reason,
+        });
+
+        if (shouldRetry) {
+            res.status(500).json({ received: false, event: event.type });
+            return;
+        }
+
+        res.status(200).json({ received: true, event: event.type });
     }
 };
 
@@ -198,6 +215,15 @@ const handlePaymentIntentFailed = async (paymentIntent, stripeEventId) => {
 
         if (!payment) {
             logger.info("[Webhook] No payment record for failed intent", { paymentIntentId: paymentIntent.id });
+            return;
+        }
+
+        if (!payment.booking) {
+            logger.warn("[Webhook] Payment has no booking relation — skipping failure handling", {
+                paymentIntentId: paymentIntent.id,
+                paymentId: payment.id,
+                bookingId: payment.bookingId,
+            });
             return;
         }
 
@@ -669,7 +695,7 @@ const handlePayoutFailed = async (payout, accountId, stripeEventId) => {
                 failureCode: payout.failure_code,
                 reason: payout.failure_message,
             });
-            await handleCustomerPayoutFailed(customer, payout.failure_message);
+            await paymentService.handleCustomerPayoutFailed(customer, payout);
             return;
         }
 

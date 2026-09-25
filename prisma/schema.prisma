@@ -35,6 +35,8 @@ model User {
   directConversationsAsUser2 DirectConversation[] @relation("DirectConvUser2")
   uploadedAttachments        MessageAttachment[]  @relation("AttachmentUploader")
   agreementAcceptances       UnifiedAgreementAcceptance[]
+  securitySettings           UserSecuritySettings?
+  twoFactorChallenges        TwoFactorChallenge[]
 
   @@index([email])
   @@index([role, isActive])
@@ -75,6 +77,8 @@ model CustomerProfile {
   approvedBy               String?          @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?        @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?          @map("rejection_reason")
+  pendingReviewAt          DateTime?        @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?        @map("review_started_at") @db.Timestamptz(3)
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   bookings                 Booking[]
@@ -98,6 +102,7 @@ model CustomerProfile {
   @@index([approvalStatus, createdAt])
   @@index([customerType, approvalStatus])
   @@index([onboardingComplete])
+  @@index([pendingReviewAt], map: "idx_customer_profiles_pending_review")
   @@map("customer_profiles")
 }
 
@@ -106,7 +111,7 @@ model Patient {
   agencyId           String           @map("agency_id") @db.Uuid
   email              String?          @db.VarChar(255)
   fullName           String           @map("full_name") @db.VarChar(255)
-  phone              String?          @db.VarChar(20)
+  phone              String           @db.VarChar(20)
   addressLine1       String?          @map("address_line_1") @db.VarChar(255)
   addressLine2       String?          @map("address_line_2") @db.VarChar(255)
   city               String?          @db.VarChar(100)
@@ -174,6 +179,8 @@ model TherapistProfile {
   approvedBy               String?                @map("approved_by") @db.VarChar(128)
   approvedAt               DateTime?              @map("approved_at") @db.Timestamptz(3)
   rejectionReason          String?                @map("rejection_reason")
+  pendingReviewAt          DateTime?              @map("pending_review_at") @db.Timestamptz(3)
+  reviewStartedAt          DateTime?              @map("review_started_at") @db.Timestamptz(3)
   onboardingStep           Int                    @default(1) @map("onboarding_step")
   onboardingComplete       Boolean                @default(false) @map("onboarding_complete")
   ratePerVisit             Decimal?               @map("rate_per_visit") @db.Decimal(10, 2)
@@ -208,6 +215,7 @@ model TherapistProfile {
   @@index([stripeAccountId])
   @@index([licenseNumber])
   @@index([backgroundCheckStatus])
+  @@index([pendingReviewAt], map: "idx_therapist_profiles_pending_review")
   @@map("therapist_profiles")
 }
 
@@ -267,11 +275,14 @@ model LicenseDocument {
   userId        String?           @map("user_id") @db.VarChar(128)
   verifiedAt    DateTime?         @map("verified_at") @db.Timestamptz(3)
   verifiedBy    String?           @map("verified_by") @db.VarChar(128)
+  supersedesId  String?           @map("supersedes_id") @db.Uuid
   therapist     TherapistProfile? @relation(fields: [therapistId], references: [id], onDelete: Cascade)
   agency        CustomerProfile?  @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Cascade)
   customer      CustomerProfile?  @relation("CustomerDocuments", fields: [customerId], references: [id], onDelete: Cascade)
   user          User?             @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
   verifier      User?             @relation("DocumentVerifier", fields: [verifiedBy], references: [id])
+  supersedes    LicenseDocument?  @relation("DocumentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy  LicenseDocument[] @relation("DocumentSupersession")
 
   @@index([therapistId])
   @@index([agencyId])
@@ -279,6 +290,7 @@ model LicenseDocument {
   @@index([userId], map: "idx_license_documents_user_active")
   @@index([status, uploadedAt])
   @@index([therapistId, status])
+  @@index([supersedesId])
   @@map("license_documents")
 }
 
@@ -310,8 +322,8 @@ model CustomerConsentSignature {
   signedAt                   DateTime        @default(now()) @map("signed_at") @db.Timestamptz(3)
   customer                   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  @@unique([customerId, documentType])
   @@index([customerId])
+  @@index([customerId, documentType, signedAt])
   @@map("customer_consent_signatures")
 }
 
@@ -503,6 +515,7 @@ model Session {
   revisionDueBy           DateTime? @map("revision_due_by") @db.Timestamptz(3)
   revisionCount           Int       @default(0) @map("revision_count")
   revisionLastSubmittedAt DateTime? @map("revision_last_submitted_at") @db.Timestamptz(3)
+  revisionExpirySmsSentAt DateTime? @map("revision_expiry_sms_sent_at") @db.Timestamptz(3)
 
   missedReason String?       @map("missed_reason") @db.VarChar(500)
   missedBy     MissedByRole? @map("missed_by")
@@ -590,6 +603,7 @@ model CustomerRefund {
   status                CustomerRefundStatus
   stripeTransferId      String?              @unique @map("stripe_transfer_id") @db.VarChar(255)
   stripeRefundId        String?              @unique @map("stripe_refund_id") @db.VarChar(255)
+  stripePayoutId        String?              @map("stripe_payout_id") @db.VarChar(255)
   reason                String?              @db.VarChar(255)
   payoutFailureReason   String?              @map("payout_failure_reason") @db.VarChar(255)
   connectReminderSentAt DateTime?            @map("connect_reminder_sent_at") @db.Timestamptz(3)
@@ -609,6 +623,7 @@ model CustomerRefund {
   @@index([paymentId])
   @@index([bookingId])
   @@index([sessionId])
+  @@index([stripePayoutId])
   @@map("customer_refunds")
 }
 
@@ -842,6 +857,46 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model UserSecuritySettings {
+  id                    String             @id @default(uuid()) @db.Uuid
+  userId                String             @unique @map("user_id") @db.VarChar(128)
+  twoFactorEnabled      Boolean            @default(false) @map("two_factor_enabled")
+  preferredMethod       TwoFactorMethod?   @map("preferred_2fa_method")
+  emailTwoFactorEnabled Boolean            @default(false) @map("email_2fa_enabled")
+  smsTwoFactorEnabled   Boolean            @default(false) @map("sms_2fa_enabled")
+  phoneNumber           String?            @map("phone_number") @db.VarChar(20)
+  phoneVerifiedAt       DateTime?          @map("phone_verified_at") @db.Timestamptz(3)
+  emailVerifiedAt       DateTime?          @map("email_verified_at") @db.Timestamptz(3)
+  twoFactorEnabledAt    DateTime?          @map("two_factor_enabled_at") @db.Timestamptz(3)
+  lastTwoFactorVerifiedAt DateTime?        @map("last_2fa_verified_at") @db.Timestamptz(3)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_security_settings")
+}
+
+model TwoFactorChallenge {
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @map("user_id") @db.VarChar(128)
+  method               TwoFactorMethod
+  destinationReference String             @map("destination_reference") @db.VarChar(255)
+  codeHash             String             @map("code_hash") @db.VarChar(128)
+  challengeTokenHash   String             @map("challenge_token_hash") @db.VarChar(128)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt            DateTime           @map("expires_at") @db.Timestamptz(3)
+  verifiedAt           DateTime?          @map("verified_at") @db.Timestamptz(3)
+  attemptCount         Int                @default(0) @map("attempt_count")
+  status               TwoFactorChallengeStatus @default(pending)
+  ipAddress            String?            @map("ip_address") @db.VarChar(64)
+  userAgent            String?            @map("user_agent")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([challengeTokenHash])
+  @@map("two_factor_challenges")
+}
+
 model SystemConfig {
   key         String   @id @db.VarChar(100)
   value       String
@@ -862,6 +917,19 @@ enum UserRole {
   therapist
   admin
   sub_admin
+}
+
+enum TwoFactorMethod {
+  email
+  sms
+}
+
+enum TwoFactorChallengeStatus {
+  pending
+  verified
+  expired
+  failed
+  cancelled
 }
 
 enum CustomerType {
@@ -934,6 +1002,7 @@ enum OfferStatus {
 
 enum BookingStatus {
   pending
+  pending_payment
   accepted
   confirmed
   in_progress
