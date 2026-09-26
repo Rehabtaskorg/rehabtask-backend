@@ -118,11 +118,19 @@ export const CUSTOMER_FIELD_POLICY = {
 /**
  * Which tiers may be written, and which trigger re-review, per approval status.
  * LOCKED never appears — it is rejected in every state.
+ *
+ * Approved is the only status that triggers re-review, because it is the only one
+ * with an approval to protect. Pending, review and rejected all allow every tier:
+ * nothing has been verified yet, so there is nothing a change could invalidate.
+ *
+ * Editing a verified field while in review does bump `reviewStartedAt` — see the
+ * service layer — so a reviewer mid-check sees the account as freshly submitted
+ * rather than approving a value that has since changed.
  */
 export const TIER_AVAILABILITY = {
     [APPROVAL_STATUS.PENDING]: { allow: [OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD], reReview: [] },
     [APPROVAL_STATUS.REJECTED]: { allow: [OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD], reReview: [] },
-    [APPROVAL_STATUS.REVIEW]: { allow: [OPEN], reReview: [] },
+    [APPROVAL_STATUS.REVIEW]: { allow: [OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD], reReview: [] },
     [APPROVAL_STATUS.APPROVED]: { allow: [OPEN, GUARDED], reReview: [VERIFIED_SOFT, VERIFIED_HARD] },
 };
 

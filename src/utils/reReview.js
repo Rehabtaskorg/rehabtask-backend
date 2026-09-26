@@ -3,6 +3,19 @@ import { FIELD_TIER } from "./fieldPolicy.js";
 import { logAction } from "../services/audit.service.js";
 import { logger } from "../config/logger.js";
 
+const VERIFIED_TIERS = [FIELD_TIER.VERIFIED_SOFT, FIELD_TIER.VERIFIED_HARD];
+
+
+export const buildReviewRestartPayload = (approvalStatus, writable, policy) => {
+    if (approvalStatus !== APPROVAL_STATUS.REVIEW) return {};
+
+    const touchesVerifiedField = Object.keys(writable).some((field) =>
+        VERIFIED_TIERS.includes(policy[field])
+    );
+
+    return touchesVerifiedField ? { reviewStartedAt: new Date() } : {};
+};
+
 /**
  * Build the profile-update payload that flags an approved account for re-review.
  * @param {Set<string>} reReviewTiers - from partitionByPolicy()

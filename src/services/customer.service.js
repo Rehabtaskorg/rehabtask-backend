@@ -2,7 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { NotFoundError, ValidationError, AuthorizationError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import { CUSTOMER_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.js";
-import { buildReReviewPayload, recordReReview } from "../utils/reReview.js";
+import { buildReReviewPayload, buildReviewRestartPayload, recordReReview } from "../utils/reReview.js";
 
 /**
  * Fetch a customer's own profile with every scalar field plus their documents.
@@ -68,10 +68,15 @@ export const updateCustomerProfile = async (userId, data) => {
     }
 
     const reReviewPayload = buildReReviewPayload(reReviewTiers, { clearVerificationFlags: false });
+    const reviewRestartPayload = buildReviewRestartPayload(
+        profile.approvalStatus,
+        writable,
+        CUSTOMER_FIELD_POLICY
+    );
 
     const updated = await prisma.customerProfile.update({
         where: { userId },
-        data: { ...writable, ...reReviewPayload },
+        data: { ...writable, ...reReviewPayload, ...reviewRestartPayload },
     });
 
     if (reReviewTiers.size > 0) {
