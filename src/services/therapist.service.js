@@ -6,7 +6,7 @@ import { haversineDistance } from "../utils/distance.js";
 import { geocodeZipCode, geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
 import { logger } from "../config/logger.js";
 import { THERAPIST_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.js";
-import { buildReReviewPayload, recordReReview } from "../utils/reReview.js";
+import { buildReReviewPayload, buildReviewRestartPayload, recordReReview } from "../utils/reReview.js";
 
 export const getTherapistProfile = async (userId) => {
     const [therapist, completedSessionCount, reviewStats] = await Promise.all([
@@ -140,11 +140,16 @@ export const updateTherapistProfile = async (userId, data) => {
     }
 
     const reReviewPayload = buildReReviewPayload(reReviewTiers);
+    const reviewRestartPayload = buildReviewRestartPayload(
+        therapist.approvalStatus,
+        writable,
+        THERAPIST_FIELD_POLICY
+    );
 
     const updated = await withAdminAccess(async (tx) => {
         return tx.therapistProfile.update({
             where: { userId },
-            data: { ...writable, ...reReviewPayload },
+            data: { ...writable, ...reReviewPayload, ...reviewRestartPayload },
         });
     });
 
