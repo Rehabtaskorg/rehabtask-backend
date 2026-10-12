@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
+import { APPROVAL_STATUS, PROFILE_IMAGES_BUCKET, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
 import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ValidationError, AuthorizationError } from "../utils/errors.js";
@@ -7,6 +7,7 @@ import { geocodeZipCode, geocodeAddress, assertCoherenceOrLog } from "./geocodin
 import { logger } from "../config/logger.js";
 import { THERAPIST_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.js";
 import { buildReReviewPayload, buildReviewRestartPayload, recordReReview } from "../utils/reReview.js";
+import { deleteFileFromStorage, getProfilePhotoPath } from "./upload.service.js";
 
 export const getTherapistProfile = async (userId) => {
     const [therapist, completedSessionCount, reviewStats] = await Promise.all([
@@ -152,6 +153,17 @@ export const updateTherapistProfile = async (userId, data) => {
             data: { ...writable, ...reReviewPayload, ...reviewRestartPayload },
         });
     });
+
+    if (
+        writable.profilePhotoUrl !== undefined &&
+        therapist.profilePhotoUrl &&
+        therapist.profilePhotoUrl !== writable.profilePhotoUrl
+    ) {
+        const supersededPath = getProfilePhotoPath(therapist.profilePhotoUrl);
+        if (supersededPath) {
+            deleteFileFromStorage(PROFILE_IMAGES_BUCKET, supersededPath);
+        }
+    }
 
     if (reReviewTiers.size > 0) {
         recordReReview({
