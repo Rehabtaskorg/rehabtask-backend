@@ -1,4 +1,4 @@
-import { APPROVAL_STATUS, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
+import { APPROVAL_STATUS, PROFILE_IMAGES_BUCKET, SESSION_STATUS, THERAPIST_ATTRIBUTE_CATEGORIES, USER_ROLES } from "../utils/constants.js";
 import { hasContactAccessByUserId } from "../utils/therapistContactAccess.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { NotFoundError, BadRequestError, ValidationError, AuthorizationError } from "../utils/errors.js";
@@ -6,7 +6,8 @@ import { haversineDistance } from "../utils/distance.js";
 import { geocodeZipCode, geocodeAddress, assertCoherenceOrLog } from "./geocoding.service.js";
 import { logger } from "../config/logger.js";
 import { THERAPIST_FIELD_POLICY, partitionByPolicy } from "../utils/fieldPolicy.js";
-import { buildReReviewPayload, recordReReview } from "../utils/reReview.js";
+import { buildReReviewPayload, buildReviewRestartPayload, recordReReview } from "../utils/reReview.js";
+import { deleteFileFromStorage, getProfilePhotoPath } from "./upload.service.js";
 
 export const getTherapistProfile = async (userId) => {
     const [therapist, completedSessionCount, reviewStats] = await Promise.all([
@@ -140,13 +141,29 @@ export const updateTherapistProfile = async (userId, data) => {
     }
 
     const reReviewPayload = buildReReviewPayload(reReviewTiers);
+    const reviewRestartPayload = buildReviewRestartPayload(
+        therapist.approvalStatus,
+        writable,
+        THERAPIST_FIELD_POLICY
+    );
 
     const updated = await withAdminAccess(async (tx) => {
         return tx.therapistProfile.update({
             where: { userId },
-            data: { ...writable, ...reReviewPayload },
+            data: { ...writable, ...reReviewPayload, ...reviewRestartPayload },
         });
     });
+
+    if (
+        writable.profilePhotoUrl !== undefined &&
+        therapist.profilePhotoUrl &&
+        therapist.profilePhotoUrl !== writable.profilePhotoUrl
+    ) {
+        const supersededPath = getProfilePhotoPath(therapist.profilePhotoUrl);
+        if (supersededPath) {
+            deleteFileFromStorage(PROFILE_IMAGES_BUCKET, supersededPath);
+        }
+    }
 
     if (reReviewTiers.size > 0) {
         recordReReview({
@@ -162,6 +179,58 @@ export const updateTherapistProfile = async (userId, data) => {
 
     return updated;
 }
+
+export const updateTherapistAttributes = async (userId, data) => {
+    const therapist = await prisma.therapistProfile.findUnique({
+        where: { userId },
+        select: { id: true, onboardingComplete: true },
+    });
+
+    if (!therapist) throw new NotFoundError("Therapist profile not found");
+
+    if (!therapist.onboardingComplete) {
+        throw new BadRequestError(
+            "Please complete onboarding before updating your clinical profile"
+        );
+    }
+
+    const categoryMap = {
+        [THERAPIST_ATTRIBUTE_CATEGORIES.SPECIALTY]: data.specialties,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.LANGUAGE]: data.languages,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.CERTIFICATION]: data.certifications,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.PAST_SETTING]: data.pastSettings,
+        [THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION]: data.populationExperience,
+    };
+
+    await prisma.$transaction(async (tx) => {
+        for (const [category, values] of Object.entries(categoryMap)) {
+            if (values === undefined) continue;
+
+            await tx.therapistAttribute.deleteMany({
+                where: { therapistId: therapist.id, category },
+            });
+
+            if (values.length > 0) {
+                await tx.therapistAttribute.createMany({
+                    data: values.map((value) => ({
+                        therapistId: therapist.id,
+                        category,
+                        value,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }, { timeout: 15000 });
+
+    return {
+        specialties: data.specialties ?? [],
+        languages: data.languages ?? [],
+        certifications: data.certifications ?? [],
+        pastSettings: data.pastSettings ?? [],
+        populationExperience: data.populationExperience ?? [],
+    };
+};
 
 export const updateWorkAreas = async (therapistId, workAreas) => {
     const geocoded = await Promise.all(

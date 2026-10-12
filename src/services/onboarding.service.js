@@ -6,7 +6,6 @@ import { sendTherapistApplicationSubmitted, sendCustomerApplicationSubmitted, se
 import { logAction } from "./audit.service.js";
 import { geocodeZipCode, assertCoherenceOrLog } from "./geocoding.service.js";
 import { deleteFileFromStorage } from "./upload.service.js";
-import { getSignedUrl } from "./storage.service.js";
 import { assertOnboardingMutable, ONBOARDING_LOCKED_STATUSES } from "../utils/onboardingAccess.js";
 
 const computeOnboardingSteps = (therapist) => {
@@ -805,38 +804,6 @@ export const completeOnboarding = async (userId) => {
 };
 
 
-export const getDocumentSignedUrl = async (userId, documentId) => {
-    const document = await prisma.licenseDocument.findUnique({
-        where: { id: documentId },
-        include: {
-            therapist: true
-        },
-    });
-
-    if (!document) {
-        throw new NotFoundError("Document not found");
-    }
-
-    if (document.isDeleted) {
-        throw new NotFoundError("Document has been deleted");
-    }
-
-    // Verify ownership
-    if (document.userId !== userId && document.therapist.userId !== userId) {
-        throw new BadRequestError("Not authorized to access this document");
-    }
-
-    // Generate signed URL (60 second expiry)
-    const { signedUrl } = await getSignedUrl(document.bucket, document.documentUrl, 60);
-
-    return {
-        signedUrl,
-        expiresIn: 60,
-        fileName: document.fileName,
-        fileSize: document.fileSize,
-    };
-};
-
 export const getTherapistDocuments = async (userId) => {
     const therapist = await prisma.therapistProfile.findUnique({
         where: { userId },
@@ -994,14 +961,6 @@ export const getAgencyOnboardingData = async (userId) => {
             agencyLicenseDocuments: {
                 where: { isDeleted: false },
                 orderBy: { uploadedAt: "desc" },
-                select: {
-                    id: true,
-                    documentType: true,
-                    fileName: true,
-                    fileSize: true,
-                    mimeType: true,
-                    uploadedAt: true,
-                },
             },
         },
     });
@@ -1380,7 +1339,10 @@ export const getIndividualOnboardingData = async (userId) => {
         where: { userId },
         include: {
             user: { select: { email: true } },
-            customerLicenseDocuments: { where: { isDeleted: false } },
+            customerLicenseDocuments: {
+                where: { isDeleted: false },
+                orderBy: { uploadedAt: "desc" },
+            },
         },
     });
 

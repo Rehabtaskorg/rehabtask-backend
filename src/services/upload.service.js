@@ -2,7 +2,6 @@ import { prisma } from "../config/prisma.js";
 import { gcs } from "../config/gcs.js";
 import { NotFoundError, BadRequestError, AuthorizationError } from "../utils/errors.js";
 import { randomUUID } from "crypto";
-import path from "path";
 import {
     TIME_MS,
     APPROVAL_STATUS,
@@ -48,6 +47,12 @@ export const checkUploadRateLimit = async (userId) => {
 
 const getProfilePhotoPublicUrl = (filePath) =>
     `https://storage.googleapis.com/${PROFILE_IMAGES_BUCKET}/${filePath}`;
+
+export const getProfilePhotoPath = (publicUrl) => {
+    if (!publicUrl) return null;
+    const prefix = `https://storage.googleapis.com/${PROFILE_IMAGES_BUCKET}/`;
+    return publicUrl.startsWith(prefix) ? publicUrl.slice(prefix.length) : null;
+};
 
 /**
  * @param {{ userId: string, file: import("multer").File, category?: string, documentType: string, uploadIp?: string }} params
@@ -258,8 +263,7 @@ export const uploadProfilePhoto = async ({ userId, file }) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundError("User not found");
 
-    const fileExtension = path.extname(file.originalname);
-    const filePath = `${userId}${fileExtension}`;
+    const filePath = buildDocumentPath(userId, "profile", file.originalname);
 
     await saveToGcs(PROFILE_IMAGES_BUCKET, filePath, file, "public, max-age=86400");
 

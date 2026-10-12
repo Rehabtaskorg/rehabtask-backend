@@ -1,4 +1,21 @@
-import { updateCustomerProfile as updateCustomerProfileService } from "../services/customer.service.js";
+import {
+    getCustomerProfile as getCustomerProfileService,
+    updateCustomerProfile as updateCustomerProfileService,
+} from "../services/customer.service.js";
+
+/**
+ * GET /api/customers/profile
+ * Authenticated customer fetches their own profile.
+ */
+export const getCustomerProfileController = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+        const profile = await getCustomerProfileService(userId);
+        res.status(200).json({ success: true, data: profile });
+    } catch (error) {
+        next(error);
+    }
+};
 
 /**
  * PUT /api/customers/profile

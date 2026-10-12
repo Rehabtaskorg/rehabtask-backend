@@ -55,6 +55,10 @@ export const updateCustomerProfileSchema = z.object({
             return !isNaN(date.getTime()) && age >= 18 && age <= 100;
         }, "Individual must be between 18 and 100 years old")
         .optional(),
-    primaryDiagnosis: z.string().max(255, "Primary diagnosis must be 255 characters or less").optional().nullable(),
+    primaryDiagnosis: z
+        .string()
+        .min(1, "Primary diagnosis is required")
+        .max(255, "Primary diagnosis must be 255 characters or less")
+        .optional(),
     referringProviderName: z.string().max(255, "Referring provider must be 255 characters or less").optional().nullable(),
 }).passthrough();

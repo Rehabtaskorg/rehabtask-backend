@@ -4,7 +4,8 @@ import {
     getTherapistProfileController,
     updateTherapistProfileController,
     updateWorkAreasController,
-    updateAvailabilityController
+    updateAvailabilityController,
+    updateAttributesController
 } from "../controllers/therapist.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -13,6 +14,7 @@ import {
     updateWorkAreasSchema,
     updateAvailabilitySchema
 } from "../validators/therapist.schema.js";
+import { updateAttributesSchema } from "../validators/therapistAttributes.schema.js";
 
 const router = express.Router();
 
@@ -49,6 +51,15 @@ router.put(
     authorize([USER_ROLES.THERAPIST]),
     validate(updateAvailabilitySchema),
     updateAvailabilityController
+);
+
+// PUT /api/therapist/attributes — Replace clinical profile attributes
+router.put(
+    "/attributes",
+    authenticate,
+    authorize([USER_ROLES.THERAPIST]),
+    validate(updateAttributesSchema),
+    updateAttributesController
 );
 
 export default router;
