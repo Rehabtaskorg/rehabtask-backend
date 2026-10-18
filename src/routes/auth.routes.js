@@ -1,5 +1,6 @@
 import express from "express";
 import {
+    startSignupPhoneController,
     registerCustomerController,
     registerTherapistController,
     loginController,
@@ -31,6 +32,8 @@ import { authenticate } from "../middleware/auth.js";
 import { recaptchaMiddleware } from "../middleware/recaptcha.js";
 import { validate } from "../middleware/validate.js";
 import {
+    signupPhoneStartSchema,
+    onboardingPhoneStartSchema,
     registerCustomerSchema,
     registerTherapistSchema,
     loginSchema,
@@ -61,7 +64,10 @@ const router = express.Router();
  * Public routes (no authentication required)
  */
 
+router.post("/oauth/phone/start", authenticate, registrationRateLimiter, validate(onboardingPhoneStartSchema), startSignupPhoneController);
+
 // Registration routes
+router.post("/register/phone/start", registrationRateLimiter, recaptchaMiddleware, validate(signupPhoneStartSchema), startSignupPhoneController);
 router.post(
     "/register/customer",
     recaptchaMiddleware,
