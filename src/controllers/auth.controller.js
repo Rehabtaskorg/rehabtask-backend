@@ -1,3 +1,4 @@
+import { signupPhone } from "../services/signupPhone.service.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { COOKIE_MAX_AGE } from "../utils/constants.js";
 import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
@@ -48,8 +49,8 @@ const getRoleCookieOptions = () => ({
  */
 export const registerCustomerController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, smsOptIn, customerType, agencyName } = req.body;
-        const result = await registerCustomer({ email, password, fullName, phone, smsOptIn, customerType, agencyName });
+        const { email, password, fullName, phone, phoneVerification, smsOptIn, customerType, agencyName } = req.body;
+        const result = await registerCustomer({ email, password, fullName, phone, phoneVerification, smsOptIn, customerType, agencyName });
 
         const response = { success: true, message: result.message };
 
@@ -76,8 +77,8 @@ export const registerCustomerController = async (req, res, next) => {
  */
 export const registerTherapistController = async (req, res, next) => {
     try {
-        const { email, password, fullName, phone, smsOptIn } = req.body;
-        const result = await registerTherapist({ email, password, fullName, phone, smsOptIn });
+        const { email, password, fullName, phone, phoneVerification, smsOptIn } = req.body;
+        const result = await registerTherapist({ email, password, fullName, phone, phoneVerification, smsOptIn });
 
         const response = { success: true, message: result.message };
 
@@ -290,7 +291,7 @@ export const changePasswordController = async (req, res, next) => {
  */
 export const completeOAuthOnboardingController = async (req, res, next) => {
     try {
-        const { role, fullName, phone, smsOptIn, customerType, agencyName, location } = req.body;
+        const { role, fullName, phone, phoneVerification, smsOptIn, customerType, agencyName, location } = req.body;
 
         const profileData = {
             fullName,
@@ -298,7 +299,7 @@ export const completeOAuthOnboardingController = async (req, res, next) => {
             ...(role === "customer" && { customerType, agencyName, location }),
         };
 
-        const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData, smsOptIn });
+        const result = await completeOAuthOnboarding({ userId: req.user.id, role, profileData, phoneVerification, smsOptIn });
 
         res.cookie("app_role", result.user.role, getRoleCookieOptions());
 
@@ -481,4 +482,11 @@ export const refreshTokenController = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
+
+export const startSignupPhoneController = async (req, res, next) => {
+    try {
+        const result = await signupPhone.start({ ...req.body, ...(req.user && { email: req.user.email }), ipAddress: req.ip || "unknown" });
+        res.json({ success: true, data: result });
+    } catch (error) { next(error); }
 };

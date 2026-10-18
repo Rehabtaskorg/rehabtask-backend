@@ -1,3 +1,5 @@
+import { signupPhone } from "./signupPhone.service.js";
+import { signupSmsSettings } from "./signupPhone.core.js";
 import { prisma, withAdminAccess } from "../config/prisma.js";
 import { getIdentityPlatformAuth } from "../config/identityPlatform.js";
 import { env } from "../config/env.js";
@@ -51,8 +53,9 @@ const sendResetLink = async (email, type = "reset") => {
     }
 };
 
-export const registerCustomer = async ({ email, password, fullName, phone, smsOptIn = false, customerType, agencyName }) => {
+export const registerCustomer = async ({ email, password, fullName, phone, phoneVerification, smsOptIn = false, customerType, agencyName }) => {
     const normalizedEmail = email.toLowerCase().trim();
+    const phoneChallengeId = await signupPhone.verify({ email: normalizedEmail, phone, phoneVerification });
     const auth = getIdentityPlatformAuth();
     let authUid;
 
@@ -77,6 +80,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, smsOp
         });
 
         const user = await withAdminAccess(async (db) => {
+            await signupPhone.consume(db, phoneChallengeId);
             const createdUser = await db.user.create({
                 data: {
                     id: authUid,
@@ -85,6 +89,7 @@ export const registerCustomer = async ({ email, password, fullName, phone, smsOp
                     role: USER_ROLES.CUSTOMER,
                     emailVerified: false,
                     isActive: true,
+                    securitySettings: { create: signupSmsSettings(phone) },
                     customerProfile: {
                         create: {
                             fullName,
@@ -138,8 +143,9 @@ export const registerCustomer = async ({ email, password, fullName, phone, smsOp
     }
 };
 
-export const registerTherapist = async ({ email, password, fullName, phone, smsOptIn = false }) => {
+export const registerTherapist = async ({ email, password, fullName, phone, phoneVerification, smsOptIn = false }) => {
     const normalizedEmail = email.toLowerCase().trim();
+    const phoneChallengeId = await signupPhone.verify({ email: normalizedEmail, phone, phoneVerification });
     const auth = getIdentityPlatformAuth();
     let authUid;
 
@@ -159,6 +165,7 @@ export const registerTherapist = async ({ email, password, fullName, phone, smsO
         });
 
         const user = await withAdminAccess(async (db) => {
+            await signupPhone.consume(db, phoneChallengeId);
             return db.user.create({
                 data: {
                     id: authUid,
@@ -167,6 +174,7 @@ export const registerTherapist = async ({ email, password, fullName, phone, smsO
                     role: USER_ROLES.THERAPIST,
                     emailVerified: false,
                     isActive: true,
+                    securitySettings: { create: signupSmsSettings(phone) },
                     therapistProfile: {
                         create: { fullName, phone, smsOptIn, approvalStatus: APPROVAL_STATUS.PENDING },
                     },
@@ -234,7 +242,7 @@ export const resendVerificationEmail = async ({ email, redirect = null }) => {
     return { message: "If an unverified account exists with this email, a verification link has been sent." };
 };
 
-export const completeOAuthOnboarding = async ({ userId, role, profileData, smsOptIn = false }) => {
+export const completeOAuthOnboarding = async ({ userId, role, profileData, phoneVerification, smsOptIn = false }) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: { customerProfile: true, therapistProfile: true },
@@ -244,12 +252,16 @@ export const completeOAuthOnboarding = async ({ userId, role, profileData, smsOp
     if (role === USER_ROLES.CUSTOMER && user.customerProfile) throw new ConflictError("Customer profile already exists");
     if (role === USER_ROLES.THERAPIST && user.therapistProfile) throw new ConflictError("Therapist profile already exists");
 
+    const phoneChallengeId = await signupPhone.verify({ email: user.email, phone: profileData.phone, phoneVerification });
+
     const existingPatient = await prisma.patient.findFirst({
         where: { email: user.email, userId: null },
         include: { agency: { select: { id: true, fullName: true, agencyName: true } } },
     });
 
     const updatedUser = await withAdminAccess(async (db) => {
+        await signupPhone.consume(db, phoneChallengeId);
+        await db.userSecuritySettings.upsert({ where: { userId }, update: signupSmsSettings(profileData.phone), create: { userId, ...signupSmsSettings(profileData.phone) } });
         if (role === USER_ROLES.CUSTOMER) {
             const updated = await db.user.update({
                 where: { id: userId },

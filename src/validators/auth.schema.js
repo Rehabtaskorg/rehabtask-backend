@@ -35,6 +35,14 @@ const phoneSchema = z
     );
 
 
+export const onboardingPhoneStartSchema = z.object({ phone: phoneSchema });
+export const signupPhoneStartSchema = z.object({ email: emailSchema, phone: phoneSchema });
+const phoneVerificationSchema = z.object({
+    challengeId: z.uuid(),
+    challengeToken: z.string().regex(/^[a-f0-9]{64}$/),
+    code: z.string().regex(/^\d{6}$/),
+});
+
 /**
  * Full name validation
  */
@@ -60,6 +68,7 @@ export const registerCustomerSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    phoneVerification: phoneVerificationSchema,
     smsOptIn: z.boolean().optional().default(false),
     location: z.string().trim().optional(),
     customerType: customerTypeSchema,
@@ -86,6 +95,7 @@ export const registerTherapistSchema = z.object({
     password: passwordSchema,
     fullName: fullNameSchema,
     phone: phoneSchema,
+    phoneVerification: phoneVerificationSchema,
     smsOptIn: z.boolean().optional().default(false),
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
@@ -139,6 +149,7 @@ export const completeOAuthOnboardingSchema = z.object({
         .max(255, "Full name must not exceed 255 characters"),
 
     phone: phoneSchema,
+    phoneVerification: phoneVerificationSchema,
 
     smsOptIn: z.boolean().optional().default(false),
 
