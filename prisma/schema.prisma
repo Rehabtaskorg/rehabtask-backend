@@ -719,6 +719,9 @@ model Review {
   customerId  String   @map("customer_id") @db.Uuid
   therapistId String   @map("therapist_id") @db.Uuid
   rating      Int
+  communicationRating   Int?  @map("communication_rating")
+  documentationRating   Int?  @map("documentation_rating")
+  professionalismRating Int?  @map("professionalism_rating")
   comment     String?  @db.Text
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
