@@ -1,7 +1,7 @@
 import { SESSION_STATUS, BOOKING_STATUS, USER_ROLES, REVISION_EXTEND_DAYS, MAX_VISIT_TITLE_LENGTH } from "../utils/constants.js";
 import { THERAPIST_SAFE_SELECT, CUSTOMER_SAFE_SELECT, therapistSelectFor, hasContactAccessByProfileId } from "../utils/therapistContactAccess.js";
 import { prisma } from "../config/prisma.js";
-import { BadRequestError } from "../utils/errors.js";
+import { BadRequestError, NotFoundError, AuthorizationError, ConflictError } from "../utils/errors.js";
 import { logger } from "../config/logger.js";
 import {
     sendSessionCompletionRequest,
@@ -10,6 +10,7 @@ import {
     sendSessionRevisionResponded,
     sendSessionRevisionSubmitted,
     sendSessionRevisionExtended,
+    sendTherapistWantsToContinue,
 } from "./email.service.js";
 import { smsCustWorkSubmittedForReview, smsTherPaymentReleased, smsTherRevisionRequested, smsCustRevisionResponded, smsCustRevisionExtended } from "./sms.service.js";
 import { logAction } from "./audit.service.js";
@@ -1350,4 +1351,109 @@ export const getTherapistSessions = async (therapistId) => {
     });
 
     return sessions;
+};
+const CONTINUATION_REQUESTED_ACTION = "booking.continuation_requested";
+
+/**
+ * Therapist signals they would like to continue working with this customer after the
+ * booking's final session. Sends a nudge — the therapist cannot create an offer here,
+ * because the original request is already `completed` and `createOffer` only accepts
+ * requests in `created` or `offers_received`. The customer holds the next action.
+ *
+ * Idempotent per booking: the audit log is the source of truth, so a therapist who is
+ * unsure whether their click registered cannot re-send the email by clicking again.
+ *
+ * @param {string} sessionId - the session just marked complete
+ * @param {string} therapistId - therapist profile id, from the authenticated user
+ * @returns {Promise<{ bookingId: string, customerName: string }>}
+ */
+export const requestContinuation = async (sessionId, therapistId) => {
+    const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: {
+            status: true,
+            bookingId: true,
+            booking: {
+                select: {
+                    id: true,
+                    therapistId: true,
+                    patientId: true,
+                    customer: {
+                        select: {
+                            fullName: true,
+                            user: { select: { id: true, email: true } },
+                        },
+                    },
+                    therapist: {
+                        select: { id: true, fullName: true, userId: true },
+                    },
+                },
+            },
+        },
+    });
+
+    if (!session) throw new NotFoundError("Session not found");
+    if (session.booking.therapistId !== therapistId) {
+        throw new AuthorizationError("You can only continue your own bookings");
+    }
+    if (session.status !== SESSION_STATUS.COMPLETED_BY_THERAPIST) {
+        throw new ConflictError(
+            "Continuation can only be requested once the session is marked complete",
+            "SESSION_NOT_COMPLETE"
+        );
+    }
+
+    const alreadyRequested = await prisma.auditLog.findFirst({
+        where: {
+            action: CONTINUATION_REQUESTED_ACTION,
+            entityType: "booking",
+            entityId: session.bookingId,
+        },
+        select: { id: true },
+    });
+
+    if (alreadyRequested) {
+        throw new ConflictError(
+            "This customer has already been notified that you would like to continue",
+            "CONTINUATION_ALREADY_REQUESTED"
+        );
+    }
+
+    const { booking } = session;
+    const { customer, therapist } = booking;
+
+    await logAction({
+        actorId: therapist.userId,
+        action: CONTINUATION_REQUESTED_ACTION,
+        entityType: "booking",
+        entityId: booking.id,
+        changes: { therapistId: therapist.id, customerUserId: customer.user.id },
+    });
+
+    sendTherapistWantsToContinue({ customer, therapist }).catch((err) => {
+        logger.error("[SessionService] sendTherapistWantsToContinue failed", {
+            bookingId: booking.id,
+            error: err.message,
+        });
+    });
+
+    findOrCreateDirectConversation(therapist.userId, customer.user.id, booking.patientId || null)
+        .then((conversation) =>
+            createSystemMessage({
+                conversationId: conversation.id,
+                actorId: therapist.userId,
+                recipientId: customer.user.id,
+                content: `${therapist.fullName} would like to continue working with you. You can request more visits from their profile.`,
+                systemType: "continuation_requested",
+                bookingId: booking.id,
+            })
+        )
+        .catch((err) => {
+            logger.error("[SessionService] System message (continuation_requested) failed", {
+                bookingId: booking.id,
+                error: err.message,
+            });
+        });
+
+    return { bookingId: booking.id, customerName: customer.fullName };
 };
