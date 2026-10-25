@@ -1377,7 +1377,6 @@ export const requestContinuation = async (sessionId, therapistId) => {
                 select: {
                     id: true,
                     therapistId: true,
-                    patientId: true,
                     customer: {
                         select: {
                             fullName: true,
@@ -1437,7 +1436,7 @@ export const requestContinuation = async (sessionId, therapistId) => {
         });
     });
 
-    findOrCreateDirectConversation(therapist.userId, customer.user.id, booking.patientId || null)
+    findOrCreateDirectConversation(therapist.userId, customer.user.id, null)
         .then((conversation) =>
             createSystemMessage({
                 conversationId: conversation.id,
