@@ -170,6 +170,27 @@ export const directRequestNotification = ({ therapist, request }) => {
     };
 };
 
+/**
+ * Therapist would like to continue working with a customer after a booking completes.
+ * Links to the therapist's profile rather than the request form: the form never names the
+ * therapist, so the profile is the only destination that confirms why the email was clicked.
+ * Carries no patient or clinical data.
+ *
+ * @param {{ customer: { fullName: string }, therapist: { id: string, fullName: string } }} props
+ * @returns {{ subject: string, html: string }}
+ */
+export const therapistWantsToContinue = ({ customer, therapist }) => ({
+    subject: `${therapist.fullName} would like to continue working with you`,
+    html: layout(`
+        ${heading('Continue Your Care')}
+        ${text(`Hi ${customer.fullName},`)}
+        ${text(`<strong>${therapist.fullName}</strong> has let us know they would like to continue your visits.`)}
+        ${text('You can review their details and request more visits from their profile.')}
+        ${button(`${FRONTEND_URL}/customer/find-therapists/${therapist.id}`, 'View Profile')}
+        ${muted(`Or <a href="${FRONTEND_URL}/customer/requests/new?directTo=${therapist.id}">request visits now</a>.`)}
+    `),
+});
+
 // New Offer Notification (to customer)
 export const newOfferNotification = ({ customer, therapist, offer }) => {
     const expiryDate = offer.expiresAt ? formatDate(offer.expiresAt) : null;

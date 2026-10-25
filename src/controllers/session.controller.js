@@ -6,6 +6,7 @@ import {
     markSessionMissed,
     markSessionAttempted,
     updateSessionTitle,
+    requestContinuation,
 } from "../services/session.service.js";
 import {
     approveSessionCancellation,
@@ -245,8 +246,23 @@ const markAttemptedByTherapistController = async (req, res, next) => {
     }
 };
 
+/**
+ * Therapist asks to continue with this customer after the final session
+ */
+const requestContinuationController = async (req, res, next) => {
+    try {
+        const { sessionId } = req.params;
+        const therapistId = req.user.therapistProfile.id;
+        const result = await requestContinuation(sessionId, therapistId);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export {
     completeTherapistController,
+    requestContinuationController,
     confirmByCustomerController,
     cancelSessionController,
     getSessionController,

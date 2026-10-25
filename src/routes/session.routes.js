@@ -1,7 +1,7 @@
 import { USER_ROLES } from "../utils/constants.js";
 import express from "express";
 import {
-    cancelSessionController, completeTherapistController,
+    cancelSessionController, completeTherapistController, requestContinuationController,
     confirmByCustomerController, getCustomerSessionsController,
     getSessionController, getTherapistSessionsController, scheduleSessionController,
     updateSessionTitleController,
@@ -20,6 +20,7 @@ router.get("/customer", authenticate, authorize([USER_ROLES.CUSTOMER]), getCusto
 router.get("/therapist", authenticate, authorize([USER_ROLES.THERAPIST]), getTherapistSessionsController);
 router.get("/:sessionId", authenticate, getSessionController);
 router.post("/:sessionId/complete", authenticate, authorize([USER_ROLES.THERAPIST]), completeTherapistController);
+router.post("/:sessionId/request-continuation", authenticate, authorize([USER_ROLES.THERAPIST]), requestContinuationController);
 router.post("/:sessionId/confirm", authenticate, authorize([USER_ROLES.CUSTOMER]), confirmByCustomerController);
 router.post("/:sessionId/cancellation/request", authenticate, cancelSessionController);
 router.post("/:sessionId/cancellation/approve", authenticate, approveSessionCancellationController);
