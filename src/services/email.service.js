@@ -11,6 +11,7 @@ import {
     subscriptionActivated,
     newRequestNotification,
     directRequestNotification,
+    therapistWantsToContinue,
     newOfferNotification,
     offerAccepted,
     paymentConfirmation,
@@ -151,6 +152,16 @@ export const sendNewRequestNotifications = async ({ therapists, request, custome
  */
 export const sendDirectRequestNotification = async ({ therapist, request }) => {
     return dispatch(therapist.user.email, directRequestNotification, { therapist, request });
+};
+
+/**
+ * Booking completed and the therapist wants to continue — nudge the customer.
+ *
+ * @param {{ customer: { fullName: string, user: { email: string } },
+ *           therapist: { id: string, fullName: string } }} params
+ */
+export const sendTherapistWantsToContinue = async ({ customer, therapist }) => {
+    return dispatch(customer.user.email, therapistWantsToContinue, { customer, therapist });
 };
 
 /**

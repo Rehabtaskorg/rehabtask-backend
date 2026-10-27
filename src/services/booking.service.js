@@ -12,8 +12,10 @@ import { logger } from "../config/logger.js";
 // numbers at the service boundary so consumers never need to parseFloat() themselves.
 function serializeBooking(b) {
     if (!b) return b;
+    const { review, ...rest } = b;
     return {
-        ...b,
+        ...rest,
+        ...(review !== undefined && { hasReview: review !== null }),
         rate: b.rate != null ? parseFloat(b.rate) : null,
         attemptedVisitRate: b.attemptedVisitRate != null ? parseFloat(b.attemptedVisitRate) : null,
     };
@@ -47,6 +49,7 @@ export const getBookingById = async (bookingId, userId) => {
                 },
             },
             payment: { include: { sessionPayouts: true } },
+            review: { select: { id: true } },
             sessions: {
                 orderBy: { sessionNumber: "asc" },
                 include: {

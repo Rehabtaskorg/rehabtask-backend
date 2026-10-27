@@ -1,18 +1,19 @@
 import { prisma } from "../config/prisma.js";
+import { BOOKING_STATUS } from "../utils/constants.js";
 import {
     NotFoundError, BadRequestError,
     ConflictError, AuthorizationError
 } from "../utils/errors.js";
 
+const averageRating = (...ratings) =>
+    Math.round(ratings.reduce((sum, value) => sum + value, 0) / ratings.length);
+
 export const createReview = async (customerId, data) => {
-    const { bookingId, rating, comment } = data;
+    const { bookingId, communicationRating, documentationRating, professionalismRating, comment } = data;
 
     const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
-        include: {
-            customer: true,
-            therapist: true,
-        },
+        select: { customerId: true, therapistId: true, status: true },
     });
 
     if (!booking) throw new NotFoundError("Booking not found");
@@ -21,7 +22,7 @@ export const createReview = async (customerId, data) => {
         throw new AuthorizationError("You can only review your own bookings");
     }
 
-    if (booking.status !== "completed") {
+    if (booking.status !== BOOKING_STATUS.COMPLETED) {
         throw new BadRequestError(
             "Reviews can only be submitted for completed bookings"
         );
@@ -40,7 +41,10 @@ export const createReview = async (customerId, data) => {
             bookingId,
             customerId,
             therapistId: booking.therapistId,
-            rating,
+            rating: averageRating(communicationRating, documentationRating, professionalismRating),
+            communicationRating,
+            documentationRating,
+            professionalismRating,
             comment: comment || null,
         },
     });

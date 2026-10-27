@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { resolvePreferredMethod } from "./twoFactorMethods.js";
+import { createTwoFactorControls } from "./twoFactorControls.js";
 import { prisma } from "../config/prisma.js";
 import { sendEmail } from "../config/email.js";
 import { sendSms } from "./sms.service.js";
@@ -10,6 +12,7 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const SEND_WINDOW_MS = 15 * 60 * 1000;
 const MAX_SENDS_PER_WINDOW = 5;
 const MAX_ATTEMPTS = 5;
+const twoFactorControls = createTwoFactorControls({ prisma, logAction });
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const createOtp = () => crypto.randomInt(100000, 1000000).toString();
@@ -33,15 +36,6 @@ const getMethods = (user, settings) => ({
     email: Boolean(user.emailVerified && settings?.emailTwoFactorEnabled),
     sms: Boolean(settings?.smsTwoFactorEnabled && settings.phoneVerifiedAt && getPhone(user, settings)),
 });
-
-/** Prefer SMS whenever a phone method is enabled; otherwise email. */
-const resolvePreferredMethod = (methods, settings = null, requested = null) => {
-    if (requested && methods[requested]) return requested;
-    if (methods.sms) return "sms";
-    if (methods.email) return "email";
-    if (settings?.preferredMethod && methods[settings.preferredMethod]) return settings.preferredMethod;
-    return "email";
-};
 
 const listAvailableMethods = (methods) => ["sms", "email"].filter((method) => methods[method]);
 
@@ -250,11 +244,8 @@ export const setEmailTwoFactorEnabled = async (user, enabled) => {
 
 export const setTwoFactorEnabled = async (user, enabled) => {
     if (enabled) return setEmailTwoFactorEnabled(user, true);
-    if (user.role === "admin") throw new BadRequestError("Admin two-factor authentication is mandatory", "2FA_ADMIN_MANDATORY");
-    throw new BadRequestError(
-        "Confirm with your password and a verification code to disable two-factor authentication",
-        "2FA_SECURE_DISABLE_REQUIRED"
-    );
+    await twoFactorControls.disable(user);
+    return getTwoFactorStatus(user);
 };
 
 export const setPreferredMethod = async (user, method) => {

@@ -719,6 +719,9 @@ model Review {
   customerId  String   @map("customer_id") @db.Uuid
   therapistId String   @map("therapist_id") @db.Uuid
   rating      Int
+  communicationRating   Int?  @map("communication_rating")
+  documentationRating   Int?  @map("documentation_rating")
+  professionalismRating Int?  @map("professionalism_rating")
   comment     String?  @db.Text
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -855,6 +858,23 @@ model AuditLog {
   @@index([entityType, entityId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+model SignupPhoneChallenge {
+  id                 String   @id @default(uuid()) @db.Uuid
+  email              String   @db.VarChar(255)
+  phone              String   @db.VarChar(20)
+  tokenHash          String   @map("token_hash") @db.VarChar(64)
+  codeHash           String   @map("code_hash") @db.VarChar(64)
+  ipAddress          String   @map("ip_address") @db.VarChar(64)
+  attemptCount       Int      @default(0) @map("attempt_count")
+  status             String   @default("pending") @db.VarChar(20)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt          DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([phone, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("signup_phone_challenges")
 }
 
 model UserSecuritySettings {
