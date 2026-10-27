@@ -80,3 +80,16 @@ export const conversationsRateLimiter = createRateLimiter({
         return req.user?.id || ipKeyGenerator(req);
     }
 });
+export const aiChatBurstLimiter = createRateLimiter({
+    windowMs: RATE_LIMIT.AI_BURST_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.AI_BURST_MAX_PROD : RATE_LIMIT.AI_BURST_MAX_DEV,
+    message: "You're sending messages too quickly. Please wait a moment.",
+    keyGenerator: (req) => req.user?.id || ipKeyGenerator(req),
+});
+
+export const aiChatHourlyLimiter = createRateLimiter({
+    windowMs: RATE_LIMIT.AI_HOURLY_WINDOW_MS,
+    max: isProd ? RATE_LIMIT.AI_HOURLY_MAX_PROD : RATE_LIMIT.AI_HOURLY_MAX_DEV,
+    message: "You've reached the chat limit for now. Please try again later or contact support.",
+    keyGenerator: (req) => req.user?.id || ipKeyGenerator(req),
+});
