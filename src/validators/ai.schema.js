@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AI_CONFIG } from "../config/ai.js";
+import { AI_AUDIENCES, AI_CONFIG } from "../config/ai.js";
 
 const content = (max, label) =>
     z.string().trim().min(1, "Message cannot be empty").max(max, `${label} must be ${max} characters or less`);
@@ -17,6 +17,7 @@ const message = z.discriminatedUnion("role", [
 
 export const chatSchema = z.object({
     sessionId: z.string().uuid("Invalid session ID").optional(),
+    audience: z.enum(AI_AUDIENCES).optional(),
     messages: z
         .array(message)
         .min(1, "At least one message is required")

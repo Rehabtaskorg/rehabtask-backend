@@ -17,6 +17,8 @@ export const AI_CONFIG = Object.freeze({
 
 export const SUPPORT_EMAIL = "support@rehabtask.com";
 
+export const AI_AUDIENCES = ["public", "customer", "therapist", "agency"];
+
 export const UNKNOWN_ANSWER =
     "I don't have enough information to answer that accurately. " +
     `Please contact RehabTask Support at ${SUPPORT_EMAIL} for assistance.`;
@@ -59,3 +61,21 @@ Direct people to ${SUPPORT_EMAIL} for complaints, billing disputes, refunds, acc
 ## RehabTask information
 
 ${KNOWLEDGE_BASE}`;
+
+const AUDIENCE_CONTEXT = {
+    customer: "You are speaking with a signed-in customer who books therapy on RehabTask.",
+    therapist: "You are speaking with a signed-in therapist who takes cases on RehabTask.",
+    agency: "You are speaking with a signed-in home health agency that manages patients on RehabTask.",
+};
+
+/**
+ * Builds the system prompt for one request. A signed-in user gets a line naming who
+ * they are, so answers are framed for their role instead of for a visitor.
+ *
+ * @param {string} [audience] one of AI_AUDIENCES
+ * @returns {string}
+ */
+export const buildSystemPrompt = (audience) => {
+    const context = AUDIENCE_CONTEXT[audience];
+    return context ? `${SYSTEM_PROMPT}\n\n## Who you are speaking with\n\n${context}` : SYSTEM_PROMPT;
+};
