@@ -6,6 +6,15 @@ import { ServiceUnavailableError } from "../utils/errors.js";
 
 const LEAD_OFFER_AFTER_QUESTIONS = 2;
 
+const ASKED_FOR_A_PERSON = [
+    /\b(speak|talk|chat)\b.{0,20}\b(someone|somebody|a person|a human|the team|an agent|a rep|a representative)\b/,
+    /\b(contact|call|email|reach)\b.{0,20}\b(me|us)\b/,
+    /\b(human|real person|actual person)\b/,
+    /\b(get|have|put)\b.{0,20}\b(in touch|touch with)\b/,
+    /\b(someone|somebody)\b.{0,20}\b(call|contact|reach|email|get back)\b/,
+    /\bcustomer (service|support)\b/,
+];
+
 const SIGNED_IN_AUDIENCE = {
     [USER_ROLES.THERAPIST]: "therapist",
     [USER_ROLES.CUSTOMER]: "customer",
@@ -28,10 +37,17 @@ const resolveAudience = ({ role, audience }) => {
  * never by the model, so it cannot be malformed, leaked into a reply or induced by
  * anything the user types. Signed-in users are routed to support instead.
  */
-const shouldOfferLead = ({ messages, userId, audience }) =>
-    !userId &&
-    audience === "public" &&
-    messages.filter((m) => m.role === "user").length >= LEAD_OFFER_AFTER_QUESTIONS;
+const askedForAPerson = (messages) => {
+    const latest = messages.at(-1)?.content?.toLowerCase() ?? "";
+    return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
+};
+
+const shouldOfferLead = ({ messages, userId, audience }) => {
+    if (userId || audience !== "public") return false;
+
+    const questions = messages.filter((m) => m.role === "user").length;
+    return questions >= LEAD_OFFER_AFTER_QUESTIONS || askedForAPerson(messages);
+};
 
 /**
  * @param {{ messages: Array<{role: string, content: string}>, sessionId?: string,
