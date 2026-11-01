@@ -1,9 +1,9 @@
 import express from "express";
-import { chatController } from "../controllers/ai.controller.js";
+import { chatController, leadController } from "../controllers/ai.controller.js";
 import { optionalAuthenticate } from "../middleware/auth.js";
 import { aiChatBurstLimiter, aiChatHourlyLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
-import { chatSchema } from "../validators/ai.schema.js";
+import { chatSchema, leadSchema } from "../validators/ai.schema.js";
 
 const router = express.Router();
 
@@ -14,6 +14,14 @@ router.post(
     aiChatHourlyLimiter,
     validate(chatSchema),
     chatController
+);
+
+router.post(
+    "/lead",
+    aiChatBurstLimiter,
+    aiChatHourlyLimiter,
+    validate(leadSchema),
+    leadController
 );
 
 export default router;

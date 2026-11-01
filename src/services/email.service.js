@@ -1,6 +1,7 @@
 import { sendMail } from "../config/mailer.js";
 import { logger } from "../config/logger.js";
 import { env } from "../config/env.js";
+import { LEAD_INBOX } from "../config/ai.js";
 
 import {
     therapistWelcome,
@@ -43,6 +44,7 @@ import {
     commissionRateChanged,
     paymentReleasedToCustomer,
     paymentReminder,
+    chatLead,
     trialExpiringSoon,
     trialExpired,
     subscriptionPaymentFailed,
@@ -93,6 +95,16 @@ const dispatch = async (to, templateFn, props) => {
         return await sendMail({ to, subject, html });
     } catch (error) {
         logger.error('[EmailService] Dispatch failed', { to, error: error.message });
+        return { success: false, error: error.message };
+    }
+};
+
+export const sendChatLead = async ({ lead }) => {
+    try {
+        const { subject, html } = chatLead(lead);
+        return await sendMail({ to: LEAD_INBOX, subject, html, replyTo: lead.email });
+    } catch (error) {
+        logger.error('[EmailService] Chat lead dispatch failed', { error: error.message });
         return { success: false, error: error.message };
     }
 };

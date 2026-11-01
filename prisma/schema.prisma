@@ -37,7 +37,6 @@ model User {
   agreementAcceptances       UnifiedAgreementAcceptance[]
   securitySettings           UserSecuritySettings?
   twoFactorChallenges        TwoFactorChallenge[]
-  chatSessions               ChatSession[]
 
   @@index([email])
   @@index([role, isActive])
@@ -791,19 +790,6 @@ model Dispute {
   @@map("disputes")
 }
 
-model ChatSession {
-  id             String   @id @db.Uuid
-  userId         String?  @map("user_id") @db.VarChar(128)
-  userRole       String?  @map("user_role") @db.VarChar(20)
-  startedAt      DateTime @default(now()) @map("started_at") @db.Timestamptz(3)
-  lastActivityAt DateTime @default(now()) @updatedAt @map("last_activity_at") @db.Timestamptz(3)
-
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([userId, startedAt])
-  @@index([startedAt])
-  @@map("chat_sessions")
-}
 
 model Notification {
   id         String    @id @default(uuid()) @db.Uuid

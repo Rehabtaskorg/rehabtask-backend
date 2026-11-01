@@ -19,6 +19,18 @@ export const SUPPORT_EMAIL = "support@rehabtask.com";
 
 export const AI_AUDIENCES = ["public", "customer", "therapist", "agency"];
 
+export const LEAD_INBOX = "contact@rehabtask.com";
+
+export const LEAD_ROLES = Object.freeze({
+    pt: "Physical Therapist",
+    ot: "Occupational Therapist",
+    slp: "Speech Therapist",
+    pta: "Physical Therapist Assistant",
+    cota: "Occupational Therapy Assistant",
+    agency: "Home health agency",
+    patient: "Patient or family",
+});
+
 export const UNKNOWN_ANSWER =
     "I don't have enough information to answer that accurately. " +
     `Please contact RehabTask Support at ${SUPPORT_EMAIL} for assistance.`;
