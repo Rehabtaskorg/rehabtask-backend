@@ -58,7 +58,7 @@ const sanitize = (messages) =>
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const grokResponder = async ({ messages }) => {
+const grokResponder = async ({ messages, systemPrompt }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
 
@@ -72,7 +72,10 @@ const grokResponder = async ({ messages }) => {
             body: JSON.stringify({
                 model: AI_CONFIG.model,
                 max_tokens: AI_CONFIG.maxOutputTokens,
-                messages: [{ role: "system", content: SYSTEM_PROMPT }, ...sanitize(messages)],
+                messages: [
+                    { role: "system", content: systemPrompt ?? SYSTEM_PROMPT },
+                    ...sanitize(messages),
+                ],
             }),
             signal: controller.signal,
         });
@@ -130,7 +133,7 @@ if (provider === "grok" && !apiKey) {
  * misspelled or non-production value fails the deploy rather than silently serving
  * stub answers to real users.
  *
- * @param {{ messages: Array<{role: string, content: string}> }} params
+ * @param {{ messages: Array<{role: string, content: string}>, systemPrompt?: string }} params
  * @returns {Promise<string>}
  */
-export const generateReply = async ({ messages }) => RESPONDERS[provider]({ messages });
+export const generateReply = async (params) => RESPONDERS[provider](params);
