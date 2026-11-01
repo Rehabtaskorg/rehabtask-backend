@@ -7,19 +7,19 @@ rehabilitation therapists. Therapy happens in the patient's home.
 
 ## Who uses RehabTask
 
-**Therapists** — licensed professionals who join the network, set their rates and service
+**Therapists** - licensed professionals who join the network, set their rates and service
 areas, and take on cases.
 
-**Home health agencies** — organisations managing multiple patients who need therapists for
+**Home health agencies** - organisations managing multiple patients who need therapists for
 those patients.
 
-**Individual patients** — people arranging therapy for themselves.
+**Individual patients** - people arranging therapy for themselves.
 
 ## Therapy disciplines supported
 
-- Physical Therapy — Physical Therapists and Physical Therapist Assistants
-- Occupational Therapy — Occupational Therapists and Occupational Therapist Assistants
-- Speech Language Pathology — Speech-Language Pathologists
+- Physical Therapy - Physical Therapists and Physical Therapist Assistants
+- Occupational Therapy - Occupational Therapists and Occupational Therapist Assistants
+- Speech Language Pathology - Speech-Language Pathologists
 
 ## How the marketplace works
 

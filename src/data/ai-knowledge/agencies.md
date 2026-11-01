@@ -27,10 +27,10 @@ details they need in order to provide care.
 
 Two ways, the same as any customer:
 
-**Browse and send a direct request** — search by discipline, location and availability, open a
+**Browse and send a direct request** - search by discipline, location and availability, open a
 therapist's profile, and send them a request. Only that therapist sees it.
 
-**Post a public request** — therapists whose licence type and service area match are notified
+**Post a public request** - therapists whose licence type and service area match are notified
 and can send offers.
 
 ## How bookings work
@@ -38,7 +38,7 @@ and can send offers.
 1. Create a request, assigned to one of your patients
 2. Therapists send offers with their rates and proposed dates
 3. Accept the offer you want
-4. Pay — the money is held securely
+4. Pay - the money is held securely
 5. The therapist completes the visit and marks it done
 6. Confirm it, and the therapist is paid
 

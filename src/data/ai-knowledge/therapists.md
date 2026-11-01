@@ -7,15 +7,15 @@ an onboarding process before you can take on cases.
 
 ## Onboarding steps
 
-1. **Personal information** — your name, contact details and photo
-2. **Identity** — government photo ID
-3. **Credentials** — your professional licence details
-4. **Insurance** — proof of professional liability insurance
-5. **HIPAA** — attestation that you will handle patient information appropriately
-6. **Profile** — your professional summary, specialties, languages and experience
-7. **Availability** — the areas you cover, your rates and when you can work
-8. **Payouts** — connecting your bank account through Stripe so you can be paid
-9. **Review** — a final check before submitting
+1. **Personal information** - your name, contact details and photo
+2. **Identity** - government photo ID
+3. **Credentials** - your professional licence details
+4. **Insurance** - proof of professional liability insurance
+5. **HIPAA** - attestation that you will handle patient information appropriately
+6. **Profile** - your professional summary, specialties, languages and experience
+7. **Availability** - the areas you cover, your rates and when you can work
+8. **Payouts** - connecting your bank account through Stripe so you can be paid
+9. **Review** - a final check before submitting
 
 Once submitted, your application goes to the RehabTask team for verification. You will be
 notified by email when a decision is made.
@@ -31,26 +31,26 @@ If something is missing or unclear, you will be told what needs correcting and c
 
 In your profile you set:
 
-- **Service areas** — the cities or regions you travel to, with a radius
-- **Rate per visit** — what you charge for a standard session
-- **Evaluation rate** — if you charge differently for an initial assessment
-- **Attempted visit rate** — what you are paid if you arrive and the session cannot proceed
-- **Travel fee** — if you charge for travel
-- **Availability** — when you can start taking cases, and your caseload capacity
+- **Service areas** - the cities or regions you travel to, with a radius
+- **Rate per visit** - what you charge for a standard session
+- **Evaluation rate** - if you charge differently for an initial assessment
+- **Attempted visit rate** - what you are paid if you arrive and the session cannot proceed
+- **Travel fee** - if you charge for travel
+- **Availability** - when you can start taking cases, and your caseload capacity
 
 ## Finding and receiving cases
 
-**Public requests** — when a customer posts a request, therapists whose licence type matches the
+**Public requests** - when a customer posts a request, therapists whose licence type matches the
 service needed and whose service area covers the location are notified. You can browse these and
 send an offer.
 
-**Direct requests** — a customer can send a request to you specifically. These are private and
+**Direct requests** - a customer can send a request to you specifically. These are private and
 only you can see them.
 
 ## Sending an offer
 
 On a request you can respond with your rate, the proposed date, the session type and a message.
-Offers expire if the customer does not respond — by default after 48 hours.
+Offers expire if the customer does not respond - by default after 48 hours.
 
 You can only send one active offer per request.
 
@@ -79,7 +79,7 @@ Payouts go to the bank account you connected during onboarding, on Stripe's stan
 
 ## Attempted and missed visits
 
-If you travel to a visit and it cannot go ahead — for example the patient is not home — you can
+If you travel to a visit and it cannot go ahead - for example the patient is not home - you can
 mark it as an attempted visit and receive your attempted visit rate rather than the full amount.
 
 ## Revisions

@@ -15,11 +15,11 @@ Your account is reviewed before you can book. You will be notified when it is ap
 
 There are two ways:
 
-**Browse and request directly** — search therapists by discipline, location and availability.
+**Browse and request directly** - search therapists by discipline, location and availability.
 Open a therapist's profile to see their experience, specialties, rates and reviews, then send
 them a request. Only that therapist sees it.
 
-**Post a request** — describe what you need and let matching therapists come to you. Therapists
+**Post a request** - describe what you need and let matching therapists come to you. Therapists
 whose licence and service area fit will be notified and can send offers.
 
 ## How booking works
@@ -36,7 +36,7 @@ whose licence and service area fit will be notified and can send offers.
 Each offer shows the therapist's rate, the proposed date and their message. You can accept it,
 decline it, or ask for a change.
 
-Offers expire if you do not respond — by default after 48 hours.
+Offers expire if you do not respond - by default after 48 hours.
 
 ## Payments
 
@@ -69,8 +69,8 @@ Refunds are returned to you through your connected account.
 
 ## Leaving a review
 
-Once a booking is complete you can rate the therapist on three things — communication, timely
-documentation and professionalism — and leave a comment. Reviews appear on the therapist's
+Once a booking is complete you can rate the therapist on three things - communication, timely
+documentation and professionalism - and leave a comment. Reviews appear on the therapist's
 profile.
 
 ## Messaging
