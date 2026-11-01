@@ -247,29 +247,51 @@ jobs:
             --set-env-vars "NODE_ENV=${{ env.NODE_ENV }},FRONTEND_URL=${{ env.FRONTEND_URL }},API_URL=${{ env.API_URL }},COOKIE_SECURE=${{ env.COOKIE_SECURE }},SUPABASE_URL=${{ env.SUPABASE_URL }},SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }},RECAPTCHA_MIN_SCORE=0.5,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PLATFORM_FEE_PERCENTAGE=10,AI_PROVIDER=grok,OFFER_EXPIRY_HOURS=48,AUTO_CONFIRM_HOURS=72,DEFAULT_SERVICE_RADIUS_MILES=25,EMAIL_FROM=RehabTask <noreply@rehabtask.com>,EMAIL_FROM_NAME=RehabTask,EMAIL_REPLY_TO=support@rehabtask.com,ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }},STRIPE_PRICE_PRO_MONTHLY=${{ env.STRIPE_PRICE_PRO_MONTHLY }},STRIPE_PRICE_ENTERPRISE_MONTHLY=${{ env.STRIPE_PRICE_ENTERPRISE_MONTHLY }},STRIPE_PRICE_UNLIMITED_MONTHLY=${{ env.STRIPE_PRICE_UNLIMITED_MONTHLY }}" \
             --set-secrets "$SECRETS" \
             --quiet
-          echo "Waiting 20s for revision registration..."
-          sleep 20
-          echo "Deploy complete — revision created with VPC"
+          echo "Waiting for the new revision to be registered..."
+          for i in {1..15}; do
+            NEW_REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --format="value(status.latestCreatedRevisionName)")
+            if [[ -n "$NEW_REVISION" && "$NEW_REVISION" != "${{ env.PREVIOUS_REVISION }}" ]]; then
+              echo "NEW_REVISION=$NEW_REVISION" >> $GITHUB_ENV
+              echo "New revision registered: $NEW_REVISION"
+              exit 0
+            fi
+            echo "Attempt $i: still reporting ${NEW_REVISION:-none}. Waiting 10s..."
+            sleep 10
+          done
+          echo "::error::No new revision appeared within 150s — deploy did not take effect."
+          exit 1
 
       - name: Health check and traffic switch
         run: |
-          REVISION=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
-            --format="value(status.latestCreatedRevisionName)")
+          REVISION="${{ env.NEW_REVISION }}"
+          if [[ -z "$REVISION" ]]; then
+            echo "::error::NEW_REVISION is empty — the deploy step did not register a revision."
+            exit 1
+          fi
           echo "Polling revision: $REVISION"
           for i in {1..18}; do
             STATUS=$(gcloud run revisions describe $REVISION \
               --region=${{ env.REGION }} \
-              --format="value(status.conditions[0].status)")
+              --format="value(status.conditions.filter(\"type=Ready\").firstof(status))")
             if [[ "$STATUS" == "True" ]]; then
               echo "Revision $REVISION is healthy."
               gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
                 --region=${{ env.REGION }} \
                 --to-revisions=$REVISION=100
-              echo "Traffic switched. Deploy complete."
+
+              SERVING=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+                --region=${{ env.REGION }} \
+                --format="value(status.traffic.filter(\"percent=100\").firstof(revisionName))")
+              if [[ "$SERVING" != "$REVISION" ]]; then
+                echo "::error::Traffic is on ${SERVING:-unknown}, expected $REVISION."
+                exit 1
+              fi
+              echo "Traffic confirmed on $REVISION. Deploy complete."
               exit 0
             fi
-            echo "Attempt $i: not ready. Waiting 20s..."
+            echo "Attempt $i: Ready=${STATUS:-unknown}. Waiting 20s..."
             sleep 20
           done
           echo "Revision failed health check."
