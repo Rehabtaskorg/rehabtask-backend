@@ -1,24 +1,10 @@
-import { prisma } from "../config/prisma.js";
 import { UNAVAILABLE_MESSAGE, buildSystemPrompt } from "../config/ai.js";
-import { USER_ROLES } from "../utils/constants.js";
 import { logger } from "../config/logger.js";
 import { generateReply } from "./ai.responder.js";
+import { USER_ROLES } from "../utils/constants.js";
 import { ServiceUnavailableError } from "../utils/errors.js";
 
-const touchSession = ({ sessionId, userId, role }) => {
-    if (!sessionId) return;
-
-    prisma.chatSession
-        .upsert({
-            where: { id: sessionId },
-            update: {
-                lastActivityAt: new Date(),
-                ...(userId && { userId, userRole: role ?? null }),
-            },
-            create: { id: sessionId, userId: userId ?? null, userRole: role ?? null },
-        })
-        .catch((err) => logger.error("[AiChat] Session tracking failed", { sessionId, error: err.message }));
-};
+const LEAD_OFFER_AFTER_QUESTIONS = 2;
 
 const SIGNED_IN_AUDIENCE = {
     [USER_ROLES.THERAPIST]: "therapist",
@@ -37,15 +23,29 @@ const resolveAudience = ({ role, audience }) => {
     return fromSession;
 };
 
-export const answerChat = async ({ messages, sessionId, userId, role, audience }) => {
-    touchSession({ sessionId, userId, role });
+/**
+ * Whether to offer the lead card after this reply. Decided here from the request,
+ * never by the model, so it cannot be malformed, leaked into a reply or induced by
+ * anything the user types. Signed-in users are routed to support instead.
+ */
+const shouldOfferLead = ({ messages, userId, audience }) =>
+    !userId &&
+    audience === "public" &&
+    messages.filter((m) => m.role === "user").length >= LEAD_OFFER_AFTER_QUESTIONS;
 
+/**
+ * @param {{ messages: Array<{role: string, content: string}>, sessionId?: string,
+ *           userId?: string, role?: string, audience?: string }} params
+ * @returns {Promise<{ reply: string, offerLead: boolean }>}
+ */
+export const answerChat = async ({ messages, sessionId, userId, role, audience }) => {
     try {
         const reply = await generateReply({
             messages,
             systemPrompt: buildSystemPrompt(resolveAudience({ role, audience })),
         });
-        return { reply };
+
+        return { reply, offerLead: shouldOfferLead({ messages, userId, audience }) };
     } catch (err) {
         logger.error("[AiChat] Provider call failed", {
             sessionId,
