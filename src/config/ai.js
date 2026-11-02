@@ -35,6 +35,9 @@ export const UNKNOWN_ANSWER =
     "I don't have enough information to answer that accurately. " +
     `Please contact RehabTask Support at ${SUPPORT_EMAIL} for assistance.`;
 
+export const BUSY_MESSAGE =
+    "I'm catching up on a few things. Give me a few seconds and try again.";
+
 export const UNAVAILABLE_MESSAGE =
     "AI assistance is temporarily unavailable. Please try again later or contact " +
     `RehabTask Support at ${SUPPORT_EMAIL}.`;
