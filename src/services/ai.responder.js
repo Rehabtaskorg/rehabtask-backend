@@ -81,6 +81,13 @@ const callGrok = async ({ messages, systemPrompt }) => {
         });
 
         if (!response.ok) {
+            const detail = await response.text().catch(() => "");
+            logger.error("[AI] xAI rejected the request", {
+                status: response.status,
+                retryAfter: response.headers.get("retry-after"),
+                detail: detail.slice(0, 500),
+            });
+
             const error = new Error(`xAI responded ${response.status}`);
             error.status = response.status;
             error.retryAfter = response.headers.get("retry-after");
