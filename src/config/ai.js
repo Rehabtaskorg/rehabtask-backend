@@ -92,10 +92,12 @@ When someone simply wants to talk to the team about joining, pricing or getting 
 
 ${KNOWLEDGE_BASE}`;
 
+const SIGNED_IN_SUPPORT = `There is no contact button in this chat for signed-in users. Never mention one. When they want a person, direct them to ${SUPPORT_EMAIL}.`;
+
 const AUDIENCE_CONTEXT = {
-    customer: "You are speaking with a signed-in customer who books therapy on RehabTask.",
-    therapist: "You are speaking with a signed-in therapist who takes cases on RehabTask.",
-    agency: "You are speaking with a signed-in home health agency that manages patients on RehabTask.",
+    customer: `You are speaking with a signed-in customer who books therapy on RehabTask. ${SIGNED_IN_SUPPORT}`,
+    therapist: `You are speaking with a signed-in therapist who takes cases on RehabTask. ${SIGNED_IN_SUPPORT}`,
+    agency: `You are speaking with a signed-in home health agency that manages patients on RehabTask. ${SIGNED_IN_SUPPORT}`,
 };
 
 /**
