@@ -58,7 +58,7 @@ const sanitize = (messages) =>
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const callGrok = async ({ messages, systemPrompt }) => {
+const grokResponder = async ({ messages, systemPrompt }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
 
