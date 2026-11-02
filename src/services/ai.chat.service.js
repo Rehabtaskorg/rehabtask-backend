@@ -1,4 +1,4 @@
-import { UNAVAILABLE_MESSAGE, buildSystemPrompt } from "../config/ai.js";
+import { BUSY_MESSAGE, UNAVAILABLE_MESSAGE, buildSystemPrompt } from "../config/ai.js";
 import { logger } from "../config/logger.js";
 import { generateReply } from "./ai.responder.js";
 import { USER_ROLES } from "../utils/constants.js";
@@ -68,11 +68,17 @@ export const answerChat = async ({ messages, sessionId, userId, role, audience }
 
         return { reply, offerLead: shouldOfferLead({ messages, userId, audience }) };
     } catch (err) {
+        const isRateLimited = err.status === 429;
+
         logger.error("[AiChat] Provider call failed", {
             sessionId,
             error: err.message,
             status: err.status,
+            retryAfter: err.retryAfter,
         });
-        throw new ServiceUnavailableError(UNAVAILABLE_MESSAGE, "AI_UNAVAILABLE");
+
+        throw isRateLimited
+            ? new ServiceUnavailableError(BUSY_MESSAGE, "AI_BUSY")
+            : new ServiceUnavailableError(UNAVAILABLE_MESSAGE, "AI_UNAVAILABLE");
     }
 };

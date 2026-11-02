@@ -58,7 +58,7 @@ const sanitize = (messages) =>
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const grokResponder = async ({ messages, systemPrompt }) => {
+const callGrok = async ({ messages, systemPrompt }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
 
@@ -83,6 +83,7 @@ const grokResponder = async ({ messages, systemPrompt }) => {
         if (!response.ok) {
             const error = new Error(`xAI responded ${response.status}`);
             error.status = response.status;
+            error.retryAfter = response.headers.get("retry-after");
             throw error;
         }
 
