@@ -6,12 +6,14 @@ import { ServiceUnavailableError } from "../utils/errors.js";
 
 const LEAD_OFFER_AFTER_QUESTIONS = 2;
 
+const PERSON = "someone|somebody|a person|a human|the team|your team|an agent|a rep|a representative";
+
 const ASKED_FOR_A_PERSON = [
-    /\b(speak|talk|chat)\b.{0,20}\b(someone|somebody|a person|a human|the team|an agent|a rep|a representative)\b/,
+    new RegExp(`\\b(speak|talk|chat|contact|reach|call|email)\\b.{0,20}\\b(${PERSON})\\b`),
     /\b(contact|call|email|reach)\b.{0,20}\b(me|us)\b/,
     /\b(human|real person|actual person)\b/,
     /\b(get|have|put)\b.{0,20}\b(in touch|touch with)\b/,
-    /\b(someone|somebody)\b.{0,20}\b(call|contact|reach|email|get back)\b/,
+    new RegExp(`\\b(${PERSON})\\b.{0,20}\\b(call|contact|reach|email|get back)\\b`),
     /\bcustomer (service|support)\b/,
 ];
 
@@ -37,8 +39,11 @@ const resolveAudience = ({ role, audience }) => {
  * never by the model, so it cannot be malformed, leaked into a reply or induced by
  * anything the user types. Signed-in users are routed to support instead.
  */
+const ABOUT_SOMEONE_ELSE = /\b(therapist|patient|customer|provider)\b/;
+
 const askedForAPerson = (messages) => {
     const latest = messages.at(-1)?.content?.toLowerCase() ?? "";
+    if (ABOUT_SOMEONE_ELSE.test(latest)) return false;
     return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
 };
 
