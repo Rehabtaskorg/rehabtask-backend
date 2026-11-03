@@ -1,6 +1,5 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { RATE_LIMIT, USER_ROLES } from "../utils/constants.js";
-import { logger } from "../config/logger.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -89,18 +88,9 @@ export const conversationsRateLimiter = createRateLimiter({
         return clientKey(req);
     }
 });
-const aiBurstMax = isProd ? RATE_LIMIT.AI_BURST_MAX_PROD : RATE_LIMIT.AI_BURST_MAX_DEV;
-
-logger.info("[RateLimit] AI chat limits resolved", {
-    nodeEnv: process.env.NODE_ENV,
-    isProd,
-    burstMax: aiBurstMax,
-    burstWindowMs: RATE_LIMIT.AI_BURST_WINDOW_MS,
-});
-
 export const aiChatBurstLimiter = createRateLimiter({
     windowMs: RATE_LIMIT.AI_BURST_WINDOW_MS,
-    max: aiBurstMax,
+    max: isProd ? RATE_LIMIT.AI_BURST_MAX_PROD : RATE_LIMIT.AI_BURST_MAX_DEV,
     message: "You're sending messages too quickly. Please wait a moment.",
     keyGenerator: clientKey,
 });
