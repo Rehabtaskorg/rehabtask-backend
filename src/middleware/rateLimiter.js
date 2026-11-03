@@ -4,6 +4,14 @@ import { logger } from "../config/logger.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
+const clientKey = (req) => {
+    if (req.user?.id) return req.user.id;
+
+    const forwarded = req.headers["x-forwarded-for"];
+    const clientIp = forwarded?.split(",")[0]?.trim();
+    return ipKeyGenerator(clientIp || req.ip);
+};
+
 const createRateLimiter = (options = {}) => {
     const defaultOptions = {
         windowMs: RATE_LIMIT.API_WINDOW_MS,
@@ -49,7 +57,7 @@ export const apiRateLimiter = createRateLimiter({
     max: isProd ? RATE_LIMIT.SOCKET_MAX_PROD : RATE_LIMIT.SOCKET_MAX_DEV,
     message: "Too many requests, please try again later",
     keyGenerator: (req) => {
-        return req.user?.id || ipKeyGenerator(req);
+        return clientKey(req);
     },
     validate: { xForwardedForHeader: true }
 });
@@ -69,7 +77,7 @@ export const messagingRateLimiter = createRateLimiter({
         return req.user?.role === USER_ROLES.ADMIN;
     },
     keyGenerator: (req) => {
-        return req.user?.id || ipKeyGenerator(req);
+        return clientKey(req);
     }
 });
 
@@ -78,7 +86,7 @@ export const conversationsRateLimiter = createRateLimiter({
     max: isProd ? 30 : RATE_LIMIT.MESSAGE_MAX_DEV,
     message: "Too many requests. Please wait a moment.",
     keyGenerator: (req) => {
-        return req.user?.id || ipKeyGenerator(req);
+        return clientKey(req);
     }
 });
 const aiBurstMax = isProd ? RATE_LIMIT.AI_BURST_MAX_PROD : RATE_LIMIT.AI_BURST_MAX_DEV;
@@ -94,12 +102,12 @@ export const aiChatBurstLimiter = createRateLimiter({
     windowMs: RATE_LIMIT.AI_BURST_WINDOW_MS,
     max: aiBurstMax,
     message: "You're sending messages too quickly. Please wait a moment.",
-    keyGenerator: (req) => req.user?.id || ipKeyGenerator(req),
+    keyGenerator: clientKey,
 });
 
 export const aiChatHourlyLimiter = createRateLimiter({
     windowMs: RATE_LIMIT.AI_HOURLY_WINDOW_MS,
     max: isProd ? RATE_LIMIT.AI_HOURLY_MAX_PROD : RATE_LIMIT.AI_HOURLY_MAX_DEV,
     message: "You've reached the chat limit for now. Please try again later or contact support.",
-    keyGenerator: (req) => req.user?.id || ipKeyGenerator(req),
+    keyGenerator: clientKey,
 });
