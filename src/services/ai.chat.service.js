@@ -4,8 +4,6 @@ import { generateReply } from "./ai.responder.js";
 import { USER_ROLES } from "../utils/constants.js";
 import { ServiceUnavailableError } from "../utils/errors.js";
 
-const LEAD_OFFER_AFTER_QUESTIONS = 2;
-
 const PERSON = "someone|somebody|a person|a human|the team|your team|an agent|a rep|a representative";
 
 const ASKED_FOR_A_PERSON = [
@@ -47,12 +45,8 @@ const askedForAPerson = (messages) => {
     return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
 };
 
-const shouldOfferLead = ({ messages, userId, audience }) => {
-    if (userId || audience !== "public") return false;
-
-    const questions = messages.filter((m) => m.role === "user").length;
-    return questions >= LEAD_OFFER_AFTER_QUESTIONS || askedForAPerson(messages);
-};
+const shouldOfferLead = ({ messages, userId, audience }) =>
+    !userId && audience === "public" && askedForAPerson(messages);
 
 /**
  * @param {{ messages: Array<{role: string, content: string}>, sessionId?: string,

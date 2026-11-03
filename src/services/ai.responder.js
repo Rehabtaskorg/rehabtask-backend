@@ -58,7 +58,7 @@ const sanitize = (messages) =>
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const grokResponder = async ({ messages, systemPrompt }) => {
+const callGrok = async ({ messages, systemPrompt }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
 
@@ -107,6 +107,20 @@ const grokResponder = async ({ messages, systemPrompt }) => {
         return answer;
     } finally {
         clearTimeout(timeout);
+    }
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const grokResponder = async (params) => {
+    try {
+        return await callGrok(params);
+    } catch (error) {
+        if (error.status !== 429) throw error;
+
+        logger.warn("[AI] xAI at capacity, retrying once", { waitMs: AI_CONFIG.capacityRetryMs });
+        await sleep(AI_CONFIG.capacityRetryMs);
+        return callGrok(params);
     }
 };
 
