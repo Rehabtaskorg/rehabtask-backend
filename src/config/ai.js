@@ -13,6 +13,7 @@ export const AI_CONFIG = Object.freeze({
     maxAssistantChars: MAX_OUTPUT_TOKENS * 6,
     maxHistoryMessages: 20,
     requestTimeoutMs: 30000,
+    capacityRetryMs: 2000,
 });
 
 export const SUPPORT_EMAIL = "support@rehabtask.com";
