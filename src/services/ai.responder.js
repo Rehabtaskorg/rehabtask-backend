@@ -9,7 +9,7 @@ import { logger } from "../config/logger.js";
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const stubResponder = async ({ messages }) => {
+const stubResponder = async ({ messages, onChunk }) => {
     const question = messages.at(-1)?.content?.toLowerCase() ?? "";
 
     const canned = [
@@ -28,7 +28,17 @@ const stubResponder = async ({ messages }) => {
     ];
 
     const match = canned.find(([pattern]) => pattern.test(question));
-    return match ? match[1] : UNKNOWN_ANSWER;
+    const answer = match ? match[1] : UNKNOWN_ANSWER;
+
+    if (!onChunk) return answer;
+
+    const words = answer.split(" ");
+    for (const [index, word] of words.entries()) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        onChunk(index === 0 ? word : ` ${word}`);
+    }
+
+    return answer;
 };
 
 /**
@@ -58,7 +68,71 @@ const sanitize = (messages) =>
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const callGrok = async ({ messages, systemPrompt }) => {
+const readStream = async (response, onChunk) => {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let answer = "";
+    let finishReason = null;
+    let skipped = 0;
+
+    const handleLine = (line) => {
+        if (!line.startsWith("data:")) return;
+
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") return;
+
+        let event;
+        try {
+            event = JSON.parse(payload);
+        } catch {
+            skipped += 1;
+            return;
+        }
+
+        if (event.error) {
+            throw new Error(`xAI stream error: ${event.error.message ?? JSON.stringify(event.error)}`);
+        }
+
+        const choice = event.choices?.[0];
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+
+        const text = choice?.delta?.content;
+        if (text) {
+            answer += text;
+            onChunk(text);
+        }
+    };
+
+    for await (const part of response.body) {
+        buffer += decoder.decode(part, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        lines.forEach(handleLine);
+    }
+
+    buffer += decoder.decode();
+    if (buffer) handleLine(buffer);
+
+    if (skipped) logger.warn("[AI] Skipped unreadable stream chunks", { skipped });
+
+    if (!answer.trim()) {
+        throw new Error(`xAI returned no content (finish_reason: ${finishReason ?? "none"})`);
+    }
+
+    if (finishReason === "length") {
+        logger.warn("[AI] Response truncated at max_tokens", { chars: answer.length });
+    }
+
+    logger.info("[AI] Streamed response complete", {
+        model: AI_CONFIG.model,
+        chars: answer.length,
+        finishReason,
+    });
+
+    return answer.trim();
+};
+
+const callGrok = async ({ messages, systemPrompt, onChunk }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
 
@@ -72,6 +146,7 @@ const callGrok = async ({ messages, systemPrompt }) => {
             body: JSON.stringify({
                 model: AI_CONFIG.model,
                 max_tokens: AI_CONFIG.maxOutputTokens,
+                stream: Boolean(onChunk),
                 messages: [
                     { role: "system", content: systemPrompt ?? SYSTEM_PROMPT },
                     ...sanitize(messages),
@@ -93,6 +168,8 @@ const callGrok = async ({ messages, systemPrompt }) => {
             error.retryAfter = response.headers.get("retry-after");
             throw error;
         }
+
+        if (onChunk) return readStream(response, onChunk);
 
         const body = await response.json();
         const answer = body.choices?.[0]?.message?.content?.trim();
