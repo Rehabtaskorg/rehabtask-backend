@@ -27,6 +27,25 @@ export const chatSchema = z.object({
         }),
 });
 
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+    "mailinator.com",
+    "guerrillamail.com",
+    "10minutemail.com",
+    "tempmail.com",
+    "temp-mail.org",
+    "throwawaymail.com",
+    "yopmail.com",
+    "trashmail.com",
+    "sharklasers.com",
+    "getnada.com",
+    "dispostable.com",
+    "fakeinbox.com",
+    "maildrop.cc",
+    "mailnesia.com",
+    "example.com",
+    "test.com",
+]);
+
 const optionalText = (max, label) =>
     z
         .string()
@@ -37,8 +56,23 @@ const optionalText = (max, label) =>
 
 export const leadSchema = z.object({
     role: z.enum(Object.keys(LEAD_ROLES), { message: "Please choose which best describes you" }),
-    name: z.string().trim().min(1, "Please enter your name").max(80, "Name must be 80 characters or less"),
-    email: z.string().trim().email("Please enter a valid email address").max(254),
+    name: z
+        .string()
+        .trim()
+        .min(2, "Please enter your full name")
+        .max(80, "Name must be 80 characters or less")
+        .regex(/^[\p{L}\s'.-]+$/u, "Name can only contain letters, spaces, hyphens and apostrophes"),
+    email: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .email("Please enter a valid email address")
+        .max(254)
+        .refine((value) => !DISPOSABLE_EMAIL_DOMAINS.has(value.split("@")[1]), {
+            message: "Please use a permanent email address we can reply to",
+        }),
+    recaptchaToken: z.string().optional(),
+    recaptchaAction: z.string().optional(),
     phone: z
         .string()
         .trim()
