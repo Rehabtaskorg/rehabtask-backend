@@ -1,3 +1,4 @@
+import { TextDecoder } from "node:util";
 import { AI_CONFIG, SYSTEM_PROMPT, UNKNOWN_ANSWER } from "../config/ai.js";
 import { logger } from "../config/logger.js";
 
