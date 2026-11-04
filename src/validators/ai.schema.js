@@ -39,6 +39,11 @@ export const leadSchema = z.object({
     role: z.enum(Object.keys(LEAD_ROLES), { message: "Please choose which best describes you" }),
     name: z.string().trim().min(1, "Please enter your name").max(80, "Name must be 80 characters or less"),
     email: z.string().trim().email("Please enter a valid email address").max(254),
-    phone: optionalText(30, "Phone number"),
+    phone: z
+        .string()
+        .trim()
+        .regex(/^\+1\d{10}$/, "Invalid phone number format. Use +1XXXXXXXXXX")
+        .optional()
+        .or(z.literal("").transform(() => undefined)),
     context: optionalText(300, "Message"),
 });
