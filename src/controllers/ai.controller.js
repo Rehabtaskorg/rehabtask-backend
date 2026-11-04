@@ -3,21 +3,45 @@ import { sendChatLead } from "../services/email.service.js";
 import { LEAD_ROLES } from "../config/ai.js";
 import { ServiceUnavailableError } from "../utils/errors.js";
 
-const chatController = async (req, res, next) => {
-    try {
-        const { messages, sessionId, audience } = req.body;
+const sseEvent = (res, event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    res.flush?.();
+};
 
-        const result = await answerChat({
+const chatController = async (req, res) => {
+    const { messages, sessionId, audience } = req.body;
+
+    res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders?.();
+
+    const controller = new AbortController();
+    req.on("close", () => controller.abort());
+
+    try {
+        const { offerLead } = await answerChat({
             messages,
             sessionId,
             audience,
             userId: req.user?.id,
             role: req.user?.role,
+            onChunk: (text) => {
+                if (!controller.signal.aborted) sseEvent(res, "chunk", { text });
+            },
         });
 
-        res.status(200).json({ success: true, data: result });
+        sseEvent(res, "done", { offerLead });
     } catch (error) {
-        next(error);
+        sseEvent(res, "error", {
+            message: error.message,
+            code: error.code ?? "AI_UNAVAILABLE",
+        });
+    } finally {
+        res.end();
     }
 };
 

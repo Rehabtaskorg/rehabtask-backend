@@ -53,11 +53,12 @@ const shouldOfferLead = ({ messages, userId, audience }) =>
  *           userId?: string, role?: string, audience?: string }} params
  * @returns {Promise<{ reply: string, offerLead: boolean }>}
  */
-export const answerChat = async ({ messages, sessionId, userId, role, audience }) => {
+export const answerChat = async ({ messages, sessionId, userId, role, audience, onChunk }) => {
     try {
         const reply = await generateReply({
             messages,
             systemPrompt: buildSystemPrompt(resolveAudience({ role, audience })),
+            onChunk,
         });
 
         return { reply, offerLead: shouldOfferLead({ messages, userId, audience }) };
