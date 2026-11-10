@@ -1,4 +1,4 @@
-import { BUSY_MESSAGE, UNAVAILABLE_MESSAGE, buildSystemPrompt } from "../config/ai.js";
+import { BUSY_MESSAGE, CONTACT_MARKER, UNAVAILABLE_MESSAGE, buildSystemPrompt } from "../config/ai.js";
 import { logger } from "../config/logger.js";
 import { generateReply } from "./ai.responder.js";
 import { USER_ROLES } from "../utils/constants.js";
@@ -46,8 +46,10 @@ const askedForAPerson = (messages) => {
     return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
 };
 
-const shouldOfferLead = ({ messages, userId, audience }) =>
-    !userId && audience === "public" && askedForAPerson(messages);
+const shouldOfferLead = ({ messages, reply, userId, audience }) => {
+    if (userId || audience !== "public") return false;
+    return reply.includes(CONTACT_MARKER) || askedForAPerson(messages);
+};
 
 /**
  * @param {{ messages: Array<{role: string, content: string}>, sessionId?: string,
@@ -62,7 +64,10 @@ export const answerChat = async ({ messages, sessionId, userId, role, audience, 
             onChunk,
         });
 
-        return { reply, offerLead: shouldOfferLead({ messages, userId, audience }) };
+        return {
+            reply: reply.split(CONTACT_MARKER).join("").trim(),
+            offerLead: shouldOfferLead({ messages, reply, userId, audience }),
+        };
     } catch (err) {
         const isRateLimited = err.status === 429;
 
