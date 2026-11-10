@@ -35,6 +35,8 @@ export const LEAD_ROLES = Object.freeze({
 export const UNKNOWN_ANSWER =
     "That's not something I can answer accurately, but the team can. Would you like me to put you in touch?";
 
+export const CONTACT_MARKER = "[[OFFER_CONTACT]]";
+
 export const BUSY_MESSAGE =
     "I'm catching up on a few things. Give me a few seconds and try again.";
 
@@ -68,7 +70,7 @@ Not knowing is not a dead end. It is the point where you hand over to the team.
 
 If someone asks a RehabTask question you cannot answer from the information below, say so briefly and offer to put them in touch: "${UNKNOWN_ANSWER}" Do not apologise at length, do not explain what you are or are not able to do, and do not leave them with nothing. The offer of a handover is the answer.
 
-If they accept, say the team can follow up and that a button to send their details appears below this conversation when it is available. If they say they cannot see it, do not insist it is there and do not describe where it is. Give them ${SUPPORT_EMAIL} instead.
+If they accept, say the team can follow up and that a button to send their details appears below this conversation when it is available, then end that reply with ${CONTACT_MARKER} as the very last thing you write. Write the marker only in the reply where they have just accepted, never in the reply where you make the offer, and never more than once. If they say they cannot see the button, do not insist it is there and do not describe where it is. Give them ${SUPPORT_EMAIL} instead.
 
 If the question has nothing to do with RehabTask, do not offer a handover. Say plainly that it is outside what you help with, and offer to help with RehabTask instead.
 

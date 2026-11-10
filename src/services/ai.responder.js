@@ -1,6 +1,37 @@
 import { TextDecoder } from "node:util";
-import { AI_CONFIG, SYSTEM_PROMPT, UNKNOWN_ANSWER } from "../config/ai.js";
+import { AI_CONFIG, CONTACT_MARKER, SYSTEM_PROMPT, UNKNOWN_ANSWER } from "../config/ai.js";
 import { logger } from "../config/logger.js";
+
+const createMarkerFilter = (onChunk) => {
+    let held = "";
+
+    const couldBecomeMarker = (text) =>
+        CONTACT_MARKER.startsWith(text) && text.length < CONTACT_MARKER.length;
+
+    const emit = (text) => {
+        let pending = held + text;
+        held = "";
+
+        for (let cut = Math.max(0, pending.length - CONTACT_MARKER.length + 1); cut < pending.length; cut += 1) {
+            if (couldBecomeMarker(pending.slice(cut))) {
+                held = pending.slice(cut);
+                pending = pending.slice(0, cut);
+                break;
+            }
+        }
+
+        const cleaned = pending.split(CONTACT_MARKER).join("");
+        if (cleaned) onChunk(cleaned);
+    };
+
+    const flush = () => {
+        const remaining = held.split(CONTACT_MARKER).join("");
+        held = "";
+        if (remaining) onChunk(remaining);
+    };
+
+    return { emit, flush };
+};
 
 /**
  * Deterministic responder used until the xAI account has a payment method, and in
@@ -61,7 +92,10 @@ const failingResponder = async () => {
 const sanitize = (messages) =>
     messages
         .filter((m) => m?.role === "user" || m?.role === "assistant")
-        .map(({ role, content }) => ({ role, content: String(content) }));
+        .map(({ role, content }) => ({
+            role,
+            content: String(content).split(CONTACT_MARKER).join(""),
+        }));
 
 /**
  * Calls xAI's OpenAI-compatible chat completions endpoint.
@@ -71,6 +105,7 @@ const sanitize = (messages) =>
  */
 const readStream = async (response, onChunk) => {
     const decoder = new TextDecoder();
+    const filter = createMarkerFilter(onChunk);
     let buffer = "";
     let answer = "";
     let finishReason = null;
@@ -100,7 +135,7 @@ const readStream = async (response, onChunk) => {
         const text = choice?.delta?.content;
         if (text) {
             answer += text;
-            onChunk(text);
+            filter.emit(text);
         }
     };
 
@@ -113,6 +148,7 @@ const readStream = async (response, onChunk) => {
 
     buffer += decoder.decode();
     if (buffer) handleLine(buffer);
+    filter.flush();
 
     if (skipped) logger.warn("[AI] Skipped unreadable stream chunks", { skipped });
 
