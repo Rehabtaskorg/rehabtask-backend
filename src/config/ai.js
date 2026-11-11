@@ -46,6 +46,8 @@ export const UNKNOWN_ANSWER =
 
 export const CONTACT_MARKER = "[[OFFER_CONTACT]]";
 
+export const HANDOVER_FALLBACK = "The team can pick this up with you.";
+
 export const BUSY_MESSAGE =
     "I'm catching up on a few things. Give me a few seconds and try again.";
 
@@ -84,11 +86,11 @@ Both are handled the same way, in two steps.
 
 **Step one, when it first comes up.** Acknowledge it in one short sentence, then ask whether they would like you to put them in touch with the team. That question is your whole reply. For an unanswerable question you may use these words: "${UNKNOWN_ANSWER}" Do not apologise at length, do not explain what you cannot access, and do not leave them with nothing.
 
-**Step two, on the single turn where they accept.** Write ${CONTACT_MARKER} and nothing else. A Yes or No choice appears in its place, so there is nothing for you to say. Do not describe it, do not tell them where to look, and do not confirm that the team will follow up - the choice already tells them.
+**Step two, when they accept.** Reply as you normally would, and add ${CONTACT_MARKER} at the very end. The marker is silent - it never appears to them - so it replaces nothing. Always write a real reply as well, never the marker on its own.
 
-Anything other than a clear no counts as accepting. If they say they have already emailed support or already tried that, that is a yes: write the marker. Never repeat a suggestion that has already failed them, and never ask the same question twice.
+On the turn they accept, one short line is enough, because a Yes or No choice appears underneath it. Do not describe that choice or tell them where to look. On later turns, answer whatever they actually asked, at whatever length it deserves. If they ask for another way to reach the team, tell them: ${SUPPORT_EMAIL}.
 
-**Every turn after that, you are back to answering normally.** The handover is already arranged, so do not write the marker again and do not mention it. If they ask you something, answer it - including asking for another way to reach the team, which is ${SUPPORT_EMAIL}. Silence is never the right reply to a question.
+Anything other than a clear no counts as accepting. If they say they have already emailed support or already tried that, that is a yes. Never repeat a suggestion that has already failed them, and never ask the same question twice.
 
 **The exceptions.** If the question has nothing to do with RehabTask, do not offer a handover - say it is outside what you help with and offer to help with RehabTask instead. Clinical questions go to a qualified healthcare professional, not to our team. Anything about a specific patient does not belong in this chat: say so gently, point them to ${SUPPORT_EMAIL}, and do not offer to pass the details on.
 

@@ -1,5 +1,5 @@
 import { TextDecoder } from "node:util";
-import { AI_CONFIG, CONTACT_MARKER, SYSTEM_PROMPT, UNKNOWN_ANSWER } from "../config/ai.js";
+import { AI_CONFIG, CONTACT_MARKER, HANDOVER_FALLBACK, SYSTEM_PROMPT, UNKNOWN_ANSWER } from "../config/ai.js";
 import { logger } from "../config/logger.js";
 
 const createMarkerFilter = (onChunk) => {
@@ -154,6 +154,12 @@ const readStream = async (response, onChunk) => {
 
     if (!answer.trim()) {
         throw new Error(`xAI returned no content (finish_reason: ${finishReason ?? "none"})`);
+    }
+
+    if (!answer.split(CONTACT_MARKER).join("").trim()) {
+        logger.warn("[AI] Reply was marker only, using fallback text");
+        answer = `${HANDOVER_FALLBACK} ${CONTACT_MARKER}`;
+        onChunk(HANDOVER_FALLBACK);
     }
 
     if (finishReason === "length") {
