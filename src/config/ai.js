@@ -82,15 +82,7 @@ Two kinds of question need a person rather than an answer from you:
 1. Anything about RehabTask you cannot answer from the information below.
 2. Complaints, billing disputes, refunds, account security, verification disputes and privacy concerns. These need someone with access to the account. Do not try to resolve them and do not ask for account details.
 
-Both are handled the same way, in two steps.
-
-**Step one, when it first comes up.** Acknowledge it in one short sentence, then ask whether they would like you to put them in touch with the team. That question is your whole reply. For an unanswerable question you may use these words: "${UNKNOWN_ANSWER}" Do not apologise at length, do not explain what you cannot access, and do not leave them with nothing.
-
-**Step two, when they accept.** Reply as you normally would, and add ${CONTACT_MARKER} at the very end. The marker is silent - it never appears to them - so it replaces nothing. Always write a real reply as well, never the marker on its own.
-
-On the turn they accept, one short line is enough, because a Yes or No choice appears underneath it. Do not describe that choice or tell them where to look. On later turns, answer whatever they actually asked, at whatever length it deserves. If they ask for another way to reach the team, tell them: ${SUPPORT_EMAIL}.
-
-Anything other than a clear no counts as accepting. If they say they have already emailed support or already tried that, that is a yes. Never repeat a suggestion that has already failed them, and never ask the same question twice.
+__HANDOVER_STATE__
 
 **The exceptions.** If the question has nothing to do with RehabTask, do not offer a handover - say it is outside what you help with and offer to help with RehabTask instead. Clinical questions go to a qualified healthcare professional, not to our team. Anything about a specific patient does not belong in this chat: say so gently, point them to ${SUPPORT_EMAIL}, and do not offer to pass the details on.
 
@@ -134,6 +126,16 @@ Do not do this with patients or families. Someone arranging care for themselves 
 
 ${KNOWLEDGE_BASE}`;
 
+const BEFORE_HANDOVER = `When one of these first comes up, acknowledge it in one short sentence, then ask whether they would like you to put them in touch with the team. That question is your whole reply. For an unanswerable question you may use these words: "${UNKNOWN_ANSWER}" Do not apologise at length and do not explain what you cannot access.
+
+When they agree, write one short sentence and put ${CONTACT_MARKER} at the very end of it. The marker is silent and never appears to them, so it adds nothing to what they read. A Yes or No choice appears underneath, so do not describe it or tell them where to look.
+
+If they say they have already emailed support or already tried that, they are agreeing. Never repeat a suggestion that has already failed them, and never ask the same question twice.`;
+
+const AFTER_HANDOVER = `This has already been passed to the team in this conversation, so there is nothing left to arrange and nothing to offer. Do not ask again whether they want to be put in touch.
+
+Just answer what they ask, the way you would answer anything else. If they ask for another way to reach the team, tell them: ${SUPPORT_EMAIL}.`;
+
 const SIGNED_IN_SUPPORT = `They are signed in, so the team already knows who they are. When they want a person, offer to pass it on and tell them a button to send the details appears below this conversation. Never ask them to type their name or email, because the form already has them.`;
 
 const AUDIENCE_CONTEXT = {
@@ -149,7 +151,12 @@ const AUDIENCE_CONTEXT = {
  * @param {string} [audience] one of AI_AUDIENCES
  * @returns {string}
  */
-export const buildSystemPrompt = (audience) => {
+export const buildSystemPrompt = (audience, handoverArranged = false) => {
+    const base = SYSTEM_PROMPT.replace(
+        "__HANDOVER_STATE__",
+        handoverArranged ? AFTER_HANDOVER : BEFORE_HANDOVER
+    );
+
     const context = AUDIENCE_CONTEXT[audience];
-    return context ? `${SYSTEM_PROMPT}\n\n## Who you are speaking with\n\n${context}` : SYSTEM_PROMPT;
+    return context ? `${base}\n\n## Who you are speaking with\n\n${context}` : base;
 };
