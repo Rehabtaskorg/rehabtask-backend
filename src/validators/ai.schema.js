@@ -46,17 +46,15 @@ const DISPOSABLE_EMAIL_DOMAINS = new Set([
     "test.com",
 ]);
 
-const optionalText = (max, label) =>
-    z
-        .string()
-        .trim()
-        .max(max, `${label} must be ${max} characters or less`)
-        .optional()
-        .transform((value) => value || undefined);
-
 export const leadSchema = z.object({
-    role: z.enum(Object.keys(LEAD_ROLES)).optional(),
-    category: z.enum(Object.keys(LEAD_CATEGORIES)).optional(),
+    role: z.preprocess(
+        (value) => value || undefined,
+        z.enum(Object.keys(LEAD_ROLES)).optional()
+    ),
+    category: z.preprocess(
+        (value) => value || undefined,
+        z.enum(Object.keys(LEAD_CATEGORIES), { message: "Please choose one of the listed options" }).optional()
+    ),
     name: z
         .string()
         .trim()
