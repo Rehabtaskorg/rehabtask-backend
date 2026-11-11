@@ -2,7 +2,7 @@
 
 ## Contacting support
 
-Email **support@rehabtask.com**.
+Email **support@steadfast-rehab.com**.
 
 Always direct people to support for: complaints, billing disputes, refunds, account security,
 verification disputes, clinical questions, privacy concerns, anything involving a specific

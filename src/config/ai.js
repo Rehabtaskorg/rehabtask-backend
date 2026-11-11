@@ -16,7 +16,7 @@ export const AI_CONFIG = Object.freeze({
     capacityRetryMs: 2000,
 });
 
-export const SUPPORT_EMAIL = "support@rehabtask.com";
+export const SUPPORT_EMAIL = "support@steadfast-rehab.com";
 
 export const AI_AUDIENCES = ["public", "customer", "therapist", "agency"];
 

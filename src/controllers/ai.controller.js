@@ -1,6 +1,6 @@
 import { answerChat } from "../services/ai.chat.service.js";
 import { sendChatLead } from "../services/email.service.js";
-import { LEAD_CATEGORIES, LEAD_ROLES } from "../config/ai.js";
+import { LEAD_CATEGORIES, LEAD_ROLES, SUPPORT_EMAIL } from "../config/ai.js";
 import { createTicketReference } from "../utils/helpers.js";
 import { CUSTOMER_TYPES, USER_ROLES } from "../utils/constants.js";
 import { BadRequestError, ServiceUnavailableError } from "../utils/errors.js";
@@ -95,7 +95,7 @@ const leadController = async (req, res, next) => {
 
         if (!success) {
             throw new ServiceUnavailableError(
-                "We could not send your details just now. Please try again or email support@rehabtask.com.",
+                `We could not send your details just now. Please try again or email ${SUPPORT_EMAIL}.`,
                 "LEAD_SEND_FAILED"
             );
         }
