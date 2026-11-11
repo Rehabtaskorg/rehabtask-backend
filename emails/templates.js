@@ -8,18 +8,20 @@ import {
 } from './layout.js';
 import { escapeHtml, subjectSafe } from '../src/utils/helpers.js';
 
-export const chatLead = ({ roleLabel, name, email, phone, context, prefix, category, subject, accountId }) => ({
-    subject: `[${prefix}] ${subjectSafe(subject || category || roleLabel)} - ${subjectSafe(name)}`,
+export const chatLead = ({ reference, roleLabel, name, email, phone, context, category, accountId }) => ({
+    subject: `[${reference}] ${subjectSafe(category || 'Enquiry')} - ${subjectSafe(name)}`,
     html: layout(`
-        ${heading(accountId ? 'Support request from the chat' : 'New enquiry from the website chat')}
-        ${field('They are', escapeHtml(roleLabel))}
+        ${heading('New enquiry from the website chat')}
+        ${field('Ticket Reference', escapeHtml(reference))}
+        ${field('User Type', escapeHtml(roleLabel))}
         ${field('Name', escapeHtml(name))}
-        ${field('Email', escapeHtml(email))}
+        ${field('Contact Email', escapeHtml(email))}
         ${phone ? field('Phone', escapeHtml(phone)) : ''}
-        ${category ? field('About', escapeHtml(category)) : ''}
-        ${subject ? field('Subject', escapeHtml(subject)) : ''}
+        ${category ? field('Category', escapeHtml(category)) : ''}
         ${accountId ? field('Account', escapeHtml(accountId)) : ''}
-        ${context ? `${hr()}${field('What they need', escapeHtml(context))}` : ''}
+        ${hr()}
+        ${field('Summary', escapeHtml(context))}
+        ${field('Source', 'Alex Chat Widget')}
         ${hr()}
         ${muted('Reply to this email to reach them directly. Nothing from this chat is stored.')}
     `),

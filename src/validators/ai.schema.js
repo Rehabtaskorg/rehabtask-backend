@@ -57,7 +57,6 @@ const optionalText = (max, label) =>
 export const leadSchema = z.object({
     role: z.enum(Object.keys(LEAD_ROLES)).optional(),
     category: z.enum(Object.keys(LEAD_CATEGORIES)).optional(),
-    subject: optionalText(120, "Subject"),
     name: z
         .string()
         .trim()
@@ -83,5 +82,9 @@ export const leadSchema = z.object({
         .regex(/^\+1\d{10}$/, "Invalid phone number format. Use +1XXXXXXXXXX")
         .optional()
         .or(z.literal("").transform(() => undefined)),
-    context: optionalText(300, "Message"),
+    context: z
+        .string()
+        .trim()
+        .min(1, "Please tell us what you need help with")
+        .max(300, "Message must be 300 characters or less"),
 });
