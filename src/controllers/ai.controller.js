@@ -1,6 +1,7 @@
 import { answerChat } from "../services/ai.chat.service.js";
 import { sendChatLead } from "../services/email.service.js";
-import { GUEST_CATEGORY, LEAD_CATEGORIES, LEAD_ROLES } from "../config/ai.js";
+import { LEAD_CATEGORIES, LEAD_ROLES } from "../config/ai.js";
+import { createTicketReference } from "../utils/helpers.js";
 import { CUSTOMER_TYPES, USER_ROLES } from "../utils/constants.js";
 import { BadRequestError, ServiceUnavailableError } from "../utils/errors.js";
 
@@ -72,15 +73,15 @@ const chatController = async (req, res) => {
 
 const leadController = async (req, res, next) => {
     try {
-        const { role, category, subject, name, email, phone, context } = req.body;
+        const { role, category, name, email, phone, context } = req.body;
         const identity = resolveLeadIdentity({ user: req.user, role, name, email, phone });
+        const reference = createTicketReference();
 
         const { success } = await sendChatLead({
             lead: {
                 ...identity,
+                reference,
                 category: LEAD_CATEGORIES[category]?.label,
-                prefix: LEAD_CATEGORIES[category]?.prefix ?? LEAD_CATEGORIES[GUEST_CATEGORY].prefix,
-                subject,
                 context,
             },
         });
@@ -92,7 +93,7 @@ const leadController = async (req, res, next) => {
             );
         }
 
-        res.status(200).json({ success: true, data: { email } });
+        res.status(200).json({ success: true, data: { email: identity.email, reference } });
     } catch (error) {
         next(error);
     }

@@ -23,15 +23,13 @@ export const AI_AUDIENCES = ["public", "customer", "therapist", "agency"];
 export const LEAD_INBOX = "contact@rehabtask.com";
 
 export const LEAD_CATEGORIES = Object.freeze({
-    booking: { label: "Booking or scheduling", prefix: "Support" },
-    payment: { label: "Payments or billing", prefix: "Support" },
-    account: { label: "Account or login", prefix: "Support" },
-    verification: { label: "Verification or documents", prefix: "Support" },
-    joining: { label: "Joining RehabTask", prefix: "Chat Lead" },
-    other: { label: "Something else", prefix: "Support" },
+    booking: { label: "Booking Issue" },
+    payment: { label: "Payments or Billing" },
+    account: { label: "Account or Login" },
+    verification: { label: "Verification or Documents" },
+    joining: { label: "Joining RehabTask" },
+    other: { label: "Something Else" },
 });
-
-export const GUEST_CATEGORY = "joining";
 
 export const LEAD_ROLES = Object.freeze({
     pt: "Physical Therapist",

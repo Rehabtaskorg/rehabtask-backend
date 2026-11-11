@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 /**
  * Escapes a value for safe interpolation into HTML. Use for anything that did not
  * originate in our own code, such as values submitted from a public form.
@@ -19,3 +21,13 @@ export const escapeHtml = (input) =>
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+
+const REFERENCE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const REFERENCE_LENGTH = 8;
+
+export const createTicketReference = () => {
+    const bytes = randomBytes(REFERENCE_LENGTH);
+    let out = "";
+    for (const byte of bytes) out += REFERENCE_ALPHABET[byte % REFERENCE_ALPHABET.length];
+    return `RT-${out}`;
+};
