@@ -41,6 +41,25 @@ const createMarkerFilter = (onChunk) => {
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
+const STUB_OFFER = "That needs the team. Would you like me to put you in touch?";
+const STUB_ACCEPTED = `I'll connect you with the team. ${CONTACT_MARKER}`;
+const STUB_DECLINED = "Understood. I'm here if you change your mind.";
+
+const STUB_WANTS_HUMAN = /\b(human|real person|speak to someone|talk to someone|contact the team|billing|refund|charged|dispute|complaint)\b/;
+const STUB_AGREES = /^(yes|yep|yeah|sure|sure thing|ok|okay|bet|please|go ahead|yes please)\b/;
+const STUB_DECLINES = /^(no|nope|nah|no thanks|not now)\b/;
+
+const stubEscalation = (messages) => {
+    const latest = messages.at(-1)?.content?.toLowerCase().trim() ?? "";
+    const previous = messages.at(-2);
+    const wasOffered = previous?.role === "assistant" && previous.content.includes("put you in touch");
+
+    if (wasOffered && STUB_DECLINES.test(latest)) return STUB_DECLINED;
+    if (wasOffered && STUB_AGREES.test(latest)) return STUB_ACCEPTED;
+    if (STUB_WANTS_HUMAN.test(latest)) return STUB_OFFER;
+    return null;
+};
+
 const stubResponder = async ({ messages, onChunk }) => {
     const question = messages.at(-1)?.content?.toLowerCase() ?? "";
 
@@ -60,15 +79,16 @@ const stubResponder = async ({ messages, onChunk }) => {
     ];
 
     const match = canned.find(([pattern]) => pattern.test(question));
-    const answer = match ? match[1] : UNKNOWN_ANSWER;
+    const answer = stubEscalation(messages) ?? (match ? match[1] : UNKNOWN_ANSWER);
 
     if (!onChunk) return answer;
 
-    const words = answer.split(" ");
-    for (const [index, word] of words.entries()) {
+    const filter = createMarkerFilter(onChunk);
+    for (const [index, word] of answer.split(" ").entries()) {
         await new Promise((resolve) => setTimeout(resolve, 25));
-        onChunk(index === 0 ? word : ` ${word}`);
+        filter.emit(index === 0 ? word : ` ${word}`);
     }
+    filter.flush();
 
     return answer;
 };
@@ -110,6 +130,7 @@ const readStream = async (response, onChunk) => {
     let answer = "";
     let finishReason = null;
     let skipped = 0;
+    let usage = null;
 
     const handleLine = (line) => {
         if (!line.startsWith("data:")) return;
@@ -130,6 +151,7 @@ const readStream = async (response, onChunk) => {
         }
 
         const choice = event.choices?.[0];
+        if (event.usage) usage = event.usage;
         if (choice?.finish_reason) finishReason = choice.finish_reason;
 
         const text = choice?.delta?.content;
@@ -170,6 +192,9 @@ const readStream = async (response, onChunk) => {
 
     logger.info("[AI] Streamed response complete", {
         model: AI_CONFIG.model,
+        promptTokens: usage?.prompt_tokens,
+        completionTokens: usage?.completion_tokens,
+        totalTokens: usage?.total_tokens,
         chars: answer.length,
         finishReason,
     });
@@ -177,9 +202,10 @@ const readStream = async (response, onChunk) => {
     return answer.trim();
 };
 
-const callGrok = async ({ messages, systemPrompt, onChunk }) => {
+const callGrok = async ({ messages, systemPrompt, onChunk, signal }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_CONFIG.requestTimeoutMs);
+    signal?.addEventListener("abort", () => controller.abort(), { once: true });
 
     try {
         const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
@@ -192,6 +218,7 @@ const callGrok = async ({ messages, systemPrompt, onChunk }) => {
                 model: AI_CONFIG.model,
                 max_tokens: AI_CONFIG.maxOutputTokens,
                 stream: Boolean(onChunk),
+                ...(onChunk && { stream_options: { include_usage: true } }),
                 messages: [
                     { role: "system", content: systemPrompt ?? SYSTEM_PROMPT },
                     ...sanitize(messages),
