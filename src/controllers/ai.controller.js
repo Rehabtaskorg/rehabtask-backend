@@ -53,7 +53,6 @@ const chatController = async (req, res) => {
             messages,
             sessionId,
             audience,
-            userId: req.user?.id,
             role: req.user?.role,
             onChunk: (text) => {
                 if (!controller.signal.aborted) sseEvent(res, "chunk", { text });
