@@ -133,7 +133,7 @@ Do not do this with patients or families. Someone arranging care for themselves 
 
 ${KNOWLEDGE_BASE}`;
 
-const SIGNED_IN_SUPPORT = `There is no contact button in this chat for signed-in users. Never mention one. When they want a person, direct them to ${SUPPORT_EMAIL}.`;
+const SIGNED_IN_SUPPORT = `They are signed in, so the team already knows who they are. When they want a person, offer to pass it on and tell them a button to send the details appears below this conversation. Never ask them to type their name or email, because the form already has them.`;
 
 const AUDIENCE_CONTEXT = {
     customer: `You are speaking with a signed-in customer who books therapy on RehabTask. ${SIGNED_IN_SUPPORT}`,

@@ -36,12 +36,10 @@ const askedForAPerson = (messages) => {
     return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
 };
 
-const shouldOfferLead = ({ messages, reply, userId, audience }) => {
-    if (userId || audience !== "public") return false;
-    return reply.includes(CONTACT_MARKER) || askedForAPerson(messages);
-};
+const shouldOfferLead = ({ messages, reply }) =>
+    reply.includes(CONTACT_MARKER) || askedForAPerson(messages);
 
-export const answerChat = async ({ messages, sessionId, userId, role, audience, onChunk }) => {
+export const answerChat = async ({ messages, sessionId, role, audience, onChunk }) => {
     try {
         const reply = await generateReply({
             messages,
@@ -51,7 +49,7 @@ export const answerChat = async ({ messages, sessionId, userId, role, audience, 
 
         return {
             reply: reply.split(CONTACT_MARKER).join("").trim(),
-            offerLead: shouldOfferLead({ messages, reply, userId, audience }),
+            offerLead: shouldOfferLead({ messages, reply }),
         };
     } catch (err) {
         const isRateLimited = err.status === 429;
