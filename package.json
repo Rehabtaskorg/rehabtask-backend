@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "test": "AI_PROVIDER=stub node --test tests/*.test.js",
     "dev": "nodemon src/server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",

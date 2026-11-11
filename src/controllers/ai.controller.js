@@ -56,6 +56,7 @@ const chatController = async (req, res) => {
             audience,
             handoverArranged,
             role: req.user?.role,
+            signal: controller.signal,
             onChunk: (text) => {
                 if (!controller.signal.aborted) sseEvent(res, "chunk", { text });
             },
@@ -66,10 +67,12 @@ const chatController = async (req, res) => {
             handoverArranged: result.handoverArranged,
         });
     } catch (error) {
-        sseEvent(res, "error", {
-            message: error.message,
-            code: error.code ?? "AI_UNAVAILABLE",
-        });
+        if (!controller.signal.aborted) {
+            sseEvent(res, "error", {
+                message: error.message,
+                code: error.code ?? "AI_UNAVAILABLE",
+            });
+        }
     } finally {
         res.end();
     }

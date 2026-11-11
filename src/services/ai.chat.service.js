@@ -48,12 +48,13 @@ const resolveHandover = ({ messages, reply, handoverArranged }) => {
     return handoverArranged || askedForAPerson(messages);
 };
 
-export const answerChat = async ({ messages, sessionId, role, audience, handoverArranged, onChunk }) => {
+export const answerChat = async ({ messages, sessionId, role, audience, handoverArranged, onChunk, signal }) => {
     try {
         const reply = await generateReply({
             messages,
             systemPrompt: buildSystemPrompt(resolveAudience({ role, audience }), handoverArranged),
             onChunk,
+            signal,
         });
 
         const offerLead = resolveHandover({ messages, reply, handoverArranged });
