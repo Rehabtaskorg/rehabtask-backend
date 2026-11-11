@@ -36,7 +36,7 @@ const sseEvent = (res, event, data) => {
 };
 
 const chatController = async (req, res) => {
-    const { messages, sessionId, audience } = req.body;
+    const { messages, sessionId, audience, handoverArranged } = req.body;
 
     res.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -50,17 +50,21 @@ const chatController = async (req, res) => {
     req.on("close", () => controller.abort());
 
     try {
-        const { offerLead } = await answerChat({
+        const result = await answerChat({
             messages,
             sessionId,
             audience,
+            handoverArranged,
             role: req.user?.role,
             onChunk: (text) => {
                 if (!controller.signal.aborted) sseEvent(res, "chunk", { text });
             },
         });
 
-        sseEvent(res, "done", { offerLead });
+        sseEvent(res, "done", {
+            offerLead: result.offerLead,
+            handoverArranged: result.handoverArranged,
+        });
     } catch (error) {
         sseEvent(res, "error", {
             message: error.message,

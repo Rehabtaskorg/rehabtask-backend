@@ -36,20 +36,32 @@ const askedForAPerson = (messages) => {
     return ASKED_FOR_A_PERSON.some((pattern) => pattern.test(latest));
 };
 
-const shouldOfferLead = ({ messages, reply }) =>
-    reply.includes(CONTACT_MARKER) || askedForAPerson(messages);
+const CLEAR_DECLINE =
+    /^(no|nope|nah|no thanks|no thank you|not now|not right now|maybe later|later|i'm good|im good|i am good|no need)\b[\s.!,]*$/;
 
-export const answerChat = async ({ messages, sessionId, role, audience, onChunk }) => {
+const isClearDecline = (messages) =>
+    CLEAR_DECLINE.test(messages.at(-1)?.content?.toLowerCase().trim() ?? "");
+
+const resolveHandover = ({ messages, reply, handoverArranged }) => {
+    if (reply.includes(CONTACT_MARKER)) return true;
+    if (isClearDecline(messages)) return false;
+    return handoverArranged || askedForAPerson(messages);
+};
+
+export const answerChat = async ({ messages, sessionId, role, audience, handoverArranged, onChunk }) => {
     try {
         const reply = await generateReply({
             messages,
-            systemPrompt: buildSystemPrompt(resolveAudience({ role, audience })),
+            systemPrompt: buildSystemPrompt(resolveAudience({ role, audience }), handoverArranged),
             onChunk,
         });
 
+        const offerLead = resolveHandover({ messages, reply, handoverArranged });
+
         return {
             reply: reply.split(CONTACT_MARKER).join("").trim(),
-            offerLead: shouldOfferLead({ messages, reply }),
+            offerLead,
+            handoverArranged: offerLead,
         };
     } catch (err) {
         const isRateLimited = err.status === 429;

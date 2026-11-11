@@ -152,12 +152,14 @@ const readStream = async (response, onChunk) => {
 
     if (skipped) logger.warn("[AI] Skipped unreadable stream chunks", { skipped });
 
-    if (!answer.trim()) {
-        throw new Error(`xAI returned no content (finish_reason: ${finishReason ?? "none"})`);
-    }
+    const spoken = answer.split(CONTACT_MARKER).join("").trim();
 
-    if (!answer.split(CONTACT_MARKER).join("").trim()) {
-        logger.warn("[AI] Reply was marker only, using fallback text");
+    if (!spoken) {
+        if (!answer.includes(CONTACT_MARKER)) {
+            throw new Error(`xAI returned no content (finish_reason: ${finishReason ?? "none"})`);
+        }
+
+        logger.warn("[AI] Reply was marker only, using fallback text", { model: AI_CONFIG.model });
         answer = `${HANDOVER_FALLBACK} ${CONTACT_MARKER}`;
         onChunk(HANDOVER_FALLBACK);
     }

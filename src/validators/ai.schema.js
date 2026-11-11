@@ -18,6 +18,7 @@ const message = z.discriminatedUnion("role", [
 export const chatSchema = z.object({
     sessionId: z.string().uuid("Invalid session ID").optional(),
     audience: z.enum(AI_AUDIENCES).optional(),
+    handoverArranged: z.boolean().optional(),
     messages: z
         .array(message)
         .min(1, "At least one message is required")
