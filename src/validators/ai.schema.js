@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AI_AUDIENCES, AI_CONFIG, LEAD_ROLES } from "../config/ai.js";
+import { AI_AUDIENCES, AI_CONFIG, LEAD_CATEGORIES, LEAD_ROLES } from "../config/ai.js";
 
 const content = (max, label) =>
     z.string().trim().min(1, "Message cannot be empty").max(max, `${label} must be ${max} characters or less`);
@@ -55,13 +55,16 @@ const optionalText = (max, label) =>
         .transform((value) => value || undefined);
 
 export const leadSchema = z.object({
-    role: z.enum(Object.keys(LEAD_ROLES), { message: "Please choose which best describes you" }),
+    role: z.enum(Object.keys(LEAD_ROLES)).optional(),
+    category: z.enum(Object.keys(LEAD_CATEGORIES)).optional(),
+    subject: optionalText(120, "Subject"),
     name: z
         .string()
         .trim()
         .min(2, "Please enter your full name")
         .max(80, "Name must be 80 characters or less")
-        .regex(/^[\p{L}\s'.-]+$/u, "Name can only contain letters, spaces, hyphens and apostrophes"),
+        .regex(/^[\p{L}\s'.-]+$/u, "Name can only contain letters, spaces, hyphens and apostrophes")
+        .optional(),
     email: z
         .string()
         .trim()
@@ -70,7 +73,8 @@ export const leadSchema = z.object({
         .max(254)
         .refine((value) => !DISPOSABLE_EMAIL_DOMAINS.has(value.split("@")[1]), {
             message: "Please use a permanent email address we can reply to",
-        }),
+        })
+        .optional(),
     recaptchaToken: z.string().optional(),
     recaptchaAction: z.string().optional(),
     phone: z

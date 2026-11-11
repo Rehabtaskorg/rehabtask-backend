@@ -21,11 +21,6 @@ const SIGNED_IN_AUDIENCE = {
     [USER_ROLES.CUSTOMER]: "customer",
 };
 
-/**
- * A signed-in user's audience comes from their session, never from the request body,
- * which any caller can set. "agency" is the one case the body may refine: agencies are
- * customers, so the session alone cannot tell them apart.
- */
 const resolveAudience = ({ role, audience }) => {
     const fromSession = SIGNED_IN_AUDIENCE[role];
     if (!fromSession) return undefined;
@@ -33,11 +28,6 @@ const resolveAudience = ({ role, audience }) => {
     return fromSession;
 };
 
-/**
- * Whether to offer the lead card after this reply. Decided here from the request,
- * never by the model, so it cannot be malformed, leaked into a reply or induced by
- * anything the user types. Signed-in users are routed to support instead.
- */
 const ABOUT_SOMEONE_ELSE = /\b(therapist|patient|provider)\b/;
 
 const askedForAPerson = (messages) => {
@@ -51,11 +41,6 @@ const shouldOfferLead = ({ messages, reply, userId, audience }) => {
     return reply.includes(CONTACT_MARKER) || askedForAPerson(messages);
 };
 
-/**
- * @param {{ messages: Array<{role: string, content: string}>, sessionId?: string,
- *           userId?: string, role?: string, audience?: string }} params
- * @returns {Promise<{ reply: string, offerLead: boolean }>}
- */
 export const answerChat = async ({ messages, sessionId, userId, role, audience, onChunk }) => {
     try {
         const reply = await generateReply({

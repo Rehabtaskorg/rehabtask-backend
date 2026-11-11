@@ -19,6 +19,7 @@ router.post(
 
 router.post(
     "/lead",
+    optionalAuthenticate,
     aiChatBurstLimiter,
     aiChatHourlyLimiter,
     recaptchaMiddleware,
