@@ -8,15 +8,17 @@ import {
 } from './layout.js';
 import { escapeHtml, subjectSafe } from '../src/utils/helpers.js';
 
-// Chat Lead (to the team inbox — every value is untrusted public input)
-export const chatLead = ({ roleLabel, name, email, phone, context }) => ({
-    subject: `[Chat Lead] ${roleLabel} - ${subjectSafe(name)}`,
+export const chatLead = ({ roleLabel, name, email, phone, context, prefix, category, subject, accountId }) => ({
+    subject: `[${prefix}] ${subjectSafe(subject || category || roleLabel)} - ${subjectSafe(name)}`,
     html: layout(`
-        ${heading('New enquiry from the website chat')}
+        ${heading(accountId ? 'Support request from the chat' : 'New enquiry from the website chat')}
         ${field('They are', escapeHtml(roleLabel))}
         ${field('Name', escapeHtml(name))}
         ${field('Email', escapeHtml(email))}
         ${phone ? field('Phone', escapeHtml(phone)) : ''}
+        ${category ? field('About', escapeHtml(category)) : ''}
+        ${subject ? field('Subject', escapeHtml(subject)) : ''}
+        ${accountId ? field('Account', escapeHtml(accountId)) : ''}
         ${context ? `${hr()}${field('What they need', escapeHtml(context))}` : ''}
         ${hr()}
         ${muted('Reply to this email to reach them directly. Nothing from this chat is stored.')}
