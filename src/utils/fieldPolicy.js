@@ -10,10 +10,6 @@ export const FIELD_TIER = {
 
 const { OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD, LOCKED } = FIELD_TIER;
 
-/**
- * Tier for every writable TherapistProfile field.
- * Fields absent from this map are rejected as unknown.
- */
 export const THERAPIST_FIELD_POLICY = {
     fullName: VERIFIED_HARD,
     phone: OPEN,
@@ -33,6 +29,8 @@ export const THERAPIST_FIELD_POLICY = {
     yearsOfExperience: VERIFIED_SOFT,
     primaryLicenseType: VERIFIED_HARD,
     professionalSummary: OPEN,
+    emr: OPEN,
+    emrOther: OPEN,
     profilePhotoUrl: OPEN,
     specialization: VERIFIED_SOFT,
     licenseNumber: VERIFIED_HARD,
@@ -47,7 +45,6 @@ export const THERAPIST_FIELD_POLICY = {
     availableFrom: OPEN,
     caseloadCapacity: OPEN,
 
-    // System-owned — never client-writable.
     id: LOCKED,
     userId: LOCKED,
     approvalStatus: LOCKED,
@@ -74,9 +71,6 @@ export const THERAPIST_FIELD_POLICY = {
     updatedAt: LOCKED,
 };
 
-/**
- * Tier for every writable CustomerProfile field.
- */
 export const CUSTOMER_FIELD_POLICY = {
     fullName: VERIFIED_HARD,
     agencyName: VERIFIED_HARD,
@@ -95,7 +89,6 @@ export const CUSTOMER_FIELD_POLICY = {
     primaryDiagnosis: VERIFIED_SOFT,
     referringProviderName: VERIFIED_SOFT,
 
-    // System-owned — never client-writable.
     id: LOCKED,
     userId: LOCKED,
     customerType: LOCKED,
@@ -115,18 +108,6 @@ export const CUSTOMER_FIELD_POLICY = {
     updatedAt: LOCKED,
 };
 
-/**
- * Which tiers may be written, and which trigger re-review, per approval status.
- * LOCKED never appears — it is rejected in every state.
- *
- * Approved is the only status that triggers re-review, because it is the only one
- * with an approval to protect. Pending, review and rejected all allow every tier:
- * nothing has been verified yet, so there is nothing a change could invalidate.
- *
- * Editing a verified field while in review does bump `reviewStartedAt` — see the
- * service layer — so a reviewer mid-check sees the account as freshly submitted
- * rather than approving a value that has since changed.
- */
 export const TIER_AVAILABILITY = {
     [APPROVAL_STATUS.PENDING]: { allow: [OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD], reReview: [] },
     [APPROVAL_STATUS.REJECTED]: { allow: [OPEN, GUARDED, VERIFIED_SOFT, VERIFIED_HARD], reReview: [] },
@@ -134,17 +115,6 @@ export const TIER_AVAILABILITY = {
     [APPROVAL_STATUS.APPROVED]: { allow: [OPEN, GUARDED], reReview: [VERIFIED_SOFT, VERIFIED_HARD] },
 };
 
-/**
- * Partition an incoming payload into writable fields, re-review-triggering
- * fields, and rejections — based on field tier and current approval status.
- *
- * O(n) in submitted fields (bounded by the validator), O(1) per field.
- *
- * @param {Record<string, unknown>} data
- * @param {Record<string, string>} policy - THERAPIST_FIELD_POLICY | CUSTOMER_FIELD_POLICY
- * @param {string} approvalStatus
- * @returns {{writable: Object, reReviewTiers: Set<string>, locked: string[], blocked: string[], unknown: string[]}}
- */
 export const partitionByPolicy = (data, policy, approvalStatus) => {
     const availability = TIER_AVAILABILITY[approvalStatus] ?? TIER_AVAILABILITY[APPROVAL_STATUS.REVIEW];
 

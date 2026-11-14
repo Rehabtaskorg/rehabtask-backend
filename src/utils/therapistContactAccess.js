@@ -32,6 +32,8 @@ export const THERAPIST_SAFE_SELECT = {
     yearsOfExperience: true,
     yearsInHomeHealth: true,
     professionalSummary: true,
+    emr: true,
+    emrOther: true,
     ratePerVisit: true,
     attemptedVisitRate: true,
     evaluationRate: true,

@@ -591,6 +591,7 @@ export const getTherapistPublicProfile = async (therapistId, viewerUserId = null
         primaryLicenseType: therapist.primaryLicenseType,
         ...(viewerRole === USER_ROLES.CUSTOMER && { npiNumber: therapist.npiNumber }),
         professionalSummary: therapist.professionalSummary,
+        emr: therapist.emr === "Other" ? therapist.emrOther : therapist.emr,
         ratePerVisit: therapist.ratePerVisit,
         attemptedVisitRate: therapist.attemptedVisitRate,
         evaluationRate: therapist.evaluationRate,
