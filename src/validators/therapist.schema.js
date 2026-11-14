@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { US_STATE_CODES } from "../utils/constants.js";
 
+const optionalEmrField = z.preprocess(
+    (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+    z.string().trim().max(100, "EMR system must be 100 characters or less").optional().nullable()
+);
+
 export const updateProfileSchema = z.object({
     fullName: z
         .string()
@@ -23,6 +28,8 @@ export const updateProfileSchema = z.object({
         .max(500, "Specialization must be 500 characters or less")
         .optional()
         .nullable(),
+    emr: optionalEmrField,
+    emrOther: optionalEmrField,
     profilePhotoUrl: z.string().url("Invalid URL format").nullable().optional(),
     ratePerVisit: z.coerce
         .number()

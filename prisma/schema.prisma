@@ -162,6 +162,8 @@ model TherapistProfile {
   yearsOfExperience        Int?                   @map("years_of_experience")
   primaryLicenseType       String?                @map("primary_license_type") @db.VarChar(100)
   professionalSummary      String?                @map("professional_summary")
+  emr                      String?                @db.VarChar(100)
+  emrOther                 String?                @map("emr_other") @db.VarChar(100)
   profilePhotoUrl          String?                @map("profile_photo_url")
   specialization           String?
   licenseNumber            String?                @unique @map("license_number") @db.VarChar(100)

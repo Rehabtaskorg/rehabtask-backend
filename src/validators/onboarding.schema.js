@@ -6,6 +6,12 @@ const usPhoneSchema = z
     .string()
     .regex(/^\+1\d{10}$/, "Phone must be in format +1XXXXXXXXXX");
 
+const optionalShortText = (label) =>
+    z.preprocess(
+        (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+        z.string().trim().max(100, `${label} must be 100 characters or less`).optional().nullable()
+    );
+
 export const personalInfoSchema = z.object({
     dateOfBirth: z
         .string()
@@ -69,6 +75,9 @@ export const professionalProfileSchema = z.object({
         .refine((val) => val === "" || val.length >= 100, "Must be at least 100 characters if provided")
         .optional()
         .or(z.literal("")),
+
+    emr: optionalShortText("EMR system"),
+    emrOther: optionalShortText("EMR system"),
 
     profilePhotoUrl: z
         .url("Invalid profile photo URL")
