@@ -141,6 +141,8 @@ export const saveProfessionalProfileController = async (req, res, next) => {
             populationExperience,
             yearsInHomeHealth,
             professionalSummary,
+            emr,
+            emrOther,
             profilePhotoUrl,
         } = req.body;
 
@@ -154,6 +156,8 @@ export const saveProfessionalProfileController = async (req, res, next) => {
             populationExperience,
             yearsInHomeHealth,
             professionalSummary,
+            emr,
+            emrOther,
             profilePhotoUrl,
         });
 
