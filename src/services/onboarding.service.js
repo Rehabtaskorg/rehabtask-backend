@@ -161,6 +161,8 @@ export const getOnboardingData = async (userId) => {
             populationExperience: attrsByCategory[THERAPIST_ATTRIBUTE_CATEGORIES.POPULATION] ?? [],
             yearsInHomeHealth: therapist.yearsInHomeHealth,
             professionalSummary: therapist.professionalSummary,
+            emr: therapist.emr,
+            emrOther: therapist.emrOther,
             profilePhotoUrl: therapist.profilePhotoUrl,
         },
         credentials: {
@@ -265,6 +267,8 @@ export const saveProfessionalProfile = async (userId, data) => {
                     primaryLicenseType: data.primaryLicenseType,
                     yearsInHomeHealth: data.yearsInHomeHealth ?? null,
                     professionalSummary: data.professionalSummary,
+                    emr: data.emr || null,
+                    emrOther: data.emr === "Other" ? data.emrOther || null : null,
                     profilePhotoUrl: data.profilePhotoUrl || null,
                     onboardingStep: Math.max(therapist.onboardingStep, 3),
                 },
