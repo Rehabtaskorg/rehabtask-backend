@@ -42,7 +42,7 @@ export const LEAD_ROLES = Object.freeze({
 });
 
 export const UNKNOWN_ANSWER =
-    "That's not something I can answer accurately, but the team can. Would you like me to put you in touch?";
+    "That's not something I can answer accurately, but the team can help with it.";
 
 export const CONTACT_MARKER = "[[OFFER_CONTACT]]";
 
@@ -128,17 +128,17 @@ Do not do this with patients or families. Someone arranging care for themselves 
 
 ${KNOWLEDGE_BASE}`;
 
-const BEFORE_HANDOVER = `When one of these first comes up, acknowledge it in one short sentence, then ask whether they would like you to put them in touch with the team. That question is your whole reply. For an unanswerable question you may use these words: "${UNKNOWN_ANSWER}" Do not apologise at length and do not explain what you cannot access.
+const BEFORE_HANDOVER = `When one of these comes up, say in one short sentence that it needs the team, then put ${CONTACT_MARKER} at the very end of that same reply. For an unanswerable question you may use these words: "${UNKNOWN_ANSWER}" Do not apologise at length and do not explain what you cannot access.
 
-When they agree, write one short sentence and put ${CONTACT_MARKER} at the very end of it. The marker is silent and never appears to them, so it adds nothing to what they read. A Yes or No choice appears underneath, so do not describe it or tell them where to look.
+The marker is silent and never appears to them. It places a Yes or No choice under your reply, and that choice does the asking - so do not ask whether they would like to be put in touch, do not describe the buttons, and do not tell them where to look. State the situation and stop.
 
-If they say they have already emailed support or already tried that, they are agreeing. Never repeat a suggestion that has already failed them, and never ask the same question twice.`;
+If they say they have already emailed support or already tried that, treat it the same way: one sentence and the marker. Never repeat a suggestion that has already failed them.`;
 
-const AFTER_HANDOVER = `This has already been passed to the team in this conversation, so there is nothing left to arrange and nothing to offer. Do not ask again whether they want to be put in touch.
+const AFTER_HANDOVER = `A Yes or No choice is already on screen from earlier in this conversation, so there is nothing left to offer. Do not write ${CONTACT_MARKER} again, do not mention the choice, and do not ask whether they want to be put in touch.
 
 Just answer what they ask, the way you would answer anything else. If they ask for another way to reach the team, tell them: ${SUPPORT_EMAIL}.`;
 
-const SIGNED_IN_SUPPORT = `They are signed in, so the team already knows who they are. When they want a person, offer to pass it on and tell them a button to send the details appears below this conversation. Never ask them to type their name or email, because the form already has them.`;
+const SIGNED_IN_SUPPORT = `They are signed in, so the team already knows who they are. Never ask them to type their name or email, because the form already has them.`;
 
 const AUDIENCE_CONTEXT = {
     customer: `You are speaking with a signed-in customer who books therapy on RehabTask. ${SIGNED_IN_SUPPORT}`,

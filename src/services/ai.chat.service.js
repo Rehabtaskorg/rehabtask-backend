@@ -43,8 +43,8 @@ const isClearDecline = (messages) =>
     CLEAR_DECLINE.test(messages.at(-1)?.content?.toLowerCase().trim() ?? "");
 
 const resolveHandover = ({ messages, reply, handoverArranged }) => {
-    if (reply.includes(CONTACT_MARKER)) return true;
     if (isClearDecline(messages)) return false;
+    if (reply.includes(CONTACT_MARKER)) return true;
     return handoverArranged || askedForAPerson(messages);
 };
 
