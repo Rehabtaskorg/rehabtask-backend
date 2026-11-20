@@ -41,7 +41,7 @@ const createMarkerFilter = (onChunk) => {
  * @param {{ messages: Array<{role: string, content: string}> }} params
  * @returns {Promise<string>}
  */
-const STUB_OFFER = "That needs the team. Would you like me to put you in touch?";
+const STUB_OFFER = `That needs the team to look at your account. ${CONTACT_MARKER}`;
 const STUB_ACCEPTED = `I'll connect you with the team. ${CONTACT_MARKER}`;
 const STUB_DECLINED = "Understood. I'm here if you change your mind.";
 
@@ -51,11 +51,9 @@ const STUB_DECLINES = /^(no|nope|nah|no thanks|not now)\b/;
 
 const stubEscalation = (messages) => {
     const latest = messages.at(-1)?.content?.toLowerCase().trim() ?? "";
-    const previous = messages.at(-2);
-    const wasOffered = previous?.role === "assistant" && previous.content.includes("put you in touch");
 
-    if (wasOffered && STUB_DECLINES.test(latest)) return STUB_DECLINED;
-    if (wasOffered && STUB_AGREES.test(latest)) return STUB_ACCEPTED;
+    if (STUB_DECLINES.test(latest)) return STUB_DECLINED;
+    if (STUB_AGREES.test(latest)) return STUB_ACCEPTED;
     if (STUB_WANTS_HUMAN.test(latest)) return STUB_OFFER;
     return null;
 };

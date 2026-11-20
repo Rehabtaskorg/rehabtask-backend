@@ -24,9 +24,9 @@ const CASES = [
         expect: { offerLead: true },
     },
     {
-        name: "a billing complaint asks before arranging anything",
+        name: "a billing complaint offers the handover on the same turn",
         messages: [user("I was charged twice and nobody fixed it")],
-        expect: { offerLead: false, handoverArranged: false },
+        expect: { offerLead: true, handoverArranged: true },
     },
     {
         name: "casual agreement is understood as acceptance",
